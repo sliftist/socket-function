@@ -1,0 +1,27 @@
+{
+    "compilerOptions": {
+        "strict": true,
+        "module": "CommonJS",
+        "esModuleInterop": true,
+        "allowSyntheticDefaultImports": true,
+        "moduleResolution": "node",
+        "target": "es2018",
+        "lib": [
+            "ESNext",
+            "dom",
+            "dom.iterable"
+        ],
+        "jsx": "react",
+        "alwaysStrict": true,
+        "jsxFactory": "preact.createElement",
+        "jsxFragmentFactory": "preact.Fragment",
+        "types": [
+            //"node",
+        ],
+        "experimentalDecorators": true,
+        "emitDecoratorMetadata": false,
+        "skipLibCheck": true,
+        "inlineSourceMap": true,
+        "inlineSources": true,
+    },
+}

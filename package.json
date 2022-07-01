@@ -1,0 +1,9 @@
+{
+  "name": "socket-function",
+  "version": "1.0.0",
+  "main": "index.js",
+  "license": "MIT",
+  "dependencies": {
+    "typenode": "0.3.0"
+  }
+}

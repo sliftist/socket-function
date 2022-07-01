@@ -1,0 +1,55 @@
+spec.txt
+
+- Implement SocketFunction for NodeJS => NodeJS
+- Support HTTP responses in SocketFunction
+    - Expose a http://127.0.0.1/RequireController-6016c77f-6863-47b5-a421-2abdea637436?html=./index.html&js=./index.ts endpoint
+    - RequireController will have to look through all imports, and send the files clientside
+        - Use allowclient to allow whitelisting of files, and setFlag to allow nested values. ALso compileDirFlags.ts
+    - Add handling for .css files by calling compileTransform in typenode to add a handler for .css (after adding it to require.extensions).
+- Support default HTTP function in SocketFunction, via functions.httpDefault(() => {}), so we can expose http://127.0.0.1
+
+- Other libraries
+    - JSON buffer serialize, which generates an object, that allows for rehydration of buffers
+        - Also... static classes (maybe even static resources), so structures can be sent
+    - devtools in a CDN or otherwise globally available, so we can change debugBreakpoint to always open the file
+
+
+
+================== SocketFunction ==================
+
+- Uses proxies, so that functions can be called before we know the shape of interface
+- Headers
+    - Support enabling "Access-Control-Allow-Credentials"/Request.credentials=include, with a hardcoded list of domains
+    - Support Access-Control-Allow-Origin, with a hardcoded list of domains
+    - Always set
+        - response.setHeader("Cross-Origin-Opener-Policy", "same-origin");
+        - response.setHeader("Cross-Origin-Embedder-Policy", "require-corp");
+        - response.setHeader("Cross-Origin-Resource-Policy", "same-site");
+    - Remember to set headers for OPTIONS, but then NOOP
+
+todonext
+- How will we set cookies / handle authentication?
+    - Is there any way we can store the private key in a way that will be cleared when the browser closes? But not in cookies?
+
+let functions = SocketFunction.mount({ port: 40981,  });
+functions.expose(ExampleController);
+
+
+let callerId = ExampleController[socket].callerId;
+let result = await ExampleController[socket].nodes[callerId].exampleFunction("hi");
+
+
+let serverId = SocketFunctions.connect({ host: "example.com", port: 40981 });
+ExampleController[socket].nodes[serverId].exampleFunction("hi server");
+
+
+export class ExampleController {
+    // Parses braces to find the name of the class, then uses 
+    [socket] = SocketFunction.register("ExampleController-2a4b1bd1-d00f-4812-be32-c4466f3c354a", ExampleController, {
+        exampleFunction: {},
+    });
+
+    exampleFunction(arg1: string) {
+
+    }
+}
