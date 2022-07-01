@@ -1,6 +1,10 @@
 spec.txt
 
 - Implement SocketFunction for NodeJS => NodeJS
+    - Publish it, and make sure we can include it correctly in non-ts projects
+        (so we need to publish the dist folders that typenode creates).
+        - We might need to emit source maps as well?
+        - Maybe we should just compile with typescript?
 - Support HTTP responses in SocketFunction
     - Expose a http://127.0.0.1/RequireController-6016c77f-6863-47b5-a421-2abdea637436?html=./index.html&js=./index.ts endpoint
     - RequireController will have to look through all imports, and send the files clientside
@@ -27,29 +31,67 @@ spec.txt
         - response.setHeader("Cross-Origin-Resource-Policy", "same-site");
     - Remember to set headers for OPTIONS, but then NOOP
 
-todonext
-- How will we set cookies / handle authentication?
-    - Is there any way we can store the private key in a way that will be cleared when the browser closes? But not in cookies?
+// NOTE: It is not possible to expose different services over different ports in the same process.
+//  Just run different processes if you want different services.
+SocketFunction.expose(ExampleController);
+// Global hooks are useful for authentication
+SocketFunction.addGlobalHook<ExampleContext>(null as SocketFunctionHook);
+// Mount only after exposing controllers and setting up hooks
+SocketFunction.mount({ port: 40981 });
 
-let functions = SocketFunction.mount({ port: 40981,  });
-functions.expose(ExampleController);
 
-
+// callerId is set before each function (and part of the hook context)
 let callerId = ExampleController[socket].callerId;
 let result = await ExampleController[socket].nodes[callerId].exampleFunction("hi");
 
 
-let serverId = SocketFunctions.connect({ host: "example.com", port: 40981 });
+// An object with context information is available in each call (so arguments don't have to be modified)
+//  - register will have a second generic argument that is context, so this will be typed
+ExampleController[socket].callContext
+
+
+
+// Clientside may also wish to expose controllers, possibly the same, or different.
+SocketFunction.expose(ExampleControllerClient);
+// We might also want global clientside hooks (for authentication)
+SocketFunction.addGlobalClientHook<ExampleContext>(null as SocketFunctionHook);
+let serverId = await SocketFunctions.connect({ host: "example.com", port: 40981 });
+// Cached, so it can be put in a helper function and called every time a call is made
+let serverId = SocketFunctions.connectSync({ host: "example.com", port: 40981 });
 ExampleController[socket].nodes[serverId].exampleFunction("hi server");
 
 
 export class ExampleController {
-    // Parses braces to find the name of the class, then uses 
-    [socket] = SocketFunction.register("ExampleController-2a4b1bd1-d00f-4812-be32-c4466f3c354a", ExampleController, {
-        exampleFunction: {},
+    // Uses both types AND shape configuration, to prevent functions from accidentally being exposed
+    //  on the public internet...
+    //  - Type checking is done to ensure no functions are exposed that aren't in your type
+    [socket] = SocketFunction.register<ExampleController, ExampleContext>("ExampleController-2a4b1bd1-d00f-4812-be32-c4466f3c354a", {
+        exampleFunction: {
+            // Hooks wrap the call, allowing them to cancel it, change arguments, change the output, run it
+            //  on another thread, check permission, etc, etc
+            //  - Hooks are asynchronously, so they can even trigger other calls, etc
+            //  - Context is passed to hooks
+            hooks: [] as SocketFunctionHook[],
+            // Client hooks run before a call, on the client. They have a different context,
+            //  because they won't have information such as caller ip, but they can wrap calls
+            //  in mostly the similar way
+            clientHooks: [] as SocketFunctionClientHook[]
+        },
     });
 
-    exampleFunction(arg1: string) {
+    async exampleFunction(arg1: string) {
 
     }
+}
+
+// ALSO, a shim can be created to avoid exposing your source code to API users (such as webpage).
+//  - If you want, you can have your implementation import your config shape from the client file,
+//      that way you only need to write it once.
+import type * as Base from "./ExampleController";
+export class ExampleController {
+    [socket] = SocketFunction.register<Base.ExampleController, ExampleContext>("ExampleController-2a4b1bd1-d00f-4812-be32-c4466f3c354a", {
+        exampleFunction: {
+            clientHooks: [] as SocketFunctionClientHook[]
+        },
+    });
 }
