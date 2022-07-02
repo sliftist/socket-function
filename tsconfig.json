@@ -16,7 +16,7 @@
         "jsxFactory": "preact.createElement",
         "jsxFragmentFactory": "preact.Fragment",
         "types": [
-            //"node",
+            "node",
         ],
         "experimentalDecorators": true,
         "emitDecoratorMetadata": false,

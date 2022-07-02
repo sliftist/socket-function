@@ -1,5 +1,8 @@
 spec.txt
 
+- Can we use this devtools cdn: https://www.jsdelivr.com/package/npm/chrome-devtools-frontend
+    to link to devtools? If so... and then if we also call the "open" code, we could make our package even more useful
+
 - Implement SocketFunction for NodeJS => NodeJS
     - Publish it, and make sure we can include it correctly in non-ts projects
         (so we need to publish the dist folders that typenode creates).
@@ -15,7 +18,6 @@ spec.txt
 - Other libraries
     - JSON buffer serialize, which generates an object, that allows for rehydration of buffers
         - Also... static classes (maybe even static resources), so structures can be sent
-    - devtools in a CDN or otherwise globally available, so we can change debugBreakpoint to always open the file
 
 
 
@@ -59,6 +61,14 @@ let serverId = await SocketFunctions.connect({ host: "example.com", port: 40981 
 // Cached, so it can be put in a helper function and called every time a call is made
 let serverId = SocketFunctions.connectSync({ host: "example.com", port: 40981 });
 ExampleController[socket].nodes[serverId].exampleFunction("hi server");
+// If you have multiple servers each with many endpoints, you can make helper functions like this:
+function exampleControllers() {
+    let serverId = SocketFunctions.connectSync({ host: "example.com", port: 40981 });
+    return {
+        ExampleController: ExampleController[socket].nodes[serverId],
+        ... etc, with all controllers mapped like this:
+    }
+}
 
 
 export class ExampleController {
