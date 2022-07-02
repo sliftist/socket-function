@@ -6,27 +6,35 @@ import { performLocalCall } from "./callManager";
 import { CallerContext, CallType, NetworkLocation } from "./SocketFunctionTypes";
 import { callFactoryFromWS } from "./CallInstance";
 import { registerNodeClient } from "./nodeCache";
+import { getCertKeyPair } from "./nodeAuthentication";
 
-export type SocketServerConfig ={
+export type SocketServerConfig = {
     port: number;
     // public sets ip to "0.0.0.0", otherwise it defaults to "127.0.0.1", which
     //  causes the server to only accept local connections.
     public?: boolean;
     ip?: string;
 } & (
-    https.ServerOptions | http.ServerOptions
+    https.ServerOptions
 );
 
 export async function startSocketServer(
     config: SocketServerConfig
 ) {
-    let hoster: typeof http|typeof https = http;
-    if ("cert" in config || "cert" in config || "pfx" in config) {
-        hoster = https;
+    let isSecure = "cert" in config || "key" in config || "pfx" in config;
+    if (!isSecure) {   
+        let { key, cert } = getCertKeyPair();
+        config.key = key;
+        config.cert = cert;
     }
+
     // TODO: Only allow unauthorized for ip certificates, and then for domains use the domain as the nodeId,
     //  so it is easy to read, and consistent.
-    let server = hoster.createServer({...config, rejectUnauthorized: false, requestCert: true });
+    let server = https.createServer({
+        ...config,
+        rejectUnauthorized: false,
+        requestCert: true
+    });
     let listenPromise = new Promise<void>((resolve, error) => {
         server.on("listening", () => {
             resolve();
@@ -53,8 +61,8 @@ export async function startSocketServer(
         noServer: true,
     });
     server.on("upgrade", (request, socket, upgradeHead) => {
-        webSocketServer.handleUpgrade(request, socket, upgradeHead, (ws) => {
-            let clientCallFactory = callFactoryFromWS(ws, request.connection);
+        webSocketServer.handleUpgrade(request, socket, upgradeHead, async (ws) => {
+            let clientCallFactory = await callFactoryFromWS(ws);
             registerNodeClient(clientCallFactory);
         });
     });

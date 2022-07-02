@@ -6,7 +6,11 @@
   "dependencies": {
     "@types/node": "^18.0.0",
     "@types/ws": "^8.5.3",
+    "debugbreak": "^0.5.0",
     "typenode": "0.3.0",
     "ws": "^8.8.0"
+  },
+  "scripts": {
+    "test": "yarn typenode ./nodeAuthentication.ts --server"
   }
 }
