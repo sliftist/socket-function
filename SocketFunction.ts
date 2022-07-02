@@ -29,23 +29,25 @@ export class SocketFunction {
         classType: ClassType,
         shape: Shape
     ): (
-        // Essentially just returns SocketRegistered
-        ExtractShape<ClassType["prototype"], Shape> extends SocketExposedInterface
-        ? SocketRegistered<ExtractShape<ClassType["prototype"], Shape>, CallContext>
-        : {
-            error: "invalid shape";
-        } & PickByType<ExtractShape<ClassType["prototype"], Shape>, string>
-    ) {
+            // Essentially just returns SocketRegistered
+            ExtractShape<ClassType["prototype"], Shape> extends SocketExposedInterface
+            ? SocketRegistered<ExtractShape<ClassType["prototype"], Shape>, CallContext>
+            : {
+                error: "invalid shape";
+            } & PickByType<ExtractShape<ClassType["prototype"], Shape>, string>
+        ) {
         registerClass(classGuid, classType, shape as any as SocketExposedShape);
 
         let nodeProxy = getCallProxy(classGuid, async (nodeId, functionName, args) => {
             let callFactory = getCallFactoryNodeId(nodeId);
-            if(!callFactory) {
+            if (!callFactory) {
                 throw new Error(`Cannot reach node ${nodeId}. Either it was established via an HTTP call, or was incorrect provided to us via another node, which should have provided us a NetworkLocation instead.`);
             }
 
-            // TODO: We could check the shape BEFORE we call the function?
             let shapeObj = shape[functionName];
+            if (!shapeObj) {
+                throw new Error(`Function ${functionName} is not in shape`);
+            }
 
             let call: CallType = {
                 classGuid,
@@ -66,7 +68,7 @@ export class SocketFunction {
             context: curSocketContext,
             nodes: nodeProxy,
         };
-        
+
         return output as any;
     }
 
@@ -83,7 +85,7 @@ export class SocketFunction {
     }
 
     public static async connect(location: NetworkLocation | { address: string; port: number }): Promise<string> {
-        if(!("localPort" in location)) {
+        if (!("localPort" in location)) {
             location = {
                 address: location.address,
                 listeningPorts: [location.port],

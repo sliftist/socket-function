@@ -4,7 +4,8 @@ export type SocketExposedInterface = {
     [functionName: string]: (...args: any[]) => Promise<unknown>;
 };
 export type SocketExposedInterfaceClass = {
-    new(): SocketExposedInterface;
+    //new(): SocketExposedInterface;
+    new(): unknown;
     prototype: unknown;
 };
 export interface SocketExposedShape<ExposedType extends SocketExposedInterface = SocketExposedInterface, CallContext extends CallContextType = CallContextType> {

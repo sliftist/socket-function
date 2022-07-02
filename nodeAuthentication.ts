@@ -8,6 +8,7 @@ import https from "https";
 import debugbreak from "debugbreak";
 import crypto from "crypto";
 import { sha256Hash } from "./misc";
+import { getArgs } from "./args";
 
 export const getCertKeyPair = lazy((): { key: Buffer; cert: Buffer } => {
     // TODO: Also get this working clientside...
@@ -16,8 +17,9 @@ export const getCertKeyPair = lazy((): { key: Buffer; cert: Buffer } => {
     // https://nodejs.org/en/knowledge/HTTP/servers/how-to-create-a-HTTPS-server/
 
     let folder = getAppFolder();
-    let keyPath = folder + "key.pem";
-    let certPath = folder + "cert.pem";
+    let identityPrefix = getArgs().identity || "";
+    let keyPath = folder + identityPrefix + "key.pem";
+    let certPath = folder + identityPrefix + "cert.pem";
     if (!fs.existsSync(keyPath) || !fs.existsSync(certPath)) {
         child_process.execSync(`openssl genrsa -out "${keyPath}"`);
         child_process.execSync(`openssl req -new -key "${keyPath}" -out csr.pem -subj "/CN=notused"`);
@@ -49,6 +51,7 @@ export const getNodeId = cacheWeak(function (webSocket: ws.WebSocket): string {
 
 export function createWebsocket(address: string, port: number): ws.WebSocket {
     let { key, cert } = getCertKeyPair();
+    console.log(`Connecting to ${address}:${port}`);
     return new ws.WebSocket(`wss://${address}:${port}`, {
         cert,
         key,

@@ -62,7 +62,7 @@ export function registerClass(classGuid: string, exposedClass: SocketExposedInte
 
     classes[classGuid] = {
         classType: exposedClass,
-        controller: new exposedClass(),
+        controller: new exposedClass() as SocketExposedInterface,
         shape,
     };
 }
@@ -83,7 +83,7 @@ export async function runClientHooks(
     hooks: SocketExposedShape[""],
 ): Promise<ClientHookContext> {
     let context: ClientHookContext = { call: callType };
-    for(let hook of globalClientHooks.concat(hooks.clientHooks || [])) {
+    for (let hook of globalClientHooks.concat(hooks.clientHooks || [])) {
         await hook(context);
         if ("overrideResult" in context) {
             break;
@@ -98,7 +98,7 @@ async function runServerHooks(
     hooks: SocketExposedShape[""],
 ): Promise<HookContext> {
     let hookContext: HookContext = { call: callType, context };
-    for(let hook of globalHooks.concat(hooks.hooks || [])) {
+    for (let hook of globalHooks.concat(hooks.hooks || [])) {
         await hook(hookContext);
         if ("overrideResult" in hookContext) {
             break;

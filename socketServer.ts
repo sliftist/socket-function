@@ -15,14 +15,14 @@ export type SocketServerConfig = {
     public?: boolean;
     ip?: string;
 } & (
-    https.ServerOptions
-);
+        https.ServerOptions
+    );
 
 export async function startSocketServer(
     config: SocketServerConfig
 ) {
     let isSecure = "cert" in config || "key" in config || "pfx" in config;
-    if (!isSecure) {   
+    if (!isSecure) {
         let { key, cert } = getCertKeyPair();
         config.key = key;
         config.cert = cert;
@@ -43,7 +43,7 @@ export async function startSocketServer(
             error(e);
         });
     });
-    
+
 
     let host = config.ip ?? "127.0.0.1";
     if (config.public) {
@@ -67,6 +67,7 @@ export async function startSocketServer(
         });
     });
 
+    console.log(`Listening on ${host}:${config.port}`);
     server.listen(config.port, host);
 
     return await listenPromise;

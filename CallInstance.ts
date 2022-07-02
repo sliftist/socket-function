@@ -4,6 +4,9 @@ import type * as net from "net";
 import { performLocalCall } from "./callManager";
 import { convertErrorStackToError } from "./misc";
 import { createWebsocket, getNodeId, getTLSSocket } from "./nodeAuthentication";
+import debugbreak from "debugbreak";
+
+const retryInterval = 2000;
 
 type InternalCallType = CallType & {
     seqNum: number;
@@ -71,48 +74,57 @@ async function createCallFactory(
     location: NetworkLocation,
 ): Promise<CallFactory> {
 
+    let closedForever = false;
+
     let niceConnectionName = `${location.address}:${location.localPort}`;
 
     let retriesEnabled = location.listeningPorts.length === 0;
 
+    let lastReceivedSeqNum = 0;
 
-    let reconnectingPromise: Promise<ws.WebSocket>|undefined;
+    let reconnectingPromise: Promise<void> | undefined;
     let reconnectAttempts = 0;
-    
-    
-    let pendingCalls: Map<number, (result: InternalReturnType) => void> = new Map();
+
+
+    let pendingCalls: Map<number, {
+        data: string;
+        call: InternalCallType;
+        reconnectTimeout: number | undefined;
+        callback: (result: InternalReturnType) => void;
+    }> = new Map();
     // NOTE: It is important to make this as random as possible, to prevent
     //  reconnections dues to a process being reset causing seqNum collisions
     //  in return calls.
     let nextSeqNum = Math.random();
 
-
+    const pendingNodeId = "PENDING";
+    let callerContext: CallerContext = { location, nodeId: pendingNodeId };
+    let webSocket!: ws.WebSocket;
     if (!webSocketBase) {
-        webSocketBase = await tryToReconnect();
+        await tryToReconnect();
+    } else {
+        webSocket = webSocketBase;
+        setupWebsocket(webSocketBase);
     }
-    let webSocket = webSocketBase;
+    callerContext.nodeId = getNodeId(webSocket);
 
-    if (webSocket) {
-        setupWebsocket(webSocket);
-    }
+    niceConnectionName = `${niceConnectionName} (${callerContext.nodeId})`;
 
-    let callerContext: CallerContext = { location, nodeId: getNodeId(webSocket) };
-    
-    async function sendWithRetry(reconnectTimeout: number|undefined, data: string) {
-
+    async function sendWithRetry(reconnectTimeout: number | undefined, data: string) {
         if (!retriesEnabled) {
             webSocket.send(data);
             return;
         }
+
         while (true) {
             if (reconnectingPromise) {
-                if(reconnectTimeout) {
+                if (reconnectTimeout) {
                     await Promise.race([
                         reconnectingPromise,
-                        new Promise<void>(resolve =>
+                        new Promise<ws.WebSocket>(resolve =>
                             setTimeout(() => {
                                 retriesEnabled = false;
-                                resolve();
+                                resolve(webSocket);
                             }, reconnectTimeout)
                         )
                     ]);
@@ -129,59 +141,87 @@ async function createCallFactory(
             try {
                 webSocket.send(data);
                 break;
-            } catch(e) {
+            } catch (e) {
                 // Ignore errors, as we will catch them synchronously in the next loop.
                 void (tryToReconnect());
             }
         }
     }
-    function tryToReconnect(): Promise<ws.WebSocket> {
+    function tryToReconnect(): Promise<void> {
         if (reconnectingPromise) return reconnectingPromise;
         return reconnectingPromise = (async () => {
-            while(true) {
+            while (true) {
                 let ports = location.listeningPorts;
+
+                if (ports.length === 0) {
+                    closedForever = true;
+                    console.log(`No ports to reconnect for ${niceConnectionName}, pendingCall count: ${pendingCalls.size}`);
+                    for (let call of pendingCalls.values()) {
+                        call.callback({
+                            isReturn: true,
+                            result: undefined,
+                            error: `Connection lost to ${location.address}:${location.localPort}`,
+                            seqNum: call.call.seqNum,
+                        });
+                    }
+                    return;
+                }
+
                 let port = ports[reconnectAttempts % ports.length];
                 let newWebSocket = createWebsocket(location.address, port);
 
                 setupWebsocket(newWebSocket);
 
-                let connectError = await new Promise<string|undefined>(resolve => {
-                    newWebSocket.on("open", () => {
+                let connectError = await new Promise<string | undefined>(resolve => {
+                    newWebSocket.once("open", () => {
                         resolve(undefined);
                     });
-                    newWebSocket.on("close", () => {
+                    newWebSocket.once("close", () => {
                         resolve("Connection closed for non-error reason?");
                     });
-                    newWebSocket.on("error", e => {
+                    newWebSocket.once("error", e => {
                         resolve(String(e.stack));
                     });
                 });
 
-                webSocket = newWebSocket;
+                if (!connectError) {
+                    console.log(`Reconnected to ${location.address}:${port}`);
 
-                let newNodeId = getNodeId(webSocket);
+                    let newNodeId = getNodeId(newWebSocket);
 
-                let prevNodeId = callerContext.nodeId;
-                if (newNodeId !== prevNodeId) {
-                    throw new Error(`Connection lost to at ${niceConnectionName} ("${prevNodeId}"), but then re-established, however it is now "${newNodeId}"!`);
+                    let prevNodeId = callerContext.nodeId;
+                    if (prevNodeId === pendingNodeId) {
+                        callerContext.nodeId = newNodeId;
+                    } else {
+                        if (newNodeId !== prevNodeId) {
+                            throw new Error(`Connection lost to at ${niceConnectionName} ("${prevNodeId}"), but then re-established, however it is now "${newNodeId}"!`);
+                        }
+                    }
+
+                    // I'm not sure if we should clear reconnectAttempts? All the ports should be the same, and actually...
+                    //  why would there even be a bad port?
+                    //reconnectAttempts = 0;
+                    reconnectingPromise = undefined;
+
+                    webSocket = newWebSocket;
+
+                    for (let call of pendingCalls.values()) {
+                        sendWithRetry(call.reconnectTimeout, call.data).catch(e => {
+                            call.callback({
+                                isReturn: true,
+                                result: undefined,
+                                error: String(e),
+                                seqNum: call.call.seqNum,
+                            });
+                        });
+                    }
+                    return;
                 }
 
-                if(!connectError) {
-                    break;
-                }
-
-                const retryInterval = 5000;
                 console.error(`Connection retry to ${location.address}:${port} failed, retrying in ${retryInterval}ms`);
                 reconnectAttempts++;
                 await new Promise(resolve => setTimeout(resolve, retryInterval));
             }
-
-            // I'm not sure if we should clear reconnectAttempts? All the ports should be the same, and actually...
-            //  why would there even be a bad port?
-            //reconnectAttempts = 0;
-            reconnectingPromise = undefined;
-
-            return webSocket;
         })();
     }
 
@@ -189,26 +229,34 @@ async function createCallFactory(
         webSocket.on("error", e => {
             console.log(`Websocket error for ${niceConnectionName}`, e);
         });
-    
-        webSocket.on("close", tryToReconnect);
-    
+
+        webSocket.on("close", async () => {
+            console.log(`Websocket closed ${niceConnectionName}`);
+            await tryToReconnect();
+        });
+
         webSocket.on("message", onMessage);
     }
 
 
     async function onMessage(message: ws.RawData) {
         try {
-            if (typeof message === "string") {
-                let call = JSON.parse(message) as InternalCallType | InternalReturnType;
+            if (message instanceof Buffer) {
+                let call = JSON.parse(message.toString()) as InternalCallType | InternalReturnType;
                 if (call.isReturn) {
-                    let callback = pendingCalls.get(call.seqNum);
-                    if(!callback) {
+                    let callbackObj = pendingCalls.get(call.seqNum);
+                    if (!callbackObj) {
                         console.log(`Got return for unknown call ${call.seqNum}`);
                         return;
                     }
-                    pendingCalls.delete(call.seqNum);
-                    callback(call);
+                    callbackObj.callback(call);
                 } else {
+                    if (call.seqNum <= lastReceivedSeqNum) {
+                        console.log(`Received out of sequence call ${call.seqNum}`);
+                        return;
+                    }
+                    lastReceivedSeqNum = call.seqNum;
+
                     let response: InternalReturnType;
                     try {
                         let result = await performLocalCall({ call, caller: callerContext });
@@ -217,7 +265,7 @@ async function createCallFactory(
                             result,
                             seqNum: call.seqNum,
                         };
-                    } catch(e: any) {
+                    } catch (e: any) {
                         response = {
                             isReturn: true,
                             result: undefined,
@@ -225,13 +273,15 @@ async function createCallFactory(
                             error: e.stack,
                         };
                     }
-                    
+
                     await sendWithRetry(call.reconnectTimeout, JSON.stringify(response));
                 }
                 return;
             }
+            debugbreak(1);
+            debugger;
             throw new Error(`Unhandled data type ${typeof message}`);
-        } catch(e: any) {
+        } catch (e: any) {
             console.error(e.stack);
         }
     }
@@ -240,6 +290,10 @@ async function createCallFactory(
         nodeId: callerContext.nodeId,
         location,
         async performCall(call: CallType) {
+            if (closedForever) {
+                throw new Error(`Connection lost to ${location.address}:${location.localPort}`);
+            }
+
             let seqNum = nextSeqNum++;
             let fullCall: InternalCallType = {
                 isReturn: false,
@@ -248,18 +302,20 @@ async function createCallFactory(
                 functionName: call.functionName,
                 seqNum,
             };
+            let data = JSON.stringify(fullCall);
             let resultPromise = new Promise((resolve, reject) => {
                 let callback = (result: InternalReturnType) => {
+                    pendingCalls.delete(seqNum);
                     if (result.error) {
                         reject(convertErrorStackToError(result.error));
                     } else {
                         resolve(result.result);
                     }
                 };
-                pendingCalls.set(seqNum, callback);
+                pendingCalls.set(seqNum, { callback, data, call: fullCall, reconnectTimeout: call.reconnectTimeout });
             });
 
-            await sendWithRetry(call.reconnectTimeout, JSON.stringify(fullCall));
+            await sendWithRetry(call.reconnectTimeout, data);
 
             return await resultPromise;
         }

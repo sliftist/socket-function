@@ -1,8 +1,5 @@
 spec.txt
 
-- Can we use this devtools cdn: https://www.jsdelivr.com/package/npm/chrome-devtools-frontend
-    to link to devtools? If so... and then if we also call the "open" code, we could make our package even more useful
-
 - Implement SocketFunction for NodeJS => NodeJS
     - Publish it, and make sure we can include it correctly in non-ts projects
         (so we need to publish the dist folders that typenode creates).

@@ -19,3 +19,9 @@ export function arrayEqual(a: unknown[], b: unknown[]) {
     }
     return true;
 }
+
+
+// TODO: Find a better place for this...
+process.on("unhandledRejection", async (reason: any, promise) => {
+    console.error(`Uncaught promise rejection: ${String(reason.stack || reason)}`);
+});
