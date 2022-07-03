@@ -1,22 +1,23 @@
 spec.txt
 
-- Implement SocketFunction for NodeJS => NodeJS
-    - Publish it, and make sure we can include it correctly in non-ts projects
-        (so we need to publish the dist folders that typenode creates).
-        - We might need to emit source maps as well?
-        - Maybe we should just compile with typescript?
-- Support HTTP responses in SocketFunction
-    - Expose a http://127.0.0.1/RequireController-6016c77f-6863-47b5-a421-2abdea637436?html=./index.html&js=./index.ts endpoint
-    - RequireController will have to look through all imports, and send the files clientside
-        - Use allowclient to allow whitelisting of files, and setFlag to allow nested values. ALso compileDirFlags.ts
-    - Add handling for .css files by calling compileTransform in typenode to add a handler for .css (after adding it to require.extensions).
-- Support default HTTP function in SocketFunction, via functions.httpDefault(() => {}), so we can expose http://127.0.0.1
+- Add a flag for rejectUnauthorized, that is off by default
+- Add the ability to specify the certs yourself (so you can specify your identity with a real cert)
+    - Then use real certificates on the server
 
-- Other libraries
+
+
+- Other stuff
     - JSON buffer serialize, which generates an object, that allows for rehydration of buffers
         - Also... static classes (maybe even static resources), so structures can be sent
+    - Consider forcing everything to use real certs everywhere, and make generating and updating
+        certs very easy.
+        - ALTHOUGH, maybe this should just be a downstream user of socket-function thing, and not
+            a requirement of socket-function?
+        - ALSO, remember, for domains, use the domain as the nodeId, not the public key, that way it
+            is more consistent.
 
 
+- https://letx.ca:2542/?classGuid=RequireController-e2f811f3-14b8-4759-b0d6-73f14516cf1d&functionName=requireHTML&args=[%22./test/test%22]
 
 ================== SocketFunction ==================
 

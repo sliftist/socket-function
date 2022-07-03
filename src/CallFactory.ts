@@ -1,10 +1,11 @@
-import { CallerContext, CallType, NetworkLocation } from "./SocketFunctionTypes";
+import { CallerContext, CallType, NetworkLocation } from "../SocketFunctionTypes";
 import type * as ws from "ws";
 import type * as net from "net";
 import { performLocalCall } from "./callManager";
-import { convertErrorStackToError } from "./misc";
+import { convertErrorStackToError, isNode } from "./misc";
 import { createWebsocket, getNodeId, getTLSSocket } from "./nodeAuthentication";
 import debugbreak from "debugbreak";
+import http from "http";
 
 const retryInterval = 2000;
 
@@ -46,7 +47,7 @@ export async function callFactoryFromLocation(
 }
 
 export async function callFactoryFromWS(
-    webSocket: ws.WebSocket
+    webSocket: ws.WebSocket & { nodeId?: string },
 ): Promise<CallFactory> {
     let socket = getTLSSocket(webSocket);
     let remoteAddress = socket.remoteAddress;
@@ -69,8 +70,19 @@ export async function callFactoryFromWS(
     return await createCallFactory(webSocket, location);
 }
 
+export interface SenderInterface {
+    nodeId?: string;
+
+    send(data: string): void;
+
+    on(event: "open", listener: () => void): this;
+    on(event: "close", listener: (code: number, reason: Buffer) => void): this;
+    on(event: "error", listener: (err: Error) => void): this;
+    on(event: "message", listener: (data: ws.RawData, isBinary: boolean) => void): this;
+}
+
 async function createCallFactory(
-    webSocketBase: ws.WebSocket | undefined,
+    webSocketBase: SenderInterface | undefined,
     location: NetworkLocation,
 ): Promise<CallFactory> {
 
@@ -99,14 +111,18 @@ async function createCallFactory(
 
     const pendingNodeId = "PENDING";
     let callerContext: CallerContext = { location, nodeId: pendingNodeId };
-    let webSocket!: ws.WebSocket;
+    let webSocket!: SenderInterface;
     if (!webSocketBase) {
         await tryToReconnect();
     } else {
         webSocket = webSocketBase;
         setupWebsocket(webSocketBase);
     }
-    callerContext.nodeId = getNodeId(webSocket);
+    if (isNode()) {
+        callerContext.nodeId = getNodeId(webSocket);
+    } else {
+        callerContext.nodeId = location.address + ":" + location.listeningPorts[0];
+    }
 
     niceConnectionName = `${niceConnectionName} (${callerContext.nodeId})`;
 
@@ -121,7 +137,7 @@ async function createCallFactory(
                 if (reconnectTimeout) {
                     await Promise.race([
                         reconnectingPromise,
-                        new Promise<ws.WebSocket>(resolve =>
+                        new Promise<SenderInterface>(resolve =>
                             setTimeout(() => {
                                 retriesEnabled = false;
                                 resolve(webSocket);
@@ -173,13 +189,13 @@ async function createCallFactory(
                 setupWebsocket(newWebSocket);
 
                 let connectError = await new Promise<string | undefined>(resolve => {
-                    newWebSocket.once("open", () => {
+                    newWebSocket.on("open", () => {
                         resolve(undefined);
                     });
-                    newWebSocket.once("close", () => {
+                    newWebSocket.on("close", () => {
                         resolve("Connection closed for non-error reason?");
                     });
-                    newWebSocket.once("error", e => {
+                    newWebSocket.on("error", e => {
                         resolve(String(e.stack));
                     });
                 });
@@ -187,14 +203,17 @@ async function createCallFactory(
                 if (!connectError) {
                     console.log(`Reconnected to ${location.address}:${port}`);
 
-                    let newNodeId = getNodeId(newWebSocket);
-
-                    let prevNodeId = callerContext.nodeId;
-                    if (prevNodeId === pendingNodeId) {
-                        callerContext.nodeId = newNodeId;
-                    } else {
-                        if (newNodeId !== prevNodeId) {
-                            throw new Error(`Connection lost to at ${niceConnectionName} ("${prevNodeId}"), but then re-established, however it is now "${newNodeId}"!`);
+                    // NOTE: Clientside doesn't have access to peer certificates, so it can't know the nodeId of the server
+                    //  that way. However, it can 
+                    if (isNode()) {
+                        let newNodeId = getNodeId(newWebSocket);
+                        let prevNodeId = callerContext.nodeId;
+                        if (prevNodeId === pendingNodeId) {
+                            callerContext.nodeId = newNodeId;
+                        } else {
+                            if (newNodeId !== prevNodeId) {
+                                throw new Error(`Connection lost to at ${niceConnectionName} ("${prevNodeId}"), but then re-established, however it is now "${newNodeId}"!`);
+                            }
                         }
                     }
 
@@ -225,23 +244,30 @@ async function createCallFactory(
         })();
     }
 
-    function setupWebsocket(webSocket: ws.WebSocket) {
+    function setupWebsocket(webSocket: SenderInterface) {
         webSocket.on("error", e => {
             console.log(`Websocket error for ${niceConnectionName}`, e);
         });
 
         webSocket.on("close", async () => {
             console.log(`Websocket closed ${niceConnectionName}`);
-            await tryToReconnect();
+            if (retriesEnabled) {
+                await tryToReconnect();
+            }
         });
 
         webSocket.on("message", onMessage);
     }
 
 
-    async function onMessage(message: ws.RawData) {
+    async function onMessage(message: ws.RawData | MessageEvent | string) {
         try {
-            if (message instanceof Buffer) {
+            if (!isNode()) {
+                if (typeof message === "object" && "data" in message) {
+                    message = message.data;
+                }
+            }
+            if (message instanceof Buffer || typeof message === "string") {
                 let call = JSON.parse(message.toString()) as InternalCallType | InternalReturnType;
                 if (call.isReturn) {
                     let callbackObj = pendingCalls.get(call.seqNum);

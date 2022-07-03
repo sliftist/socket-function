@@ -1,4 +1,4 @@
-export const socket = Symbol.for("socket");
+export const socket = Symbol("socket");
 
 export type SocketExposedInterface = {
     [functionName: string]: (...args: any[]) => Promise<unknown>;
@@ -58,6 +58,7 @@ export interface SocketRegistered<ExposedType extends SocketExposedInterface = S
         curContext: DynamicCallContext | undefined;
         caller: CallerContext | undefined;
     };
+    _classGuid: string;
 }
 export type CallerContext = {
     // IMPORTANT! Do not pass nodeId to other nodes with the intention of having

@@ -1,9 +1,14 @@
 import { SocketExposedInterface, CallContextType, SocketFunctionHook, SocketFunctionClientHook, SocketExposedShape, SocketRegistered, NetworkLocation, CallerContext, SocketExposedInterfaceClass, CallType } from "./SocketFunctionTypes";
-import { exposeClass, registerClass, registerGlobalClientHook, registerGlobalHook, runClientHooks } from "./callManager";
-import { SocketServerConfig, startSocketServer } from "./socketServer";
-import { getCallFactoryNodeId, getCreateCallFactoryLocation } from "./nodeCache";
-import { getCallProxy } from "./nodeProxy";
+import { exposeClass, registerClass, registerGlobalClientHook, registerGlobalHook, runClientHooks } from "./src/callManager";
+import { SocketServerConfig, startSocketServer } from "./src/socketServer";
+import { getCallFactoryNodeId, getCreateCallFactoryLocation } from "./src/nodeCache";
+import { getCallProxy } from "./src/nodeProxy";
+import { Args } from "./src/types";
+import { setDefaultHTTPCall } from "./src/callHTTPHandler";
+import { isNode } from "./src/misc";
+import { getOwnNodeId } from "./src/nodeAuthentication";
 
+module.allowclient = true;
 
 type ExtractShape<ClassType, Shape> = {
     [key in keyof Shape]: (
@@ -21,22 +26,24 @@ type PickByType<T, Value> = {
 
 export class SocketFunction {
     public static register<
-        ClassType extends SocketExposedInterfaceClass,
+        ClassInstance extends object,
         Shape extends SocketExposedShape<SocketExposedInterface, CallContext>,
         CallContext extends CallContextType
     >(
         classGuid: string,
-        classType: ClassType,
+        instance: ClassInstance,
         shape: Shape
-    ): (
+    ):
+        (
             // Essentially just returns SocketRegistered
-            ExtractShape<ClassType["prototype"], Shape> extends SocketExposedInterface
-            ? SocketRegistered<ExtractShape<ClassType["prototype"], Shape>, CallContext>
+            ExtractShape<ClassInstance, Shape> extends SocketExposedInterface
+            ? SocketRegistered<ExtractShape<ClassInstance, Shape>, CallContext>
             : {
                 error: "invalid shape";
-            } & PickByType<ExtractShape<ClassType["prototype"], Shape>, string>
+            } & PickByType<ExtractShape<ClassInstance, Shape>, string>
         ) {
-        registerClass(classGuid, classType, shape as any as SocketExposedShape);
+
+        registerClass(classGuid, instance as SocketExposedInterface, shape as any as SocketExposedShape);
 
         let nodeProxy = getCallProxy(classGuid, async (nodeId, functionName, args) => {
             let callFactory = getCallFactoryNodeId(nodeId);
@@ -67,6 +74,7 @@ export class SocketFunction {
         let output: SocketRegistered = {
             context: curSocketContext,
             nodes: nodeProxy,
+            _classGuid: classGuid,
         };
 
         return output as any;
@@ -76,12 +84,32 @@ export class SocketFunction {
      *      so the class type's module construction runs, which should trigger register. Otherwise you would have
      *      to add additional imports to ensure the register call runs.
      */
-    public static expose(classType: SocketExposedInterfaceClass) {
-        exposeClass(classType);
+    public static expose(socketRegistered: SocketRegistered) {
+        exposeClass(socketRegistered);
     }
 
     public static async mount(config: SocketServerConfig) {
         await startSocketServer(config);
+    }
+
+    public static async getOwnNodeId() {
+        return await getOwnNodeId();
+    }
+
+    /** Sets the default call when an http request is made, but no classGuid is set. */
+    public static setDefaultHTTPCall<
+        Registered extends SocketRegistered,
+        FunctionName extends keyof Registered["nodes"][""] & string,
+        >(
+            registered: Registered,
+            functionName: FunctionName,
+            ...args: Args<Registered["nodes"][""][FunctionName]>
+        ) {
+        setDefaultHTTPCall({
+            classGuid: registered._classGuid,
+            functionName,
+            args,
+        });
     }
 
     public static async connect(location: NetworkLocation | { address: string; port: number }): Promise<string> {

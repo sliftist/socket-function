@@ -2,10 +2,10 @@ import { arrayEqual } from "./misc";
 import { AnyFunction, Args, canHaveChildren } from "./types";
 
 export function lazy<T>(factory: () => T): () => T {
-    let value: { value: T }|undefined = undefined;
+    let value: { value: T } | undefined = undefined;
 
     return () => {
-        if(!value) {
+        if (!value) {
             value = { value: factory() };
         }
         return value.value;

@@ -1,14 +1,13 @@
-import { CallContextType, CallerContext, CallType, ClientHookContext, HookContext, NetworkLocation, SocketExposedInterface, SocketExposedInterfaceClass, SocketExposedShape, SocketFunctionClientHook, SocketFunctionHook, SocketRegistered } from "./SocketFunctionTypes";
-import { _setSocketContext } from "./SocketFunction";
+import { CallContextType, CallerContext, CallType, ClientHookContext, HookContext, NetworkLocation, SocketExposedInterface, SocketExposedInterfaceClass, SocketExposedShape, SocketFunctionClientHook, SocketFunctionHook, SocketRegistered } from "../SocketFunctionTypes";
+import { _setSocketContext } from "../SocketFunction";
 
 let classes: {
     [classGuid: string]: {
-        classType: SocketExposedInterfaceClass;
         controller: SocketExposedInterface;
         shape: SocketExposedShape;
     }
 } = {};
-let exposedClasses = new Set<SocketExposedInterfaceClass>();
+let exposedClasses = new Set<string>();
 
 let globalHooks: SocketFunctionHook[] = [];
 let globalClientHooks: SocketFunctionClientHook[] = [];
@@ -26,7 +25,7 @@ export async function performLocalCall(
         throw new Error(`Class ${call.classGuid} not found`);
     }
 
-    if (!exposedClasses.has(classDef.classType)) {
+    if (!exposedClasses.has(call.classGuid)) {
         throw new Error(`Class ${call.classGuid} not exposed`);
     }
 
@@ -55,20 +54,19 @@ export async function performLocalCall(
     return await result;
 }
 
-export function registerClass(classGuid: string, exposedClass: SocketExposedInterfaceClass, shape: SocketExposedShape) {
+export function registerClass(classGuid: string, controller: SocketExposedInterface, shape: SocketExposedShape) {
     if (classes[classGuid]) {
         throw new Error(`Class ${classGuid} already registered`);
     }
 
     classes[classGuid] = {
-        classType: exposedClass,
-        controller: new exposedClass() as SocketExposedInterface,
+        controller,
         shape,
     };
 }
 
-export function exposeClass(exposedClass: SocketExposedInterfaceClass) {
-    exposedClasses.add(exposedClass);
+export function exposeClass(exposedClass: SocketRegistered) {
+    exposedClasses.add(exposedClass._classGuid);
 }
 
 export function registerGlobalHook(hook: SocketFunctionHook) {

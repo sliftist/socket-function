@@ -1,5 +1,5 @@
-import { callFactoryFromLocation, CallFactory } from "./CallInstance";
-import { NetworkLocation } from "./SocketFunctionTypes";
+import { callFactoryFromLocation, CallFactory } from "./CallFactory";
+import { NetworkLocation } from "../SocketFunctionTypes";
 import { MaybePromise } from "./types";
 
 // TODO: Add CallInstanceFactory.isClosed, so nodeCache can clean up old entries.
@@ -74,6 +74,6 @@ export function getCreateCallFactoryLocation(location: NetworkLocation): MaybePr
 
 
 // TODO: Give a special error if the nodeId has been seen, but is only one-way (from HTTP requests).
-export function getCallFactoryNodeId(nodeId: string): CallFactory|undefined {
+export function getCallFactoryNodeId(nodeId: string): CallFactory | undefined {
     return nodeCache.get(nodeId)?.callFactory;
 }
