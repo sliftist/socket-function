@@ -2,7 +2,7 @@
 // debugbreak(1);
 // debugger;
 
-import { RequireControllerFactory } from "../require/RequireController";
+import { RequireController } from "../require/RequireController";
 import { SocketFunction } from "../SocketFunction";
 import { getArgs } from "../src/args";
 import { Test } from "./shared";
@@ -23,7 +23,7 @@ void main();
 async function main() {
     SocketFunction.expose(Test);
 
-    let RequireController = RequireControllerFactory(path.dirname(__dirname));
+    RequireController._classGuid;
     SocketFunction.expose(RequireController);
 
     SocketFunction.setDefaultHTTPCall(RequireController, "requireHTML", "./test/client");

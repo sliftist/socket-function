@@ -1,7 +1,7 @@
 import { SocketExposedInterface, CallContextType, SocketFunctionHook, SocketFunctionClientHook, SocketExposedShape, SocketRegistered, NetworkLocation, CallerContext, SocketExposedInterfaceClass, CallType } from "./SocketFunctionTypes";
 import { exposeClass, registerClass, registerGlobalClientHook, registerGlobalHook, runClientHooks } from "./src/callManager";
-import { SocketServerConfig, startSocketServer } from "./src/socketServer";
-import { getCallFactoryNodeId, getCreateCallFactoryLocation } from "./src/nodeCache";
+import { SocketServerConfig, startSocketServer } from "./src/webSocketServer";
+import { getCallFactoryNodeId, getCreateCallFactoryLocation, getNetworkLocationHash } from "./src/nodeCache";
 import { getCallProxy } from "./src/nodeProxy";
 import { Args } from "./src/types";
 import { setDefaultHTTPCall } from "./src/callHTTPHandler";
@@ -25,6 +25,12 @@ type PickByType<T, Value> = {
 };
 
 export class SocketFunction {
+    public static logMessages = false;
+    public static compression: undefined | {
+        type: "gzip";
+    };
+    public static httpETagCache = false;
+
     public static register<
         ClassInstance extends object,
         Shape extends SocketExposedShape<SocketExposedInterface, CallContext>,
@@ -46,29 +52,40 @@ export class SocketFunction {
         registerClass(classGuid, instance as SocketExposedInterface, shape as any as SocketExposedShape);
 
         let nodeProxy = getCallProxy(classGuid, async (nodeId, functionName, args) => {
-            let callFactory = getCallFactoryNodeId(nodeId);
-            if (!callFactory) {
-                throw new Error(`Cannot reach node ${nodeId}. Either it was established via an HTTP call, or was incorrect provided to us via another node, which should have provided us a NetworkLocation instead.`);
+            let time = Date.now();
+            if (SocketFunction.logMessages) {
+                console.log(`START\t\t\t${classGuid}.${functionName}`);
             }
+            try {
+                let callFactory = await getCallFactoryNodeId(nodeId);
+                if (!callFactory) {
+                    throw new Error(`Cannot reach node ${nodeId}. It might have been incorrect provided to us via another node, which should have provided us a NetworkLocation instead.`);
+                }
 
-            let shapeObj = shape[functionName];
-            if (!shapeObj) {
-                throw new Error(`Function ${functionName} is not in shape`);
+                let shapeObj = shape[functionName];
+                if (!shapeObj) {
+                    throw new Error(`Function ${functionName} is not in shape`);
+                }
+
+                let call: CallType = {
+                    classGuid,
+                    args,
+                    functionName,
+                };
+
+                let hookResult = await runClientHooks(call, shapeObj as SocketExposedShape[""]);
+
+                if ("overrideResult" in hookResult) {
+                    return hookResult.overrideResult;
+                }
+
+                return await callFactory.performCall(call);
+            } finally {
+                time = Date.now() - time;
+                if (SocketFunction.logMessages) {
+                    console.log(`TIME\t${time}ms\t${classGuid}.${functionName}`);
+                }
             }
-
-            let call: CallType = {
-                classGuid,
-                args,
-                functionName,
-            };
-
-            let hookResult = await runClientHooks(call, shapeObj as SocketExposedShape[""]);
-
-            if ("overrideResult" in hookResult) {
-                return hookResult.overrideResult;
-            }
-
-            return await callFactory.performCall(call);
         });
 
         let output: SocketRegistered = {
@@ -113,16 +130,28 @@ export class SocketFunction {
     }
 
     public static async connect(location: NetworkLocation | { address: string; port: number }): Promise<string> {
-        if (!("localPort" in location)) {
+        if (!("listeningPorts" in location)) {
             location = {
                 address: location.address,
-                listeningPorts: [location.port],
-                localPort: 0,
+                listeningPorts: [location.port]
             };
         }
         return await getCreateCallFactoryLocation(location);
     }
 
+    public static connectSync(location: NetworkLocation | { address: string; port: number }): string {
+        if (!("listeningPorts" in location)) {
+            location = {
+                address: location.address,
+                listeningPorts: [location.port]
+            };
+        }
+        let tempNodeId = "syncTempNodeId_" + getNetworkLocationHash(location);
+
+        void getCreateCallFactoryLocation(location, tempNodeId);
+
+        return tempNodeId;
+    }
 
     public static addGlobalHook<CallContext extends CallContextType>(hook: SocketFunctionHook<SocketExposedInterface, CallContext>) {
         registerGlobalHook(hook as SocketFunctionHook);

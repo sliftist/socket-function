@@ -67,7 +67,7 @@ export const getNodeId = cacheWeak(function (webSocket: SenderInterface | ws.Web
         if (webSocket.nodeId) {
             return webSocket.nodeId;
         }
-        throw new Error(`Peer certificate must use an RSA key or EC key (which should have a .pubkey property)`);
+        throw new Error(`Missing nodeId. If it is from the browser, this likely means your websocket and HTTP request are using different domains (so the cookies are lost). If it is from NodeJs peer certificate must use an RSA key or EC key (which should have a .pubkey property)`);
     }
     return nodeId;
 });

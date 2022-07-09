@@ -440,10 +440,9 @@
         let url = new URL(endpoint);
 
         let json = JSON.stringify(values);
-        if (json.length < 6000 && false) {
+        if (json.length < 6000) {
             // NOTE: Try to use a GET, as GETs can be cached! However, if the data is too large,
             //  we have to use a post, or else the request url will be too large
-            let parameters = [];
             for (let key in values) {
                 url.searchParams.set(key, JSON.stringify(values[key]));
             }

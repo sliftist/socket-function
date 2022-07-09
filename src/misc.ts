@@ -23,6 +23,38 @@ export function isNode() {
     return typeof document === "undefined";
 }
 
+export function isNodeTrue() {
+    return isNode() as true;
+}
+
+export function formatNumberSuffixed(count: number): string {
+    if (typeof count !== "number") return "0";
+    if (count < 0) {
+        return "-" + formatNumberSuffixed(-count);
+    }
+
+    let absValue = Math.abs(count);
+
+    const extraFactor = 10;
+    let divisor = 1;
+    let suffix = "";
+    if (absValue < 1000 * extraFactor) {
+
+    } else if (absValue < 1000 * 1000 * extraFactor) {
+        suffix = "K";
+        divisor = 1000;
+    } else if (absValue < 1000 * 1000 * 1000 * extraFactor) {
+        suffix = "M";
+        divisor = 1000 * 1000;
+    } else {
+        suffix = "B";
+        divisor = 1000 * 1000 * 1000;
+    }
+    count /= divisor;
+    absValue /= divisor;
+
+    return Math.round(count).toString() + suffix;
+}
 
 if (isNode()) {
     // TODO: Find a better place for this...

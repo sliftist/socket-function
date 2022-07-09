@@ -2,13 +2,16 @@ import https from "https";
 import http from "http";
 import net from "net";
 import tls from "tls";
-import { CallerContext, CallType } from "../SocketFunctionTypes";
+import { CallerContext, CallType, NetworkLocation } from "../SocketFunctionTypes";
 import { performLocalCall } from "./callManager";
 import { getNodeIdRaw } from "./nodeAuthentication";
 import debugbreak from "debugbreak";
 import * as cookie from "cookie";
+import { SocketFunction } from "../SocketFunction";
+import { gzip } from "zlib";
+import { formatNumberSuffixed, sha256Hash } from "./misc";
 
-const nodeIdCookie = "node-id3";
+const nodeIdCookie = "node-id4";
 
 let defaultHTTPCall: CallType | undefined;
 
@@ -16,9 +19,30 @@ export function setDefaultHTTPCall(call: CallType) {
     defaultHTTPCall = call;
 }
 
+const cookieNodeIdPrefix = "COOKIE_nodeId_";
 export function getNodeIdFromRequest(request: http.IncomingMessage): string | undefined {
     let cookies = cookie.parse(request.headers.cookie ?? "");
-    return cookies[nodeIdCookie];
+    let value = cookies[nodeIdCookie];
+    if (!value) return value;
+    if (!value.startsWith(cookieNodeIdPrefix)) return undefined;
+    return value;
+}
+export function getServerLocationFromRequest(request: http.IncomingMessage): NetworkLocation {
+    let host = request.headers.host;
+    if (!host) {
+        throw new Error(`Missing host in request headers`);
+    }
+    let port = 443;
+    if (host.includes(":")) {
+        port = +host.split(":")[1];
+        host = host.split(":")[0];
+    }
+    return {
+        address: host,
+        // This is OUR location, so whatever they connected to us... we must be listening on!
+        //  (and the localPort doesn't matter in this case)
+        listeningPorts: [port],
+    };
 }
 
 export async function httpCallHandler(request: http.IncomingMessage, response: http.ServerResponse) {
@@ -61,13 +85,13 @@ export async function httpCallHandler(request: http.IncomingMessage, response: h
 
         let nodeId = getNodeIdRaw(socket);
         if (!nodeId) {
-            let headerNodeId = cookie.parse(request.headers.cookie || "")[nodeIdCookie];
-            if (typeof headerNodeId === "string") {
-                nodeId = headerNodeId;
+            let cookieNodeId = getNodeIdFromRequest(request);
+            if (typeof cookieNodeId === "string") {
+                nodeId = cookieNodeId;
             }
         }
         if (!nodeId) {
-            nodeId = "HTTP_nodeId_" + Date.now() + "_" + Math.random();
+            nodeId = cookieNodeIdPrefix + Date.now() + "_" + Math.random();
             response.setHeader("Set-Cookie", cookie.serialize(nodeIdCookie, nodeId, {
                 httpOnly: true,
                 path: "/",
@@ -81,11 +105,12 @@ export async function httpCallHandler(request: http.IncomingMessage, response: h
 
         let caller: CallerContext = {
             nodeId,
+            fromPort: port,
             location: {
                 address,
-                localPort: port,
                 listeningPorts: [],
-            }
+            },
+            serverLocation: getServerLocationFromRequest(request),
         };
 
         let classGuid = urlObj.searchParams.get("classGuid");
@@ -128,21 +153,54 @@ export async function httpCallHandler(request: http.IncomingMessage, response: h
             call
         });
 
+        let resultBuffer: Buffer;
         if (typeof result === "object" && result && result instanceof Buffer) {
-            let headers = (result as HTTPResultType)[resultHeaders];
-            if (headers) {
-                for (let headerName in headers) {
-                    response.setHeader(headerName, headers[headerName]);
-                }
-            }
-            response.write(result);
+            resultBuffer = result;
         } else {
-            response.write(JSON.stringify(result));
+            resultBuffer = Buffer.from(JSON.stringify(result));
         }
-        response.end();
+
+        let headers = (resultBuffer as HTTPResultType)[resultHeaders];
+        if (SocketFunction.compression?.type === "gzip" && !headers?.["Content-Encoding"]) {
+            if (request.headers["accept-encoding"]?.includes("gzip")) {
+                resultBuffer = await new Promise<Buffer>((resolve, reject) =>
+                    gzip(resultBuffer, (err, result) => err ? reject(err) : resolve(result))
+                );
+                response.setHeader("Content-Encoding", "gzip");
+            }
+        }
+
+
+        // NOTE: Our ETag caching is only to reduce data sent on the wire, we evaluate the calls
+        //  every time (so it is strictly a wire cache, not computation cache)
+        response.setHeader("cache-control", "private, s-maxage=0, max-age=0, must-revalidate");
+        if (SocketFunction.httpETagCache) {
+            let hash = sha256Hash(resultBuffer);
+            response.setHeader("ETag", hash);
+            if (request.headers["if-none-match"] === hash) {
+                response.writeHead(304);
+                console.log(`CACHED HTTP response  ${formatNumberSuffixed(resultBuffer.length)}B  (${request.method}) ${url}`);
+                return;
+            }
+        }
+
+        if (headers) {
+            for (let headerName in headers) {
+                response.setHeader(headerName, headers[headerName]);
+            }
+            let status = headers["status"];
+            if (status) {
+                response.writeHead(+status);
+                return;
+            }
+        }
+        response.write(resultBuffer);
+        console.log(`HTTP response  ${formatNumberSuffixed(resultBuffer.length)}B  (${request.method}) ${url}`);
+
     } catch (e: any) {
-        console.error(`Request error`, e.stack);
+        console.log(`HTTP error  (${request.method}) ${e.stack}`);
         response.writeHead(500, String(e.message));
+    } finally {
         response.end();
     }
 }

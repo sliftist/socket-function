@@ -10,7 +10,7 @@ import { registerNodeClient } from "./nodeCache";
 import { getCertKeyPair, getNodeId, getNodeIdRaw } from "./nodeAuthentication";
 import debugbreak from "debugbreak";
 import { cache } from "./caching";
-import { getNodeIdFromRequest, httpCallHandler } from "./callHTTPHandler";
+import { getNodeIdFromRequest, getServerLocationFromRequest, httpCallHandler } from "./callHTTPHandler";
 
 // TODO: Support conditional peer certificate requests, as it the certificate prompt
 //  seems suspicious in the browser (the user can just click cancel though).
@@ -59,7 +59,7 @@ export async function startSocketServer(
             let requestNodeId = getNodeIdFromRequest(request);
             Object.assign(ws, { nodeId: requestNodeId });
 
-            let clientCallFactory = await callFactoryFromWS(ws);
+            let clientCallFactory = await callFactoryFromWS(ws, getServerLocationFromRequest(request));
             registerNodeClient(clientCallFactory);
         });
     });

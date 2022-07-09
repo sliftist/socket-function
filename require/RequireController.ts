@@ -2,6 +2,7 @@ import debugbreak from "debugbreak";
 import fs from "fs";
 import { SocketFunction } from "../SocketFunction";
 import { setHTTPResultHeaders } from "../src/callHTTPHandler";
+import { isNodeTrue } from "../src/misc";
 
 module.allowclient = true;
 
@@ -54,18 +55,18 @@ let nextModuleSeqNum = 1;
 
 const requireSeqNumProcessId = "requireSeqNumProcessId_" + Date.now() + "_" + Math.random();
 
-const htmlFile = fs.readFileSync(__dirname + "/require.html").toString();
-const jsFile = fs.readFileSync(__dirname + "/require.js").toString();
-const bufferShim = fs.readFileSync(__dirname + "/buffer.js").toString();
+const htmlFile = isNodeTrue() && fs.readFileSync(__dirname + "/require.html").toString();
+const jsFile = isNodeTrue() && fs.readFileSync(__dirname + "/require.js").toString();
+const bufferShim = isNodeTrue() && fs.readFileSync(__dirname + "/buffer.js").toString();
 
-const resolvedHTMLFile = (
+const resolvedHTMLFile = isNodeTrue() && (
     htmlFile
         .replace(`<script src="./buffer.js"></script>`, `<script>${bufferShim}</script>`)
         .replace(`<script src="./require.js"></script>`, `<script>${jsFile}</script>`)
 );
 
 class RequireControllerBase {
-    constructor(private rootResolvePath: string) { }
+    public rootResolvePath = "";
 
     public async requireHTML(bootRequirePath?: string) {
         let result = resolvedHTMLFile;
@@ -144,7 +145,6 @@ class RequireControllerBase {
             let moduleObj = modules[module.filename];
             if (moduleObj.allowclient) {
                 moduleObj.source = module.moduleContents;
-                // TODO: Check timestamps on .json file and get most recent value
                 if (module.filename.endsWith(".json") && !moduleObj.source) {
                     moduleObj.source = module.moduleContents = fs.readFileSync(module.filename).toString();
                 }
@@ -229,15 +229,18 @@ class RequireControllerBase {
     }
 }
 
-export function RequireControllerFactory(rootResolvePath: string) {
-    return SocketFunction.register(
-        "RequireController-e2f811f3-14b8-4759-b0d6-73f14516cf1d",
-        new RequireControllerBase(rootResolvePath),
-        {
-            getModules: {},
-            requireHTML: {},
-            bufferJS: {},
-            requireJS: {},
-        }
-    );
+let baseController = new RequireControllerBase();
+export function setRequireBootRequire(path: string) {
+    baseController.rootResolvePath = path;
 }
+
+export const RequireController = SocketFunction.register(
+    "RequireController-e2f811f3-14b8-4759-b0d6-73f14516cf1d",
+    baseController,
+    {
+        getModules: {},
+        requireHTML: {},
+        bufferJS: {},
+        requireJS: {},
+    }
+);

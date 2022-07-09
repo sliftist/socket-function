@@ -1,10 +1,6 @@
 import { lazy } from "./caching";
 import { SocketExposedInterface } from "../SocketFunctionTypes";
 
-//todonext
-//  We need some sort of cache, but... maybe not here?
-//  Proxy => callback?
-
 type CallProxyType = {
     [controllerName: string]: SocketExposedInterface;
 };

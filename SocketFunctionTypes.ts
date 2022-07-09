@@ -65,17 +65,16 @@ export type CallerContext = {
     //  them call functions directly using nodeId. Instead pass location, and have them use connect.
     //  - nodeId SHOULD be used to identify users though, as it cannot be impersonated
     nodeId: string;
+    fromPort: number;
     location: NetworkLocation;
+    // The location of the server. It helps if it is told, due to the fact that one server
+    //  can serve multiple domains.
+    serverLocation: NetworkLocation;
 };
 
 // IMPORTANT! Nodes at the same network location may vary, so you cannot store NetworkLocation
 //  in a list of allowed users, otherwise they can be impersonated!
 export interface NetworkLocation {
     address: string;
-    /** localPort is the port the connection was made from, which is often uninteresting.
-     *      It is useful internally, to help reduce collisions when a process restarts and
-     *      reconnects (as it may have the same source address, but the localPort will likely change).
-     */
-    localPort: number;
     listeningPorts: number[];
 }

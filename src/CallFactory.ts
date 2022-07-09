@@ -1,17 +1,20 @@
 import { CallerContext, CallType, NetworkLocation } from "../SocketFunctionTypes";
-import type * as ws from "ws";
+import * as ws from "ws";
 import type * as net from "net";
 import { performLocalCall } from "./callManager";
-import { convertErrorStackToError, isNode } from "./misc";
+import { convertErrorStackToError, formatNumberSuffixed, isNode } from "./misc";
 import { createWebsocket, getNodeId, getTLSSocket } from "./nodeAuthentication";
 import debugbreak from "debugbreak";
 import http from "http";
+import { SocketFunction } from "../SocketFunction";
+import { gzip } from "zlib";
 
 const retryInterval = 2000;
 
 type InternalCallType = CallType & {
     seqNum: number;
     isReturn: false;
+    compress: boolean;
 }
 
 type InternalReturnType = {
@@ -19,6 +22,8 @@ type InternalReturnType = {
     result: unknown;
     error?: string;
     seqNum: number;
+    resultSize: number;
+    compressed: boolean;
 };
 
 
@@ -34,20 +39,24 @@ export interface CallFactory {
 export async function callFactoryFromLocation(
     location: NetworkLocation
 ): Promise<CallFactory> {
-    if (location.localPort !== 0) {
-        throw new Error(`Expected localPort to be 0, but it was ${location.localPort}`);
-    }
-
     let listeningPort = location.listeningPorts[0];
     if (typeof listeningPort !== "number") {
         throw new Error(`Expected listeningPorts to be provided, but it was empty`);
     }
 
-    return await createCallFactory(undefined, location);
+    // Because we are the client, we don't get to know our NetworkLocation (but we shouldn't
+    //  need to anyway).
+    let serverLocation: NetworkLocation = {
+        address: "localhost",
+        listeningPorts: [],
+    };
+
+    return await createCallFactory(undefined, location, serverLocation);
 }
 
 export async function callFactoryFromWS(
     webSocket: ws.WebSocket & { nodeId?: string },
+    serverLocation: NetworkLocation,
 ): Promise<CallFactory> {
     let socket = getTLSSocket(webSocket);
     let remoteAddress = socket.remoteAddress;
@@ -63,17 +72,16 @@ export async function callFactoryFromWS(
     //  their process is dead, and is going to stay dead.
     let location: NetworkLocation = {
         address: remoteAddress,
-        localPort: remotePort,
         listeningPorts: [],
     };
 
-    return await createCallFactory(webSocket, location);
+    return await createCallFactory(webSocket, location, serverLocation);
 }
 
 export interface SenderInterface {
     nodeId?: string;
 
-    send(data: string): void;
+    send(data: string | Buffer): void;
 
     on(event: "open", listener: () => void): this;
     on(event: "close", listener: (code: number, reason: Buffer) => void): this;
@@ -84,11 +92,20 @@ export interface SenderInterface {
 async function createCallFactory(
     webSocketBase: SenderInterface | undefined,
     location: NetworkLocation,
+    serverLocation: NetworkLocation,
 ): Promise<CallFactory> {
 
     let closedForever = false;
 
-    let niceConnectionName = `${location.address}:${location.localPort}`;
+    let fromPort = 0;
+    if (webSocketBase && webSocketBase instanceof ws.WebSocket) {
+        let socket = getTLSSocket(webSocketBase);
+        fromPort = socket.remotePort ?? fromPort;
+    }
+    let niceConnectionName = `${location.address}:${location.listeningPorts.join("|")}`;
+    if (fromPort && location.listeningPorts.length === 0) {
+        niceConnectionName += `(${fromPort})`;
+    }
 
     let retriesEnabled = location.listeningPorts.length === 0;
 
@@ -99,10 +116,10 @@ async function createCallFactory(
 
 
     let pendingCalls: Map<number, {
-        data: string;
+        data: Buffer;
         call: InternalCallType;
         reconnectTimeout: number | undefined;
-        callback: (result: InternalReturnType) => void;
+        callback: (resultJSON: InternalReturnType) => void;
     }> = new Map();
     // NOTE: It is important to make this as random as possible, to prevent
     //  reconnections dues to a process being reset causing seqNum collisions
@@ -110,7 +127,7 @@ async function createCallFactory(
     let nextSeqNum = Math.random();
 
     const pendingNodeId = "PENDING";
-    let callerContext: CallerContext = { location, nodeId: pendingNodeId };
+    let callerContext: CallerContext = { location, nodeId: pendingNodeId, serverLocation, fromPort };
     let webSocket!: SenderInterface;
     if (!webSocketBase) {
         await tryToReconnect();
@@ -126,7 +143,7 @@ async function createCallFactory(
 
     niceConnectionName = `${niceConnectionName} (${callerContext.nodeId})`;
 
-    async function sendWithRetry(reconnectTimeout: number | undefined, data: string) {
+    async function sendWithRetry(reconnectTimeout: number | undefined, data: Buffer) {
         if (!retriesEnabled) {
             webSocket.send(data);
             return;
@@ -176,8 +193,10 @@ async function createCallFactory(
                         call.callback({
                             isReturn: true,
                             result: undefined,
-                            error: `Connection lost to ${location.address}:${location.localPort}`,
+                            error: `Connection lost to ${niceConnectionName}`,
                             seqNum: call.call.seqNum,
+                            resultSize: 0,
+                            compressed: false,
                         });
                     }
                     return;
@@ -231,6 +250,8 @@ async function createCallFactory(
                                 result: undefined,
                                 error: String(e),
                                 seqNum: call.call.seqNum,
+                                resultSize: 0,
+                                compressed: false,
                             });
                         });
                     }
@@ -266,8 +287,28 @@ async function createCallFactory(
                 if (typeof message === "object" && "data" in message) {
                     message = message.data;
                 }
+                if (message instanceof Blob) {
+                    message = Buffer.from(await message.arrayBuffer());
+                }
             }
             if (message instanceof Buffer || typeof message === "string") {
+
+                let resultSize = message.length;
+
+                if (message instanceof Buffer && message[0] === 0) {
+                    // First byte of 0 means it is decompressed (as JSON can't have a first byte of 0).
+                    (message as any) = message.slice(1);
+
+                    // TODO: Add typings for DecompressionStream
+                    let DecompressionStream = (window as any).DecompressionStream;
+                    // https://stackoverflow.com/a/68829631/1117119
+                    let stream = new DecompressionStream("gzip");
+                    let blob = new Blob([message]);
+                    let decompressedStream = (await (blob.stream() as any).pipeThrough(stream));
+                    let arrayBuffer = await new Response(decompressedStream).arrayBuffer();
+                    (message as any) = Buffer.from(arrayBuffer);
+                }
+
                 let call = JSON.parse(message.toString()) as InternalCallType | InternalReturnType;
                 if (call.isReturn) {
                     let callbackObj = pendingCalls.get(call.seqNum);
@@ -275,6 +316,7 @@ async function createCallFactory(
                         console.log(`Got return for unknown call ${call.seqNum}`);
                         return;
                     }
+                    call.resultSize = resultSize;
                     callbackObj.callback(call);
                 } else {
                     if (call.seqNum <= lastReceivedSeqNum) {
@@ -290,6 +332,8 @@ async function createCallFactory(
                             isReturn: true,
                             result,
                             seqNum: call.seqNum,
+                            resultSize: resultSize,
+                            compressed: false,
                         };
                     } catch (e: any) {
                         response = {
@@ -297,10 +341,23 @@ async function createCallFactory(
                             result: undefined,
                             seqNum: call.seqNum,
                             error: e.stack,
+                            resultSize: resultSize,
+                            compressed: false,
                         };
                     }
 
-                    await sendWithRetry(call.reconnectTimeout, JSON.stringify(response));
+                    let result: Buffer;
+                    if (isNode() && call.compress && SocketFunction.compression?.type === "gzip") {
+                        response.compressed = true;
+                        result = Buffer.from(JSON.stringify(response));
+                        result = await new Promise<Buffer>((resolve, reject) =>
+                            gzip(result, (err, result) => err ? reject(err) : resolve(result))
+                        );
+                        result = Buffer.concat([new Uint8Array([0]), result]);
+                    } else {
+                        result = Buffer.from(JSON.stringify(response));
+                    }
+                    await sendWithRetry(call.reconnectTimeout, result);
                 }
                 return;
             }
@@ -317,7 +374,7 @@ async function createCallFactory(
         location,
         async performCall(call: CallType) {
             if (closedForever) {
-                throw new Error(`Connection lost to ${location.address}:${location.localPort}`);
+                throw new Error(`Connection lost to ${niceConnectionName}`);
             }
 
             let seqNum = nextSeqNum++;
@@ -327,10 +384,14 @@ async function createCallFactory(
                 classGuid: call.classGuid,
                 functionName: call.functionName,
                 seqNum,
+                compress: !!SocketFunction.compression,
             };
-            let data = JSON.stringify(fullCall);
+            let data = Buffer.from(JSON.stringify(fullCall));
             let resultPromise = new Promise((resolve, reject) => {
                 let callback = (result: InternalReturnType) => {
+                    if (SocketFunction.logMessages) {
+                        console.log(`SIZE\t${(formatNumberSuffixed(result.resultSize) + "B").padEnd(4, " ")}\t${call.classGuid}.${call.functionName}`);
+                    }
                     pendingCalls.delete(seqNum);
                     if (result.error) {
                         reject(convertErrorStackToError(result.error));

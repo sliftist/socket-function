@@ -954,10 +954,10 @@ type-fest@^0.20.2:
   resolved "https://registry.yarnpkg.com/type-fest/-/type-fest-0.20.2.tgz#1bf207f4b28f91583666cb5fbd327887301cd5f4"
   integrity sha512-Ne+eE4r0/iWnpAxD852z3A+N0Bt5RN//NjJwRd2VFHEmrywxf5vsZlh4R6lixl6B+wz/8d+maTSAkN1FIkI3LQ==
 
-typenode@^0.4.2:
-  version "0.4.2"
-  resolved "https://registry.yarnpkg.com/typenode/-/typenode-0.4.2.tgz#451b1d9de886be5d38e9050dcf12770674e848c7"
-  integrity sha512-Mulf2Kisb3Qi3n5hmGGvKlHfc+UmbEqzaCmwcC3uESIdyfMJ2MRVhPV07OlYCgMZWynVQ+UqRkk0sdBlYfI3Rg==
+typenode@^0.5.0:
+  version "0.5.0"
+  resolved "https://registry.yarnpkg.com/typenode/-/typenode-0.5.0.tgz#a0638788b8d277e1d6b5d8fae6d0f7a6b5c72de7"
+  integrity sha512-zM2bTbOxmwaGQbpYAMStC1dVU5uSrM4gqR4QhkTybfrAWEu8Qts7JqAhuAp5tYonla4SSlIBEDOXqkaOneZyHQ==
   dependencies:
     "@swc/core" "^1.2.207"
     "@types/node" "^18.0.0"

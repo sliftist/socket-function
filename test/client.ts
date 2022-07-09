@@ -7,6 +7,7 @@ import { setFlag } from "../require/compileFlags";
 import { SocketFunction } from "../SocketFunction";
 import { Test } from "./shared";
 
+import "../require/CSSShim";
 import "./client.css";
 import { isNode } from "../src/misc";
 
@@ -28,7 +29,7 @@ async function main() {
 
     const port = 2542;
 
-    let serverId = await SocketFunction.connect({ port, address: "letx.ca" });
+    let serverId = await SocketFunction.connect({ port, address: "localhost" });
     let test = await Test.nodes[serverId].add(1, 2);
     console.log(`${test}=${1 + 2}`);
 

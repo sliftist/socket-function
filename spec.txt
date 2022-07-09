@@ -3,8 +3,10 @@ spec.txt
 - Add a flag for rejectUnauthorized, that is off by default
 - Add the ability to specify the certs yourself (so you can specify your identity with a real cert)
     - Then use real certificates on the server
-
-
+- Fix multiple clients on the same machines
+    - Maybe we need to exchange link information
+- The login emails SHOULD redirect, if the close doesn't works
+    (due to copying the link instead of clicking it)
 
 - Other stuff
     - JSON buffer serialize, which generates an object, that allows for rehydration of buffers
@@ -13,6 +15,15 @@ spec.txt
         certs very easy.
         - ALTHOUGH, maybe this should just be a downstream user of socket-function thing, and not
             a requirement of socket-function?
+            - This will be something where machines ask a server for an identity, and then the owner
+                allows it (giving them a subdomain), verifying their ip, etc.
+                - MAYBE we just automatically allow it? This works if we never use the root domain for anything,
+                    and only use subdomains?
+                    - Although, of course, sometimes we WILL want to group by domain, so it is more than just
+                        identity, so having a way for the owner to authenticate it might be nice as well...
+                - Once they are given an identity, they are allowed to request their certs are updated,
+                    and to get the new certs (it probably won't happen automatically, so that we can create
+                    many nodes and let them die, without having to try to track which still need certs to be updated)
         - ALSO, remember, for domains, use the domain as the nodeId, not the public key, that way it
             is more consistent.
 

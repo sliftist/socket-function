@@ -14,12 +14,12 @@ import { MaybePromise } from "./types";
 
 // nodeId => 
 const nodeCache = new Map<string, {
-    callFactory: CallFactory;
+    callFactory: MaybePromise<CallFactory>;
 }>();
 const locationLookup = new Map<string, MaybePromise<string>>();
 
-function getNetworkLocationHash(location: NetworkLocation): string {
-    return location.address + ":" + location.localPort + "=" + location.listeningPorts.join("|");
+export function getNetworkLocationHash(location: NetworkLocation): string {
+    return location.address + ":" + location.listeningPorts.join("|");
 }
 
 // NOTE: For client connections, at which point we have the nodeId, location and callFactory.
@@ -37,9 +37,12 @@ export function registerNodeClient(callFactory: CallFactory) {
     // Never go from listening ports to no listening ports. Worst case the listening ports are old
     //  and won't work, in which case... we won't be able to reconnect, which basically what
     //  we would do if there were no listening ports.
-    let prevListeningPorts = nodeCache.get(nodeId)?.callFactory.location.listeningPorts;
-    if (prevListeningPorts && !callFactory.location.listeningPorts.length) {
-        callFactory.location.listeningPorts = prevListeningPorts;
+    let prevFactory = nodeCache.get(nodeId)?.callFactory;
+    if (prevFactory && !(prevFactory instanceof Promise)) {
+        let prevListeningPorts = prevFactory.location.listeningPorts;
+        if (prevListeningPorts && !callFactory.location.listeningPorts.length) {
+            callFactory.location.listeningPorts = prevListeningPorts;
+        }
     }
     // TODO: Maybe even preserve the address in some cases, such as if it was a domain, and is now an ip?
     nodeCache.set(nodeId, {
@@ -47,7 +50,7 @@ export function registerNodeClient(callFactory: CallFactory) {
     });
 }
 
-export function getCreateCallFactoryLocation(location: NetworkLocation): MaybePromise<string> {
+export function getCreateCallFactoryLocation(location: NetworkLocation, tempNodeId?: string): MaybePromise<string> {
     let locationHash = getNetworkLocationHash(location);
     let nodeId = locationLookup.get(locationHash);
     if (nodeId !== undefined) {
@@ -58,12 +61,22 @@ export function getCreateCallFactoryLocation(location: NetworkLocation): MaybePr
     let nodeIdPromise = callFactoryPromise.then(x => x.nodeId);
     locationLookup.set(locationHash, nodeIdPromise);
 
+    if (tempNodeId !== undefined) {
+        nodeCache.set(tempNodeId, {
+            callFactory: callFactoryPromise,
+        });
+    }
+
     return callFactoryPromise.then(callFactory => {
         let nodeId = callFactory.nodeId;
         // TODO: Maybe warn if we just clobbered a nodeId?
         let prevEntry = nodeCache.get(nodeId);
         if (prevEntry) {
-            console.warn(`Clobbering nodeId ${nodeId}, with a new location ${locationHash}, was ${getNetworkLocationHash(prevEntry.callFactory.location)}. (This might indiciate multiple locations with the same nodeId, which could cause an issue. If this happens repeatedly it will cause stability issues).`);
+            if (prevEntry.callFactory instanceof Promise) {
+                console.warn(`Clobbering nodeId ${nodeId}, with a new location ${locationHash}, which was still resolving. (This might indiciate multiple locations with the same nodeId, which could cause an issue. If this happens repeatedly it will cause stability issues).`);
+            } else {
+                console.warn(`Clobbering nodeId ${nodeId}, with a new location ${locationHash}, was ${getNetworkLocationHash(prevEntry.callFactory.location)}. (This might indiciate multiple locations with the same nodeId, which could cause an issue. If this happens repeatedly it will cause stability issues).`);
+            }
         }
         nodeCache.set(nodeId, {
             callFactory,
@@ -74,6 +87,6 @@ export function getCreateCallFactoryLocation(location: NetworkLocation): MaybePr
 
 
 // TODO: Give a special error if the nodeId has been seen, but is only one-way (from HTTP requests).
-export function getCallFactoryNodeId(nodeId: string): CallFactory | undefined {
-    return nodeCache.get(nodeId)?.callFactory;
+export async function getCallFactoryNodeId(nodeId: string): Promise<CallFactory | undefined> {
+    return await nodeCache.get(nodeId)?.callFactory;
 }
