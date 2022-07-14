@@ -90,14 +90,7 @@ export function createWebsocket(address: string, port: number): SenderInterface 
         // NOTE: We assume an HTTP request has already been made, which will setup a nodeId cookie
         //  (And as this point we can't even use peer certificates if we wanted to, as this must be done
         //      directly in the browser)
-        let webSocket = new WebSocket(`wss://${address}:${port}`);
-        return Object.assign(webSocket, {
-            on(event: string, callback: any) {
-                // TODO: Use better type safety here
-                (webSocket as any)["on" + event] = callback;
-                return this as any;
-            },
-        });
+        return new WebSocket(`wss://${address}:${port}`);
     } else {
         let { key, cert } = getCertKeyPair();
         return new ws.WebSocket(`wss://${address}:${port}`, {

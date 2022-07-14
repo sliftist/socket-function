@@ -83,10 +83,10 @@ export interface SenderInterface {
 
     send(data: string | Buffer): void;
 
-    on(event: "open", listener: () => void): this;
-    on(event: "close", listener: (code: number, reason: Buffer) => void): this;
-    on(event: "error", listener: (err: Error) => void): this;
-    on(event: "message", listener: (data: ws.RawData, isBinary: boolean) => void): this;
+    addEventListener(event: "open", listener: () => void): void;
+    addEventListener(event: "close", listener: () => void): void;
+    addEventListener(event: "error", listener: (err: { message: string }) => void): void;
+    addEventListener(event: "message", listener: (data: ws.RawData | ws.MessageEvent | string) => void): void;
 }
 
 async function createCallFactory(
@@ -107,7 +107,7 @@ async function createCallFactory(
         niceConnectionName += `(${fromPort})`;
     }
 
-    let retriesEnabled = location.listeningPorts.length === 0;
+    let retriesEnabled = location.listeningPorts.length > 0;
 
     let lastReceivedSeqNum = 0;
 
@@ -205,19 +205,19 @@ async function createCallFactory(
                 let port = ports[reconnectAttempts % ports.length];
                 let newWebSocket = createWebsocket(location.address, port);
 
-                setupWebsocket(newWebSocket);
-
                 let connectError = await new Promise<string | undefined>(resolve => {
-                    newWebSocket.on("open", () => {
+                    newWebSocket.addEventListener("open", () => {
                         resolve(undefined);
                     });
-                    newWebSocket.on("close", () => {
+                    newWebSocket.addEventListener("close", () => {
                         resolve("Connection closed for non-error reason?");
                     });
-                    newWebSocket.on("error", e => {
-                        resolve(String(e.stack));
+                    newWebSocket.addEventListener("error", e => {
+                        resolve(String(e.message));
                     });
                 });
+
+                setupWebsocket(newWebSocket);
 
                 if (!connectError) {
                     console.log(`Reconnected to ${location.address}:${port}`);
@@ -266,27 +266,27 @@ async function createCallFactory(
     }
 
     function setupWebsocket(webSocket: SenderInterface) {
-        webSocket.on("error", e => {
+        webSocket.addEventListener("error", e => {
             console.log(`Websocket error for ${niceConnectionName}`, e);
         });
 
-        webSocket.on("close", async () => {
+        webSocket.addEventListener("close", async () => {
             console.log(`Websocket closed ${niceConnectionName}`);
             if (retriesEnabled) {
                 await tryToReconnect();
             }
         });
 
-        webSocket.on("message", onMessage);
+        webSocket.addEventListener("message", onMessage);
     }
 
 
-    async function onMessage(message: ws.RawData | MessageEvent | string) {
+    async function onMessage(message: ws.RawData | ws.MessageEvent | string) {
         try {
+            if (typeof message === "object" && "data" in message) {
+                message = message.data;
+            }
             if (!isNode()) {
-                if (typeof message === "object" && "data" in message) {
-                    message = message.data;
-                }
                 if (message instanceof Blob) {
                     message = Buffer.from(await message.arrayBuffer());
                 }
