@@ -73,20 +73,6 @@ export async function startSocketServer(
         res.end();
     });
 
-    httpServer.listen(0, "127.0.0.1");
-    httpsServer.listen(0, "127.0.0.1");
-
-    // TODO: We should really add error handling here, but... we should always be able to listen
-    //  on ANY port on localhost, as why couldn't we?
-    let httpServerReady = new Promise(resolve => httpServer.once("listening", resolve));
-    let httpsServerReady = new Promise(resolve => httpsServer.once("listening", resolve));
-    await httpServerReady;
-    await httpsServerReady;
-
-    let httpAddress = httpServer.address() as net.AddressInfo;
-    let httpsAddress = httpsServer.address() as net.AddressInfo;
-
-
     let realServer = net.createServer(socket => {
         // NOTE: ONCE is used, so we only look at the first buffer, and then after that
         //  we pipe. This should be very efficient, as pipe has insane throughput
@@ -94,21 +80,11 @@ export async function startSocketServer(
         socket.once("data", buffer => {
             // All HTTPS requests start with 22, and no HTTP requests start with 22,
             //  so we just need to read the first byte.
-            let byte = buffer[0];
-            let isHTTPS = byte === 22;
-            let address = httpAddress;
-            if (isHTTPS) {
-                address = httpsAddress;
-            }
-            let baseSocket = net.connect(address.port);
+            let server = buffer[0] === 22 ? httpsServer : httpServer;
 
-            baseSocket.write(buffer);
-            socket.pipe(baseSocket);
-            baseSocket.pipe(socket);
-
-            baseSocket.on("error", (e) => {
-                console.error(`Base socket error, ${e.stack}`);
-            });
+            // NOTE: Messages aren't dequeued until the current handler finishes, so we don't need to pause the socket or anything.
+            server.emit("connection", socket);
+            socket.unshift(buffer);
         });
         socket.on("error", (e) => {
             console.error(`Exposed socket error, ${e.stack}`);
