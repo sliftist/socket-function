@@ -52,15 +52,18 @@ export async function startSocketServer(
         noServer: true,
     });
     httpsServer.on("upgrade", (request, socket, upgradeHead) => {
-        try {
-            let host = new URL("ws://" + request.headers["host"]).hostname;
-            let origin = new URL(request.headers["origin"] ?? "").hostname;
-            console.log({ host, origin });
-            if (host !== origin) {
-                throw new Error(`Invalid cross thread request, ${JSON.stringify(host)} !== ${JSON.stringify(origin)}`);
+        let originHeader = request.headers["origin"];
+        if (originHeader) {
+            try {
+                let host = new URL("ws://" + request.headers["host"]).hostname;
+                let origin = new URL(originHeader).hostname;
+                if (host !== origin) {
+                    throw new Error(`Invalid cross thread request, ${JSON.stringify(host)} !== ${JSON.stringify(origin)}`);
+                }
+            } catch (e) {
+                console.error(e);
+                return;
             }
-        } catch (e) {
-            console.error(e);
         }
         webSocketServer.handleUpgrade(request, socket, upgradeHead, async (ws) => {
             // NOTE: For the browser, the request will likely have a nodeId, from making an HTTP request.
