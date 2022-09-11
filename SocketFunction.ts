@@ -30,6 +30,8 @@ export class SocketFunction {
         type: "gzip";
     };
     public static httpETagCache = false;
+    public static rejectUnauthorized = true;
+    public static additionalTrustedRootCAs: string[] = [];
 
     public static register<
         ClassInstance extends object,

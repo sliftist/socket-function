@@ -1,13 +1,14 @@
-import { CallerContext, CallType, NetworkLocation } from "../SocketFunctionTypes";
+import { CallerContext, CallType, NetworkLocation, setCertInfo } from "../SocketFunctionTypes";
 import * as ws from "ws";
 import type * as net from "net";
 import { performLocalCall } from "./callManager";
 import { convertErrorStackToError, formatNumberSuffixed, isNode } from "./misc";
-import { createWebsocket, getNodeId, getTLSSocket } from "./nodeAuthentication";
+import { createWebsocketFactory, getNodeId, getTLSSocket } from "./nodeAuthentication";
 import debugbreak from "debugbreak";
 import http from "http";
 import { SocketFunction } from "../SocketFunction";
 import { gzip } from "zlib";
+import * as tls from "tls";
 
 const retryInterval = 2000;
 
@@ -80,6 +81,8 @@ export async function callFactoryFromWS(
 
 export interface SenderInterface {
     nodeId?: string;
+    // Only set AFTER "open" (if set at all, as in the browser we don't have access to the socket).
+    socket?: tls.TLSSocket;
 
     send(data: string | Buffer): void;
 
@@ -107,6 +110,8 @@ async function createCallFactory(
         niceConnectionName += `(${fromPort})`;
     }
 
+    const createWebsocket = createWebsocketFactory();
+
     let retriesEnabled = location.listeningPorts.length > 0;
 
     let lastReceivedSeqNum = 0;
@@ -127,7 +132,7 @@ async function createCallFactory(
     let nextSeqNum = Math.random();
 
     const pendingNodeId = "PENDING";
-    let callerContext: CallerContext = { location, nodeId: pendingNodeId, serverLocation, fromPort };
+    let callerContext: CallerContext = { location, nodeId: pendingNodeId, serverLocation, fromPort, certInfo: undefined };
     let webSocket!: SenderInterface;
     if (!webSocketBase) {
         await tryToReconnect();
@@ -258,8 +263,8 @@ async function createCallFactory(
                     return;
                 }
 
-                console.error(`Connection retry to ${location.address}:${port} failed, retrying in ${retryInterval}ms`);
                 reconnectAttempts++;
+                console.error(`Connection retry to ${location.address}:${port} failed (attempt ${reconnectAttempts}), retrying in ${retryInterval}ms, error: ${JSON.stringify(connectError)}`);
                 await new Promise(resolve => setTimeout(resolve, retryInterval));
             }
         })();
@@ -278,6 +283,8 @@ async function createCallFactory(
         });
 
         webSocket.addEventListener("message", onMessage);
+
+        setCertInfo(webSocket.socket || (webSocket as any)._socket, callerContext);
     }
 
 
@@ -361,8 +368,6 @@ async function createCallFactory(
                 }
                 return;
             }
-            debugbreak(1);
-            debugger;
             throw new Error(`Unhandled data type ${typeof message}`);
         } catch (e: any) {
             console.error(e.stack);

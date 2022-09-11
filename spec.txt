@@ -1,6 +1,5 @@
 spec.txt
 
-- Add a flag for rejectUnauthorized, that is off by default
 - Add the ability to specify the certs yourself (so you can specify your identity with a real cert)
     - Then use real certificates on the server
 - Fix multiple clients on the same machines

@@ -2,7 +2,7 @@ import https from "https";
 import http from "http";
 import net from "net";
 import tls from "tls";
-import { CallerContext, CallType, NetworkLocation } from "../SocketFunctionTypes";
+import { CallerContext, CallType, NetworkLocation, setCertInfo } from "../SocketFunctionTypes";
 import { performLocalCall } from "./callManager";
 import { getNodeIdRaw } from "./nodeAuthentication";
 import debugbreak from "debugbreak";
@@ -111,7 +111,9 @@ export async function httpCallHandler(request: http.IncomingMessage, response: h
                 listeningPorts: [],
             },
             serverLocation: getServerLocationFromRequest(request),
+            certInfo: undefined,
         };
+        setCertInfo(socket, caller);
 
         let classGuid = urlObj.searchParams.get("classGuid");
         let functionName = urlObj.searchParams.get("functionName");

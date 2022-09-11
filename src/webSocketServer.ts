@@ -11,6 +11,7 @@ import { getCertKeyPair, getNodeId, getNodeIdRaw } from "./nodeAuthentication";
 import debugbreak from "debugbreak";
 import { cache } from "./caching";
 import { getNodeIdFromRequest, getServerLocationFromRequest, httpCallHandler } from "./callHTTPHandler";
+import { SocketFunction } from "../SocketFunction";
 
 // TODO: Support conditional peer certificate requests, as it the certificate prompt
 //  seems suspicious in the browser (the user can just click cancel though).
@@ -41,8 +42,18 @@ export async function startSocketServer(
     //  so it is easy to read, and consistent.
     let httpsServer = https.createServer({
         ...config,
-        rejectUnauthorized: false,
+        rejectUnauthorized: SocketFunction.rejectUnauthorized,
         requestCert: true,
+        ca: tls.rootCertificates.concat(SocketFunction.additionalTrustedRootCAs),
+    });
+    httpsServer.on("connection", socket => {
+        console.log("Client connection established");
+    });
+    httpsServer.on("error", e => {
+        console.error(`Connection attempt error ${e.message}`);
+    });
+    httpsServer.on("tlsClientError", e => {
+        console.error(`TLS client error ${e.message}`);
     });
 
 

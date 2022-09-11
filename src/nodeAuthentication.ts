@@ -11,14 +11,20 @@ import crypto from "crypto";
 import { isNode, sha256Hash } from "./misc";
 import { getArgs } from "./args";
 import { SenderInterface } from "./CallFactory";
+import { SocketFunction } from "../SocketFunction";
 
-export const getCertKeyPair = lazy((): { key: Buffer; cert: Buffer } => {
+let certKeyPairOverride: { key: Buffer; cert: Buffer } | undefined;
+export function getCertKeyPair(): { key: Buffer; cert: Buffer } {
+    if (certKeyPairOverride) return certKeyPairOverride;
+    return getCertKeyPairBase();
+}
+const getCertKeyPairBase = lazy((): { key: Buffer; cert: Buffer } => {
     // TODO: Also get this working clientside...
-    //  - Probably using node-forge, maybe using this as an example: https://github.com/jfromaniello/selfsigned/blob/master/index.js
+    //  - Use https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto/generateKey
+    //      - We might need node-forge for the Certificate Signing Request and x509 stuff
+    //  - Use ECDSA keys
     //  - ALSO, get our nodeId set in our cookies, so HTTP requests can work as well
-    //      - We will need to call some kind of endpoint to do this?
-    //  - Then download the certs and try to get the user to install them, so chrome can use
-    //      them? Otherwise there is no point of having certs clientside.
+    //      - We will need callHTTPHandler to support this
 
     // https://nodejs.org/en/knowledge/HTTP/servers/how-to-create-a-HTTPS-server/
 
@@ -37,6 +43,16 @@ export const getCertKeyPair = lazy((): { key: Buffer; cert: Buffer } => {
     let cert = fs.readFileSync(certPath);
     return { key, cert };
 });
+
+export function overrideCertKeyPair<T>(certKey: { key: Buffer; cert: Buffer; }, code: () => T): T {
+    let prevOverride = certKeyPairOverride;
+    certKeyPairOverride = certKey;
+    try {
+        return code();
+    } finally {
+        certKeyPairOverride = prevOverride;
+    }
+}
 
 export function getTLSSocket(webSocket: ws.WebSocket) {
     return (webSocket as any)._socket as tls.TLSSocket;
@@ -67,86 +83,59 @@ export const getNodeId = cacheWeak(function (webSocket: SenderInterface | ws.Web
         if (webSocket.nodeId) {
             return webSocket.nodeId;
         }
-        throw new Error(`Missing nodeId. If it is from the browser, this likely means your websocket and HTTP request are using different domains (so the cookies are lost). If it is from NodeJs peer certificate must use an RSA key or EC key (which should have a .pubkey property)`);
+        throw new Error(`Missing nodeId. If it is from the browser, this likely means your websocket and HTTP request are using different domains (so the cookies are lost). If it is from NodeJs peer certificate must use an RSA key or EC key (which should have a .modulus property)`);
     }
     return nodeId;
 });
 
+export function getNodeIdFromCert(cert: { modulus: Buffer }) {
+    // Apparently some implementations strip preceding zeros, which makes sense, as it is a modulus so
+    //  preceding zeros aren't needed.
+    let startIndex = 0;
+    while (startIndex < cert.modulus.length && cert.modulus[startIndex] === 0) {
+        startIndex++;
+    }
+    return sha256Hash(cert.modulus.slice(startIndex));
+}
 export function getNodeIdRaw(socket: tls.TLSSocket) {
     let peerCert = socket.getPeerCertificate();
     if (!peerCert) {
         throw new Error("WebSocket connections must provided a peer certificate");
     }
-    let pubkey = (peerCert as any).pubkey as Buffer | undefined;
-    if (!pubkey) {
-        return undefined;
-    }
-    return sha256Hash(pubkey);
+
+    if (!peerCert.modulus) return undefined;
+    return getNodeIdFromCert({ modulus: Buffer.from(peerCert.modulus, "hex") });
 }
 
-export function createWebsocket(address: string, port: number): SenderInterface {
-    console.log(`Connecting to ${address}:${port}`);
+/** NOTE: We create a factory, which embeds the key/cert information. Otherwise retries might use
+ *      a different key/cert context.
+ */
+export function createWebsocketFactory(): (address: string, port: number) => SenderInterface {
+
     if (!isNode()) {
         // NOTE: We assume an HTTP request has already been made, which will setup a nodeId cookie
         //  (And as this point we can't even use peer certificates if we wanted to, as this must be done
         //      directly in the browser)
-        return new WebSocket(`wss://${address}:${port}`);
+        return (address: string, port: number) => {
+            console.log(`Connecting to ${address}:${port}`);
+            return new WebSocket(`wss://${address}:${port}`);
+        };
     } else {
         let { key, cert } = getCertKeyPair();
-        return new ws.WebSocket(`wss://${address}:${port}`, {
-            cert,
-            key,
-            rejectUnauthorized: false,
-        });
+        let rejectUnauthorized = SocketFunction.rejectUnauthorized;
+        return (address: string, port: number) => {
+            console.log(`Connecting to ${address}:${port}`);
+            let webSocket = new ws.WebSocket(`wss://${address}:${port}`, {
+                cert,
+                key,
+                rejectUnauthorized,
+                ca: tls.rootCertificates.concat(SocketFunction.additionalTrustedRootCAs),
+            });
+            let result = Object.assign(webSocket, { socket: undefined as tls.TLSSocket | undefined });
+            webSocket.once("upgrade", e => {
+                result.socket = e.socket as tls.TLSSocket;
+            });
+            return result;
+        };
     }
 }
-
-
-
-/*
-const port = 2422;
-let { key, cert } = getCertKeyPair();
-console.log(process.argv);
-if (process.argv.includes("--server")) {
-    
-    let server = https.createServer({
-        key,
-        cert,
-        rejectUnauthorized: false,
-        requestCert: true
-    });
-    let listenPromise = new Promise<void>((resolve, error) => {
-        server.on("listening", () => {
-            resolve();
-        });
-        server.on("error", e => {
-            error(e);
-        });
-    });
-    
-    server.on("request", (request, response) => {
-        // TODO: Handle HTTP requests
-        //  - HTTP CAN have a nodeId, simply through setting cookies
-        //      - Cookies could always be set via a request before we open
-        //          the websocket connection?
-    });
-
-    const webSocketServer = new ws.Server({
-        noServer: true,
-    });
-    server.on("upgrade", (request, socket, upgradeHead) => {
-        webSocketServer.handleUpgrade(request, socket, upgradeHead, (ws) => {
-            console.log("peer", getTLSSocket(ws).getPeerCertificate()?.pubkey.toString("hex").slice(100));
-            console.log("cert", getTLSSocket(ws).getCertificate()?.pubkey.toString("hex").slice(100));
-        });
-    });
-
-    server.listen(2422, "127.0.0.1");
-} else {
-    let socket = new ws.WebSocket(`wss://127.0.0.1:${port}`, { rejectUnauthorized: false, cert, key });
-    socket.on("open", () => {
-        console.log("peer", getTLSSocket(socket).getPeerCertificate()?.pubkey.toString("hex").slice(100));
-        console.log("cert", getTLSSocket(socket).getCertificate()?.pubkey.toString("hex").slice(100));
-    });
-}
-*/

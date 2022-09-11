@@ -30,8 +30,7 @@ export async function performLocalCall(
     }
 
     let controller = classDef.controller;
-    let shape = classDef.shape;
-    let functionShape = shape[call.functionName];
+    let functionShape = classDef.shape[call.functionName];
     if (!functionShape) {
         throw new Error(`Function ${call.functionName} not exposed`);
     }
@@ -41,7 +40,7 @@ export async function performLocalCall(
     }
 
     let curContext: CallContextType = {};
-    let serverContext = await runServerHooks(call, { caller, curContext }, shape);
+    let serverContext = await runServerHooks(call, { caller, curContext }, functionShape);
     if ("overrideResult" in serverContext) {
         return serverContext.overrideResult;
     }
