@@ -1,11 +1,21 @@
+module.allowclient = true;
+
 import debugbreak from "debugbreak";
 import * as tls from "tls";
+import { getCallObj } from "./src/nodeProxy";
+import { Args } from "./src/types";
 
 export const socket = Symbol("socket");
 
 export type SocketExposedInterface = {
     [functionName: string]: (...args: any[]) => Promise<unknown>;
 };
+export type SocketInternalInterface = {
+    [functionName: string]: {
+        [getCallObj]: (...args: any[]) => FullCallType;
+        (...args: any[]): Promise<unknown>;
+    }
+}
 export type SocketExposedInterfaceClass = {
     //new(): SocketExposedInterface;
     new(): unknown;
@@ -26,6 +36,9 @@ export interface CallType {
     //  To set a timeout on returns, you can set it in the server hook.
     reconnectTimeout?: number;
 }
+export interface FullCallType extends CallType {
+    nodeId: string;
+}
 
 export interface SocketFunctionHook<ExposedType extends SocketExposedInterface = SocketExposedInterface, CallContext extends CallContextType = CallContextType> {
     (config: HookContext<ExposedType, CallContext>): Promise<void>;
@@ -33,13 +46,13 @@ export interface SocketFunctionHook<ExposedType extends SocketExposedInterface =
 export type HookContext<ExposedType extends SocketExposedInterface = SocketExposedInterface, CallContext extends CallContextType = CallContextType> = {
     call: CallType;
     context: SocketRegistered["context"];
-    // If the result is overriden, we continue evaluating hooks and perform the final call
+    // If the result is overriden, we continue evaluating hooks BUT NOT perform the final call
     overrideResult?: unknown;
 };
 
 export type ClientHookContext<ExposedType extends SocketExposedInterface = SocketExposedInterface, CallContext extends CallContextType = CallContextType> = {
     call: CallType;
-    // If the result is overriden, we continue evaluating hooks and perform the final call
+    // If the result is overriden, we continue evaluating hooks BUT NOT perform the final call
     overrideResult?: unknown;
 };
 export interface SocketFunctionClientHook<ExposedType extends SocketExposedInterface = SocketExposedInterface, CallContext extends CallContextType = CallContextType> {
@@ -54,7 +67,11 @@ export interface SocketRegistered<ExposedType extends SocketExposedInterface = S
     nodes: {
         // NOTE: Don't pass around nodeId to other nodes, instead pass around NetworkLocation (which they
         //  then turn into a nodeId, which they can then check permissions on themself).
-        [nodeId: string]: ExposedType;
+        [nodeId: string]: {
+            [functionName in keyof ExposedType]: ExposedType[functionName] & {
+                [getCallObj]: (...args: Args<ExposedType[functionName]>) => FullCallType;
+            }
+        };
     };
     context: {
         // If undefined we are not synchronously in a call

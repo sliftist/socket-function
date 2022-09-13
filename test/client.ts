@@ -10,6 +10,7 @@ import { Test } from "./shared";
 import "../require/CSSShim";
 import "./client.css";
 import { isNode } from "../src/misc";
+import { getCallObj } from "../src/nodeProxy";
 
 module.allowclient = true;
 
@@ -22,6 +23,8 @@ void main();
 
 async function main() {
     if (isNode()) return;
+
+    SocketFunction.rejectUnauthorized = false;
 
     SocketFunction.expose(Test);
 

@@ -16,11 +16,14 @@ import "../require/CSSShim";
 
 // Import clientside files, so they can be whitelisted
 import "./client";
+import { getCallObj } from "../src/nodeProxy";
 
 
 void main();
 
 async function main() {
+    SocketFunction.rejectUnauthorized = false;
+
     SocketFunction.expose(Test);
 
     RequireController._classGuid;
@@ -31,4 +34,12 @@ async function main() {
     const port = 2542;
 
     await SocketFunction.mount({ port });
+
+
+    {
+        let serverId = await SocketFunction.connect({ port, address: "letx.ca" });
+        let call = Test.nodes[serverId].add[getCallObj](1, 2);
+        console.log(call);
+        console.log(await SocketFunction.getHTTPCallLink(call));
+    }
 }

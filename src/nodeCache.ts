@@ -15,6 +15,8 @@ import { MaybePromise } from "./types";
 // nodeId => 
 const nodeCache = new Map<string, {
     callFactory: MaybePromise<CallFactory>;
+    // Just used for getCallFactoryFromNodeId
+    location: NetworkLocation | undefined;
 }>();
 const locationLookup = new Map<string, MaybePromise<string>>();
 
@@ -47,6 +49,7 @@ export function registerNodeClient(callFactory: CallFactory) {
     // TODO: Maybe even preserve the address in some cases, such as if it was a domain, and is now an ip?
     nodeCache.set(nodeId, {
         callFactory,
+        location: undefined,
     });
 }
 
@@ -64,6 +67,7 @@ export function getCreateCallFactoryLocation(location: NetworkLocation, tempNode
     if (tempNodeId !== undefined) {
         nodeCache.set(tempNodeId, {
             callFactory: callFactoryPromise,
+            location,
         });
     }
 
@@ -80,6 +84,7 @@ export function getCreateCallFactoryLocation(location: NetworkLocation, tempNode
         }
         nodeCache.set(nodeId, {
             callFactory,
+            location,
         });
         return nodeId;
     });
@@ -87,6 +92,10 @@ export function getCreateCallFactoryLocation(location: NetworkLocation, tempNode
 
 
 // TODO: Give a special error if the nodeId has been seen, but is only one-way (from HTTP requests).
-export async function getCallFactoryNodeId(nodeId: string): Promise<CallFactory | undefined> {
+export async function getCallFactoryFromNodeId(nodeId: string): Promise<CallFactory | undefined> {
     return await nodeCache.get(nodeId)?.callFactory;
+}
+// NOTE: Only works if the nodeId has been loaded with getCreateCallFactoryLocation
+export function getLocationFromNodeId(nodeId: string): NetworkLocation | undefined {
+    return nodeCache.get(nodeId)?.location;
 }

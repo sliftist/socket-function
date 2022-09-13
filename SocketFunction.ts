@@ -1,7 +1,7 @@
-import { SocketExposedInterface, CallContextType, SocketFunctionHook, SocketFunctionClientHook, SocketExposedShape, SocketRegistered, NetworkLocation, CallerContext, SocketExposedInterfaceClass, CallType } from "./SocketFunctionTypes";
+import { SocketExposedInterface, CallContextType, SocketFunctionHook, SocketFunctionClientHook, SocketExposedShape, SocketRegistered, NetworkLocation, CallerContext, SocketExposedInterfaceClass, CallType, FullCallType } from "./SocketFunctionTypes";
 import { exposeClass, registerClass, registerGlobalClientHook, registerGlobalHook, runClientHooks } from "./src/callManager";
 import { SocketServerConfig, startSocketServer } from "./src/webSocketServer";
-import { getCallFactoryNodeId, getCreateCallFactoryLocation, getNetworkLocationHash } from "./src/nodeCache";
+import { getCallFactoryFromNodeId, getCreateCallFactoryLocation, getLocationFromNodeId, getNetworkLocationHash } from "./src/nodeCache";
 import { getCallProxy } from "./src/nodeProxy";
 import { Args } from "./src/types";
 import { setDefaultHTTPCall } from "./src/callHTTPHandler";
@@ -53,13 +53,15 @@ export class SocketFunction {
 
         registerClass(classGuid, instance as SocketExposedInterface, shape as any as SocketExposedShape);
 
-        let nodeProxy = getCallProxy(classGuid, async (nodeId, functionName, args) => {
+        let nodeProxy = getCallProxy(classGuid, async (call) => {
+            let nodeId = call.nodeId;
+            let functionName = call.functionName;
             let time = Date.now();
             if (SocketFunction.logMessages) {
                 console.log(`START\t\t\t${classGuid}.${functionName}`);
             }
             try {
-                let callFactory = await getCallFactoryNodeId(nodeId);
+                let callFactory = await getCallFactoryFromNodeId(nodeId);
                 if (!callFactory) {
                     throw new Error(`Cannot reach node ${nodeId}. It might have been incorrect provided to us via another node, which should have provided us a NetworkLocation instead.`);
                 }
@@ -68,12 +70,6 @@ export class SocketFunction {
                 if (!shapeObj) {
                     throw new Error(`Function ${functionName} is not in shape`);
                 }
-
-                let call: CallType = {
-                    classGuid,
-                    args,
-                    functionName,
-                };
 
                 let hookResult = await runClientHooks(call, shapeObj as SocketExposedShape[""]);
 
@@ -97,6 +93,20 @@ export class SocketFunction {
         };
 
         return output as any;
+    }
+
+    /** NOTE: Only works if the call has been loaded from a url (we can't convert arbitrary nodeIds into urls,
+     *      as we have no way of knowing how to contain a nodeId). */
+    public static getHTTPCallLink(call: FullCallType): string {
+        let location = getLocationFromNodeId(call.nodeId);
+        if (!location) {
+            throw new Error(`Cannot find call location for nodeId, and so do not know where call location is. NodeId ${call.nodeId}`);
+        }
+        let url = new URL(`https://${location.address}:${location.listeningPorts[0]}`);
+        url.searchParams.set("classGuid", call.classGuid);
+        url.searchParams.set("functionName", call.functionName);
+        url.searchParams.set("args", JSON.stringify(call.args));
+        return url.toString();
     }
 
     /** Expose should be called before your mounting occurs. It mostly just exists to ensure you include the class type,

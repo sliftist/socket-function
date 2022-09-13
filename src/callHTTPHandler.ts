@@ -175,8 +175,8 @@ export async function httpCallHandler(request: http.IncomingMessage, response: h
 
         // NOTE: Our ETag caching is only to reduce data sent on the wire, we evaluate the calls
         //  every time (so it is strictly a wire cache, not computation cache)
-        response.setHeader("cache-control", "private, s-maxage=0, max-age=0, must-revalidate");
         if (SocketFunction.httpETagCache) {
+            response.setHeader("cache-control", "private, s-maxage=0, max-age=0, must-revalidate");
             let hash = sha256Hash(resultBuffer);
             response.setHeader("ETag", hash);
             if (request.headers["if-none-match"] === hash) {
