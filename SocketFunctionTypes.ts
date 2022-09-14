@@ -23,6 +23,10 @@ export type SocketExposedInterfaceClass = {
 };
 export interface SocketExposedShape<ExposedType extends SocketExposedInterface = SocketExposedInterface, CallContext extends CallContextType = CallContextType> {
     [functionName: string]: {
+        /** Indicates with the same input, we give the same output, forever,
+         *      independent of code changes. This only works for data storage.
+         */
+        dataImmutable?: boolean;
         hooks?: SocketFunctionHook<ExposedType, CallContext>[];
         clientHooks?: SocketFunctionClientHook<ExposedType, CallContext>[];
     };

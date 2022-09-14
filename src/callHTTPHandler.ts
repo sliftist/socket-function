@@ -3,7 +3,7 @@ import http from "http";
 import net from "net";
 import tls from "tls";
 import { CallerContext, CallType, NetworkLocation, setCertInfo } from "../SocketFunctionTypes";
-import { performLocalCall } from "./callManager";
+import { isDataImmutable, performLocalCall } from "./callManager";
 import { getNodeIdRaw } from "./nodeAuthentication";
 import debugbreak from "debugbreak";
 import * as cookie from "cookie";
@@ -150,6 +150,22 @@ export async function httpCallHandler(request: http.IncomingMessage, response: h
             args,
         };
 
+        if (isDataImmutable(call)) {
+            /** ETag cache, BUT, hashes only the input. Only valid for fully immutable resources
+             *      (ex data storage, as any endpoints that run code could have that code change).
+             *      - Shouldn't be needed, but I am seeing chrome fail to cache a lot of requests,
+             *          which could cost us multiple dollars in server costs from atlas.
+            */
+            response.setHeader("cache-control", "public, max-age=15206400, immutable");
+            let hash = sha256Hash(Buffer.from(JSON.stringify(call)));
+            response.setHeader("ETag", hash);
+            if (request.headers["if-none-match"] === hash) {
+                response.writeHead(304);
+                console.log(`CACHED Immutable HTTP response (${request.method}) ${url}`);
+                return;
+            }
+        }
+
         let result = await performLocalCall({
             caller,
             call
@@ -174,9 +190,9 @@ export async function httpCallHandler(request: http.IncomingMessage, response: h
 
 
         // NOTE: Our ETag caching is only to reduce data sent on the wire, we evaluate the calls
-        //  every time (so it is strictly a wire cache, not computation cache)
+        //  every time (so it is strictly a wire cache, not a computation cache)
         if (SocketFunction.httpETagCache) {
-            response.setHeader("cache-control", "private, s-maxage=0, max-age=0, must-revalidate");
+            response.setHeader("cache-control", "private, max-age=0, must-revalidate");
             let hash = sha256Hash(resultBuffer);
             response.setHeader("ETag", hash);
             if (request.headers["if-none-match"] === hash) {

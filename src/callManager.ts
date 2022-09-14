@@ -53,6 +53,10 @@ export async function performLocalCall(
     return await result;
 }
 
+export function isDataImmutable(call: CallType) {
+    return !!classes[call.classGuid]?.shape[call.functionName]?.dataImmutable;
+}
+
 export function registerClass(classGuid: string, controller: SocketExposedInterface, shape: SocketExposedShape) {
     if (classes[classGuid]) {
         throw new Error(`Class ${classGuid} already registered`);
