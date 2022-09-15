@@ -3,7 +3,7 @@ module.allowclient = true;
 import debugbreak from "debugbreak";
 import * as tls from "tls";
 import { getCallObj } from "./src/nodeProxy";
-import { Args } from "./src/types";
+import { Args, MaybePromise } from "./src/types";
 
 export const socket = Symbol("socket");
 
@@ -45,7 +45,7 @@ export interface FullCallType extends CallType {
 }
 
 export interface SocketFunctionHook<ExposedType extends SocketExposedInterface = SocketExposedInterface, CallContext extends CallContextType = CallContextType> {
-    (config: HookContext<ExposedType, CallContext>): Promise<void>;
+    (config: HookContext<ExposedType, CallContext>): MaybePromise<void>;
 }
 export type HookContext<ExposedType extends SocketExposedInterface = SocketExposedInterface, CallContext extends CallContextType = CallContextType> = {
     call: CallType;
@@ -60,7 +60,7 @@ export type ClientHookContext<ExposedType extends SocketExposedInterface = Socke
     overrideResult?: unknown;
 };
 export interface SocketFunctionClientHook<ExposedType extends SocketExposedInterface = SocketExposedInterface, CallContext extends CallContextType = CallContextType> {
-    (config: ClientHookContext<ExposedType, CallContext>): Promise<void>;
+    (config: ClientHookContext<ExposedType, CallContext>): MaybePromise<void>;
 }
 
 export type CallContextType = {
