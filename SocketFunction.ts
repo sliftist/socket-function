@@ -43,12 +43,7 @@ export class SocketFunction {
         shape: Shape
     ):
         (
-            // Essentially just returns SocketRegistered
-            ExtractShape<ClassInstance, Shape> extends SocketExposedInterface
-            ? SocketRegistered<ExtractShape<ClassInstance, Shape>, CallContext>
-            : {
-                error: "invalid shape";
-            } & PickByType<ExtractShape<ClassInstance, Shape>, string>
+            SocketRegistered<ExtractShape<ClassInstance, Shape>, CallContext>
         ) {
 
         registerClass(classGuid, instance as SocketExposedInterface, shape as any as SocketExposedShape);
@@ -129,11 +124,11 @@ export class SocketFunction {
     public static setDefaultHTTPCall<
         Registered extends SocketRegistered,
         FunctionName extends keyof Registered["nodes"][""] & string,
-        >(
-            registered: Registered,
-            functionName: FunctionName,
-            ...args: Args<Registered["nodes"][""][FunctionName]>
-        ) {
+    >(
+        registered: Registered,
+        functionName: FunctionName,
+        ...args: Args<Registered["nodes"][""][FunctionName]>
+    ) {
         setDefaultHTTPCall({
             classGuid: registered._classGuid,
             functionName,

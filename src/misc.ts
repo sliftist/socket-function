@@ -8,7 +8,11 @@ export function convertErrorStackToError(error: string): Error {
 }
 
 export function sha256Hash(buffer: Buffer) {
-    return crypto.createHash("sha256").update(buffer).digest("hex");
+    if (isNode()) {
+        return crypto.createHash("sha256").update(buffer).digest("hex");
+    } else {
+        return window.crypto.subtle.digest("SHA-256", buffer);
+    }
 }
 
 

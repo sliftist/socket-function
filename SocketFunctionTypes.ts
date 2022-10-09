@@ -67,7 +67,7 @@ export type CallContextType = {
     [key: string]: unknown;
 };
 
-export interface SocketRegistered<ExposedType extends SocketExposedInterface = SocketExposedInterface, DynamicCallContext extends CallContextType = CallContextType> {
+export interface SocketRegistered<ExposedType = any, DynamicCallContext extends CallContextType = CallContextType> {
     nodes: {
         // NOTE: Don't pass around nodeId to other nodes, instead pass around NetworkLocation (which they
         //  then turn into a nodeId, which they can then check permissions on themself).
