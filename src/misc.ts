@@ -15,7 +15,8 @@ export async function sha256HashPromise(buffer: Buffer) {
     if (isNode()) {
         return crypto.createHash("sha256").update(buffer).digest("hex");
     } else {
-        return window.crypto.subtle.digest("SHA-256", buffer);
+        let buf = await window.crypto.subtle.digest("SHA-256", buffer);
+        return Buffer.from(buf).toString("hex");
     }
 }
 
