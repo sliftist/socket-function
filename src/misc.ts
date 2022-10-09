@@ -8,6 +8,10 @@ export function convertErrorStackToError(error: string): Error {
 }
 
 export function sha256Hash(buffer: Buffer) {
+    return crypto.createHash("sha256").update(buffer).digest("hex");
+}
+/** Async, but works both clientside and serverside. */
+export async function sha256HashPromise(buffer: Buffer) {
     if (isNode()) {
         return crypto.createHash("sha256").update(buffer).digest("hex");
     } else {
