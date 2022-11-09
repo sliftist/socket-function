@@ -40,6 +40,7 @@
         child_process: {},
         events: {},
     };
+    global.builtInModuleExports = builtInModuleExports;
 
 
     /** @type {{

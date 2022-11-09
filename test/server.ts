@@ -26,9 +26,7 @@ async function main() {
 
     SocketFunction.expose(Test);
 
-    RequireController._classGuid;
     SocketFunction.expose(RequireController);
-
     SocketFunction.setDefaultHTTPCall(RequireController, "requireHTML", "./test/client");
 
     const port = 2542;

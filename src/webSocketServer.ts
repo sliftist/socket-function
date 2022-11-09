@@ -48,6 +48,9 @@ export async function startSocketServer(
     });
     httpsServer.on("connection", socket => {
         console.log("Client connection established");
+        socket.on("error", e => {
+            console.log(`Client socket error ${e.message}`);
+        });
     });
     httpsServer.on("error", e => {
         console.error(`Connection attempt error ${e.message}`);
@@ -63,6 +66,10 @@ export async function startSocketServer(
         noServer: true,
     });
     httpsServer.on("upgrade", (request, socket, upgradeHead) => {
+        socket.on("error", e => {
+            console.log(`Client socket error ${e.message}`);
+        });
+
         let originHeader = request.headers["origin"];
         if (originHeader) {
             try {
@@ -95,6 +102,9 @@ export async function startSocketServer(
         url.hostname = req.headers.host || "";
         res.writeHead(301, { Location: url + "" });
         res.end();
+    });
+    httpServer.on("error", e => {
+        console.error(`HTTP error ${e.stack}`);
     });
 
     let realServer = net.createServer(socket => {
