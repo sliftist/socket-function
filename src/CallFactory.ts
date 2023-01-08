@@ -83,6 +83,7 @@ export interface SenderInterface {
     nodeId?: string;
     // Only set AFTER "open" (if set at all, as in the browser we don't have access to the socket).
     socket?: tls.TLSSocket;
+    requestHost?: string;
 
     send(data: string | Buffer): void;
 
@@ -132,7 +133,13 @@ async function createCallFactory(
     let nextSeqNum = Math.random();
 
     const pendingNodeId = "PENDING";
-    let callerContext: CallerContext = { location, nodeId: pendingNodeId, serverLocation, fromPort, certInfo: undefined };
+    let callerContext: CallerContext = {
+        location,
+        nodeId: pendingNodeId,
+        serverLocation,
+        fromPort,
+        certInfo: undefined,
+    };
     let webSocket!: SenderInterface;
     if (!webSocketBase) {
         await tryToReconnect();
@@ -271,6 +278,8 @@ async function createCallFactory(
     }
 
     function setupWebsocket(webSocket: SenderInterface) {
+        setCertInfo(webSocket.socket || (webSocket as any)._socket, callerContext);
+
         webSocket.addEventListener("error", e => {
             console.log(`Websocket error for ${niceConnectionName}`, e);
         });
@@ -283,8 +292,6 @@ async function createCallFactory(
         });
 
         webSocket.addEventListener("message", onMessage);
-
-        setCertInfo(webSocket.socket || (webSocket as any)._socket, callerContext);
     }
 
 

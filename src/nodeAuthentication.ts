@@ -19,13 +19,6 @@ export function getCertKeyPair(): { key: Buffer; cert: Buffer } {
     return getCertKeyPairBase();
 }
 const getCertKeyPairBase = lazy((): { key: Buffer; cert: Buffer } => {
-    // TODO: Also get this working clientside...
-    //  - Use https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto/generateKey
-    //      - We might need node-forge for the Certificate Signing Request and x509 stuff
-    //  - Use ECDSA keys
-    //  - ALSO, get our nodeId set in our cookies, so HTTP requests can work as well
-    //      - We will need callHTTPHandler to support this
-
     // https://nodejs.org/en/knowledge/HTTP/servers/how-to-create-a-HTTPS-server/
 
     let folder = getAppFolder();
@@ -97,14 +90,35 @@ export function getNodeIdFromCert(cert: { modulus: Buffer }) {
     }
     return sha256Hash(cert.modulus.slice(startIndex));
 }
+const ed25519OID = "302a300506032b6570032100";
 export function getNodeIdRaw(socket: tls.TLSSocket) {
-    let peerCert = socket.getPeerCertificate();
-    if (!peerCert) {
-        throw new Error("WebSocket connections must provided a peer certificate");
-    }
+    let peerCert = socket.getPeerCertificate(true);
+    if (!peerCert?.raw) return undefined;
 
-    if (!peerCert.modulus) return undefined;
+    if (!peerCert.modulus) {
+        let cert = new crypto.X509Certificate(peerCert.raw);
+        // I'm not too sure about the type and format, but... I'm sure some permutation
+        //  of these parameters will work.
+        debugbreak(1);
+        debugger;
+        let publicKey = cert.publicKey.export({ type: "spki", format: "pem" }).toString("hex");
+        if (publicKey.startsWith(ed25519OID)) {
+            publicKey = publicKey.slice(ed25519OID.length);
+        }
+        return publicKey;
+    }
     return getNodeIdFromCert({ modulus: Buffer.from(peerCert.modulus, "hex") });
+}
+
+let subprotocol: string | undefined;
+export function overrideWebsocketSubProtocol<T>(_subprotocol: string, code: () => T) {
+    let prev = subprotocol;
+    subprotocol = _subprotocol;
+    try {
+        return code();
+    } finally {
+        subprotocol = prev;
+    }
 }
 
 /** NOTE: We create a factory, which embeds the key/cert information. Otherwise retries might use
@@ -116,9 +130,11 @@ export function createWebsocketFactory(): (address: string, port: number) => Sen
         // NOTE: We assume an HTTP request has already been made, which will setup a nodeId cookie
         //  (And as this point we can't even use peer certificates if we wanted to, as this must be done
         //      directly in the browser)
+        let subprotocolOverride = subprotocol;
         return (address: string, port: number) => {
             console.log(`Connecting to ${address}:${port}`);
-            return new WebSocket(`wss://${address}:${port}`);
+            let subprotocols = subprotocolOverride ? [subprotocolOverride] : undefined;
+            return new WebSocket(`wss://${address}:${port}`, subprotocols);
         };
     } else {
         let { key, cert } = getCertKeyPair();
@@ -130,6 +146,7 @@ export function createWebsocketFactory(): (address: string, port: number) => Sen
                 key,
                 rejectUnauthorized,
                 ca: tls.rootCertificates.concat(SocketFunction.additionalTrustedRootCAs),
+                protocol: subprotocol,
             });
             let result = Object.assign(webSocket, { socket: undefined as tls.TLSSocket | undefined });
             webSocket.once("upgrade", e => {

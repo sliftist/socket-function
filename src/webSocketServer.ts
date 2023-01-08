@@ -38,6 +38,10 @@ export async function startSocketServer(
         config.cert = cert;
     }
 
+    todonext;
+    // Get the windows certs from the store correctly.
+    //let test = require("fs").readFileSync("G:/chrome-downloads/ca (9).cer", "utf8");
+
     // TODO: Only allow unauthorized for ip certificates, and then for domains use the domain as the nodeId,
     //  so it is easy to read, and consistent.
     let httpsServer = https.createServer({
@@ -50,6 +54,9 @@ export async function startSocketServer(
         console.log("Client connection established");
         socket.on("error", e => {
             console.log(`Client socket error ${e.message}`);
+        });
+        socket.on("close", () => {
+            console.log("Client socket closed");
         });
     });
     httpsServer.on("error", e => {
@@ -88,7 +95,7 @@ export async function startSocketServer(
             //  We would prefer peer certificates, so this isn't the default (in getNodeId), but it will
             //  likely be used most of the time.
             let requestNodeId = getNodeIdFromRequest(request);
-            Object.assign(ws, { nodeId: requestNodeId });
+            Object.assign(ws, { nodeId: requestNodeId, host: request.headers["host"] });
 
             let clientCallFactory = await callFactoryFromWS(ws, getServerLocationFromRequest(request));
             registerNodeClient(clientCallFactory);
