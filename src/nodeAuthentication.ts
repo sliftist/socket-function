@@ -12,6 +12,7 @@ import { isNode, sha256Hash } from "./misc";
 import { getArgs } from "./args";
 import { SenderInterface } from "./CallFactory";
 import { SocketFunction } from "../SocketFunction";
+import { getTrustedUserCertificates } from "./certStore";
 
 let certKeyPairOverride: { key: Buffer; cert: Buffer } | undefined;
 export function getCertKeyPair(): { key: Buffer; cert: Buffer } {
@@ -145,7 +146,7 @@ export function createWebsocketFactory(): (address: string, port: number) => Sen
                 cert,
                 key,
                 rejectUnauthorized,
-                ca: tls.rootCertificates.concat(SocketFunction.additionalTrustedRootCAs),
+                ca: tls.rootCertificates.concat(getTrustedUserCertificates()),
                 protocol: subprotocol,
             });
             let result = Object.assign(webSocket, { socket: undefined as tls.TLSSocket | undefined });

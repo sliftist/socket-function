@@ -139,6 +139,7 @@ async function createCallFactory(
         serverLocation,
         fromPort,
         certInfo: undefined,
+        tlsAuthorizeError: undefined,
     };
     let webSocket!: SenderInterface;
     if (!webSocketBase) {

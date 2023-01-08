@@ -112,6 +112,7 @@ export async function httpCallHandler(request: http.IncomingMessage, response: h
             },
             serverLocation: getServerLocationFromRequest(request),
             certInfo: undefined,
+            tlsAuthorizeError: undefined,
         };
         setCertInfo(socket, caller);
 

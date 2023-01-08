@@ -7,7 +7,7 @@ export function convertErrorStackToError(error: string): Error {
     return errorObj;
 }
 
-export function sha256Hash(buffer: Buffer) {
+export function sha256Hash(buffer: Buffer | string) {
     return crypto.createHash("sha256").update(buffer).digest("hex");
 }
 /** Async, but works both clientside and serverside. */

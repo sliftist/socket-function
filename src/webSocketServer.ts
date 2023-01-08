@@ -12,9 +12,7 @@ import debugbreak from "debugbreak";
 import { cache } from "./caching";
 import { getNodeIdFromRequest, getServerLocationFromRequest, httpCallHandler } from "./callHTTPHandler";
 import { SocketFunction } from "../SocketFunction";
-
-// TODO: Support conditional peer certificate requests, as it the certificate prompt
-//  seems suspicious in the browser (the user can just click cancel though).
+import { getTrustedUserCertificates, loadTrustedUserCertificates, watchUserCertificates } from "./certStore";
 
 export type SocketServerConfig = (
     {
@@ -31,6 +29,7 @@ export type SocketServerConfig = (
 export async function startSocketServer(
     config: SocketServerConfig
 ) {
+
     let isSecure = "cert" in config || "key" in config || "pfx" in config;
     if (!isSecure) {
         let { key, cert } = getCertKeyPair();
@@ -38,18 +37,23 @@ export async function startSocketServer(
         config.cert = cert;
     }
 
-    todonext;
-    // Get the windows certs from the store correctly.
-    //let test = require("fs").readFileSync("G:/chrome-downloads/ca (9).cer", "utf8");
+    await loadTrustedUserCertificates();
 
     // TODO: Only allow unauthorized for ip certificates, and then for domains use the domain as the nodeId,
     //  so it is easy to read, and consistent.
-    let httpsServer = https.createServer({
+    let options: https.ServerOptions = {
         ...config,
         rejectUnauthorized: SocketFunction.rejectUnauthorized,
         requestCert: true,
-        ca: tls.rootCertificates.concat(SocketFunction.additionalTrustedRootCAs),
+        //ca: tls.rootCertificates.slice().concat(getTrustedUserCertificates()),
+    };
+
+    let httpsServer = https.createServer(options);
+    watchUserCertificates(() => {
+        options.ca = tls.rootCertificates.concat(getTrustedUserCertificates());
+        httpsServer.setSecureContext(options);
     });
+
     httpsServer.on("connection", socket => {
         console.log("Client connection established");
         socket.on("error", e => {

@@ -90,6 +90,11 @@ export type CallerContext = {
     //  - nodeId SHOULD be used to identify users though, as it cannot be impersonated
     nodeId: string;
     fromPort: number;
+
+    // NOTE: If this is a browser request, this is likely the address of the proxy server. We could
+    //  send the original address, but... it wouldn't add that much security, because it would have
+    //  to be sent via a header, which they could spoof via a non-browser client.
+    //  (UNLESS, we whitelist ips of proxy servers... but that is kind of difficult...)
     location: NetworkLocation;
     // The location of the server. It helps if it is told, due to the fact that one server
     //  can serve multiple domains.
@@ -99,11 +104,7 @@ export type CallerContext = {
     //  TODO: Limit this type to only have the information we need, possible in a slightly different format.
     certInfo: tls.DetailedPeerCertificate | undefined;
 
-    // TODO: Add callerBrowserAuthIP, which will allow "Proxy-IP" (or whatever cloudflare uses? It has to be a
-    //  header which the browser is restricted from sending), to override this, allowing the browser to use
-    //  proxies.
-    //  - We have to also ONLY accept this from certain trusted servers, as otherwise it is too easy to spoof.
-    //callerBrowserAuthIP: string;
+    tlsAuthorizeError: string | undefined;
 };
 
 export function setCertInfo(socket: tls.TLSSocket | undefined, context: CallerContext) {
@@ -114,6 +115,7 @@ export function setCertInfo(socket: tls.TLSSocket | undefined, context: CallerCo
     if (cert?.issuer) {
         context.certInfo = cert;
     }
+    context.tlsAuthorizeError = socket.authorizationError?.message;
 }
 
 // IMPORTANT! Nodes at the same network location may vary, so you cannot store NetworkLocation

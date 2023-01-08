@@ -31,7 +31,6 @@ export class SocketFunction {
     };
     public static httpETagCache = false;
     public static rejectUnauthorized = true;
-    public static additionalTrustedRootCAs: string[] = [];
 
     public static register<
         ClassInstance extends object,
@@ -90,8 +89,9 @@ export class SocketFunction {
         return output as any;
     }
 
-    /** NOTE: Only works if the call has been loaded from a url (we can't convert arbitrary nodeIds into urls,
-     *      as we have no way of knowing how to contain a nodeId). */
+    /** NOTE: Only works if the nodeIs used is from SocketFunction.connect (we can't convert arbitrary nodeIds into urls,
+     *      as we have no way of knowing how to contain a nodeId).
+     *  */
     public static getHTTPCallLink(call: FullCallType): string {
         let location = getLocationFromNodeId(call.nodeId);
         if (!location) {
