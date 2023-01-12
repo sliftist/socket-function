@@ -1,6 +1,7 @@
 import { callFactoryFromLocation, CallFactory } from "./CallFactory";
 import { NetworkLocation } from "../SocketFunctionTypes";
 import { MaybePromise } from "./types";
+import { lazy } from "./caching";
 
 // TODO: Add CallInstanceFactory.isClosed, so nodeCache can clean up old entries.
 //  This is only needed for memory management, and not for correctness. Entries never
@@ -17,16 +18,17 @@ const nodeCache = new Map<string, {
     callFactory: MaybePromise<CallFactory>;
     // Just used for getCallFactoryFromNodeId
     location: NetworkLocation | undefined;
+    locationHash: string | undefined;
 }>();
-const locationLookup = new Map<string, MaybePromise<string>>();
+const locationLookup = new Map<string, MaybePromise<CallFactory>>();
 
 export function getNetworkLocationHash(location: NetworkLocation): string {
     return location.address + ":" + location.listeningPorts.join("|");
 }
 
-// NOTE: For client connections, at which point we have the nodeId, location and callFactory.
-export function registerNodeClient(callFactory: CallFactory) {
-    let { nodeId } = callFactory;
+// NOTE: Should be called directly inside call factory constructor whenever
+//      their nodeId changes (and on construction).
+export function registerNodeClient(nodeId: string, callFactory: CallFactory) {
     // NOTE: We can always clobber the entry, AS, during client connection we give NetworkLocation information,
     //  so even if we already have this node with NetworkLocation.listeningPorts, this new values should
     //  be even newer, or the same.
@@ -50,24 +52,27 @@ export function registerNodeClient(callFactory: CallFactory) {
     nodeCache.set(nodeId, {
         callFactory,
         location: undefined,
+        locationHash: undefined,
     });
+
+    startCleanupLoop();
 }
 
 export function getCreateCallFactoryLocation(location: NetworkLocation, tempNodeId?: string): MaybePromise<string> {
     let locationHash = getNetworkLocationHash(location);
-    let nodeId = locationLookup.get(locationHash);
-    if (nodeId !== undefined) {
-        return nodeId;
+    let callFactory = locationLookup.get(locationHash);
+    if (callFactory !== undefined) {
+        return callFactory instanceof Promise ? callFactory.then(callFactory => callFactory.nodeId) : callFactory.nodeId;
     }
 
     let callFactoryPromise = callFactoryFromLocation(location);
-    let nodeIdPromise = callFactoryPromise.then(x => x.nodeId);
-    locationLookup.set(locationHash, nodeIdPromise);
+    locationLookup.set(locationHash, callFactoryPromise);
 
     if (tempNodeId !== undefined) {
         nodeCache.set(tempNodeId, {
             callFactory: callFactoryPromise,
             location,
+            locationHash,
         });
     }
 
@@ -85,6 +90,7 @@ export function getCreateCallFactoryLocation(location: NetworkLocation, tempNode
         nodeCache.set(nodeId, {
             callFactory,
             location,
+            locationHash,
         });
         return nodeId;
     });
@@ -99,3 +105,24 @@ export async function getCallFactoryFromNodeId(nodeId: string): Promise<CallFact
 export function getLocationFromNodeId(nodeId: string): NetworkLocation | undefined {
     return nodeCache.get(nodeId)?.location;
 }
+
+const startCleanupLoop = lazy(() => {
+    (async () => {
+        while (true) {
+            for (let [key, value] of Array.from(nodeCache.entries())) {
+                let factory = value.callFactory;
+                if (!(factory instanceof Promise)) {
+                    if (factory.closedForever) {
+                        nodeCache.delete(key);
+                        if (value.locationHash) {
+                            locationLookup.delete(value.locationHash);
+                        }
+                    }
+                }
+            }
+            await new Promise(resolve => setTimeout(resolve, 1000 * 60 * 5));
+        }
+    })().catch(e => {
+        console.error(`nodeCache cleanup loop failed, ${e.stack}`);
+    });
+});

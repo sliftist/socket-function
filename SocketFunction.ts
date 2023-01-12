@@ -5,8 +5,6 @@ import { getCallFactoryFromNodeId, getCreateCallFactoryLocation, getLocationFrom
 import { getCallProxy } from "./src/nodeProxy";
 import { Args } from "./src/types";
 import { setDefaultHTTPCall } from "./src/callHTTPHandler";
-import { isNode } from "./src/misc";
-import { getOwnNodeId } from "./src/nodeAuthentication";
 
 module.allowclient = true;
 
@@ -114,10 +112,6 @@ export class SocketFunction {
 
     public static async mount(config: SocketServerConfig) {
         await startSocketServer(config);
-    }
-
-    public static async getOwnNodeId() {
-        return await getOwnNodeId();
     }
 
     /** Sets the default call when an http request is made, but no classGuid is set. */

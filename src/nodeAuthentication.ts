@@ -14,6 +14,8 @@ import { SenderInterface } from "./CallFactory";
 import { SocketFunction } from "../SocketFunction";
 import { getTrustedUserCertificates } from "./certStore";
 
+export type CertInfo = { raw: Buffer | string; issuerCertificate: { raw: Buffer | string } };
+
 let certKeyPairOverride: { key: Buffer; cert: Buffer } | undefined;
 export function getCertKeyPair(): { key: Buffer; cert: Buffer } {
     if (certKeyPairOverride) return certKeyPairOverride;
@@ -39,6 +41,9 @@ const getCertKeyPairBase = lazy((): { key: Buffer; cert: Buffer } => {
 });
 
 export function overrideCertKeyPair<T>(certKey: { key: Buffer; cert: Buffer; }, code: () => T): T {
+    if (!isNode()) {
+        throw new Error(`Cannot override cert/key pair in browser`);
+    }
     let prevOverride = certKeyPairOverride;
     certKeyPairOverride = certKey;
     try {
@@ -64,62 +69,10 @@ export async function getOwnNodeId() {
     throw new Error(`TODO: Implement getOwnNodeId`);
 }
 
-export const getNodeId = cacheWeak(function (webSocket: SenderInterface | ws.WebSocket & { nodeId?: string }): string {
-    if (!(webSocket instanceof ws.WebSocket)) {
-        if (!webSocket.nodeId) {
-            throw new Error("Sender isn't a WebSocket, and doesn't have a nodeId");
-        }
-        return webSocket.nodeId;
-    }
-    let socket = getTLSSocket(webSocket);
-    let nodeId = getNodeIdRaw(socket);
-    if (!nodeId) {
-        if (webSocket.nodeId) {
-            return webSocket.nodeId;
-        }
-        throw new Error(`Missing nodeId. If it is from the browser, this likely means your websocket and HTTP request are using different domains (so the cookies are lost). If it is from NodeJs peer certificate must use an RSA key or EC key (which should have a .modulus property)`);
-    }
-    return nodeId;
-});
-
-export function getNodeIdFromCert(cert: { modulus: Buffer }) {
-    // Apparently some implementations strip preceding zeros, which makes sense, as it is a modulus so
-    //  preceding zeros aren't needed.
-    let startIndex = 0;
-    while (startIndex < cert.modulus.length && cert.modulus[startIndex] === 0) {
-        startIndex++;
-    }
-    return sha256Hash(cert.modulus.slice(startIndex));
-}
-const ed25519OID = "302a300506032b6570032100";
-export function getNodeIdRaw(socket: tls.TLSSocket) {
-    let peerCert = socket.getPeerCertificate(true);
-    if (!peerCert?.raw) return undefined;
-
-    if (!peerCert.modulus) {
-        let cert = new crypto.X509Certificate(peerCert.raw);
-        // I'm not too sure about the type and format, but... I'm sure some permutation
-        //  of these parameters will work.
-        debugbreak(1);
-        debugger;
-        let publicKey = cert.publicKey.export({ type: "spki", format: "pem" }).toString("hex");
-        if (publicKey.startsWith(ed25519OID)) {
-            publicKey = publicKey.slice(ed25519OID.length);
-        }
-        return publicKey;
-    }
-    return getNodeIdFromCert({ modulus: Buffer.from(peerCert.modulus, "hex") });
-}
-
-let subprotocol: string | undefined;
-export function overrideWebsocketSubProtocol<T>(_subprotocol: string, code: () => T) {
-    let prev = subprotocol;
-    subprotocol = _subprotocol;
-    try {
-        return code();
-    } finally {
-        subprotocol = prev;
-    }
+export function getNodeIdFromCert(certRaw: CertInfo | undefined) {
+    if (!certRaw?.raw) return undefined;
+    let cert = new crypto.X509Certificate(certRaw.raw);
+    return cert.subject;
 }
 
 /** NOTE: We create a factory, which embeds the key/cert information. Otherwise retries might use
@@ -128,14 +81,9 @@ export function overrideWebsocketSubProtocol<T>(_subprotocol: string, code: () =
 export function createWebsocketFactory(): (address: string, port: number) => SenderInterface {
 
     if (!isNode()) {
-        // NOTE: We assume an HTTP request has already been made, which will setup a nodeId cookie
-        //  (And as this point we can't even use peer certificates if we wanted to, as this must be done
-        //      directly in the browser)
-        let subprotocolOverride = subprotocol;
         return (address: string, port: number) => {
             console.log(`Connecting to ${address}:${port}`);
-            let subprotocols = subprotocolOverride ? [subprotocolOverride] : undefined;
-            return new WebSocket(`wss://${address}:${port}`, subprotocols);
+            return new WebSocket(`wss://${address}:${port}`);
         };
     } else {
         let { key, cert } = getCertKeyPair();
@@ -147,7 +95,6 @@ export function createWebsocketFactory(): (address: string, port: number) => Sen
                 key,
                 rejectUnauthorized,
                 ca: tls.rootCertificates.concat(getTrustedUserCertificates()),
-                protocol: subprotocol,
             });
             let result = Object.assign(webSocket, { socket: undefined as tls.TLSSocket | undefined });
             webSocket.once("upgrade", e => {

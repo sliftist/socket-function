@@ -2,16 +2,13 @@ import https from "https";
 import http from "http";
 import net from "net";
 import tls from "tls";
-import { CallerContext, CallType, NetworkLocation, setCertInfo } from "../SocketFunctionTypes";
+import { CallerContext, CallType, NetworkLocation, initCertInfo } from "../SocketFunctionTypes";
 import { isDataImmutable, performLocalCall } from "./callManager";
-import { getNodeIdRaw } from "./nodeAuthentication";
 import debugbreak from "debugbreak";
 import * as cookie from "cookie";
 import { SocketFunction } from "../SocketFunction";
 import { gzip } from "zlib";
 import { formatNumberSuffixed, sha256Hash } from "./misc";
-
-const nodeIdCookie = "node-id4";
 
 let defaultHTTPCall: CallType | undefined;
 
@@ -19,14 +16,6 @@ export function setDefaultHTTPCall(call: CallType) {
     defaultHTTPCall = call;
 }
 
-const cookieNodeIdPrefix = "COOKIE_nodeId_";
-export function getNodeIdFromRequest(request: http.IncomingMessage): string | undefined {
-    let cookies = cookie.parse(request.headers.cookie ?? "");
-    let value = cookies[nodeIdCookie];
-    if (!value) return value;
-    if (!value.startsWith(cookieNodeIdPrefix)) return undefined;
-    return value;
-}
 export function getServerLocationFromRequest(request: http.IncomingMessage): NetworkLocation {
     let host = request.headers.host;
     if (!host) {
@@ -83,28 +72,10 @@ export async function httpCallHandler(request: http.IncomingMessage, response: h
             throw new Error("Missing remote port");
         }
 
-        let nodeId = getNodeIdRaw(socket);
-        if (!nodeId) {
-            let cookieNodeId = getNodeIdFromRequest(request);
-            if (typeof cookieNodeId === "string") {
-                nodeId = cookieNodeId;
-            }
-        }
-        if (!nodeId) {
-            nodeId = cookieNodeIdPrefix + Date.now() + "_" + Math.random();
-            response.setHeader("Set-Cookie", cookie.serialize(nodeIdCookie, nodeId, {
-                httpOnly: true,
-                path: "/",
-                secure: true,
-                domain: urlObj.hostname,
-                sameSite: "none"
-            }));
-
-            response.setHeader(nodeIdCookie, nodeId);
-        }
-
+        // TODO: Support passing signed proof of userCertificate via headers
+        //  in the HTTP request, so that HTTP requests can have consistent nodeIds
         let caller: CallerContext = {
-            nodeId,
+            nodeId: "",
             fromPort: port,
             location: {
                 address,
@@ -112,9 +83,8 @@ export async function httpCallHandler(request: http.IncomingMessage, response: h
             },
             serverLocation: getServerLocationFromRequest(request),
             certInfo: undefined,
-            tlsAuthorizeError: undefined,
         };
-        setCertInfo(socket, caller);
+        initCertInfo(caller, { socket });
 
         let classGuid = urlObj.searchParams.get("classGuid");
         let functionName = urlObj.searchParams.get("functionName");

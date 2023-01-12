@@ -12,7 +12,7 @@
 		"cookie": "^0.5.0",
 		"debugbreak": "^0.6.5",
 		"mobx": "^6.6.2",
-		"node-forge": "https://github.com/dugrema/forge#ed25519",
+		"node-forge": "https://github.com/sliftist/forge#name",
 		"preact": "^10.10.6",
 		"typenode": "^4.8.6",
 		"ws": "^8.8.0"

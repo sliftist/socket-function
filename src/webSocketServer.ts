@@ -3,14 +3,9 @@ import http from "http";
 import net from "net";
 import tls from "tls";
 import * as ws from "ws";
-import { performLocalCall } from "./callManager";
-import { CallerContext, CallType, NetworkLocation } from "../SocketFunctionTypes";
-import { CallFactory, callFactoryFromWS } from "./CallFactory";
-import { registerNodeClient } from "./nodeCache";
-import { getCertKeyPair, getNodeId, getNodeIdRaw } from "./nodeAuthentication";
-import debugbreak from "debugbreak";
-import { cache } from "./caching";
-import { getNodeIdFromRequest, getServerLocationFromRequest, httpCallHandler } from "./callHTTPHandler";
+import { callFactoryFromWS } from "./CallFactory";
+import { getCertKeyPair } from "./nodeAuthentication";
+import { getServerLocationFromRequest, httpCallHandler } from "./callHTTPHandler";
 import { SocketFunction } from "../SocketFunction";
 import { getTrustedUserCertificates, loadTrustedUserCertificates, watchUserCertificates } from "./certStore";
 
@@ -45,7 +40,6 @@ export async function startSocketServer(
         ...config,
         rejectUnauthorized: SocketFunction.rejectUnauthorized,
         requestCert: true,
-        //ca: tls.rootCertificates.slice().concat(getTrustedUserCertificates()),
     };
 
     let httpsServer = https.createServer(options);
@@ -94,15 +88,10 @@ export async function startSocketServer(
                 return;
             }
         }
-        webSocketServer.handleUpgrade(request, socket, upgradeHead, async (ws) => {
-            // NOTE: For the browser, the request will likely have a nodeId, from making an HTTP request.
-            //  We would prefer peer certificates, so this isn't the default (in getNodeId), but it will
-            //  likely be used most of the time.
-            let requestNodeId = getNodeIdFromRequest(request);
-            Object.assign(ws, { nodeId: requestNodeId, host: request.headers["host"] });
-
-            let clientCallFactory = await callFactoryFromWS(ws, getServerLocationFromRequest(request));
-            registerNodeClient(clientCallFactory);
+        webSocketServer.handleUpgrade(request, socket, upgradeHead, (ws) => {
+            callFactoryFromWS(ws, getServerLocationFromRequest(request)).catch(e => {
+                console.error(`Error in creating call factory, ${e.stack}`);
+            });
         });
     });
 

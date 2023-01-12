@@ -1,14 +1,12 @@
-import { CallerContext, CallType, NetworkLocation, setCertInfo } from "../SocketFunctionTypes";
+import { CallerContext, CallType, NetworkLocation, initCertInfo } from "../SocketFunctionTypes";
 import * as ws from "ws";
-import type * as net from "net";
 import { performLocalCall } from "./callManager";
 import { convertErrorStackToError, formatNumberSuffixed, isNode } from "./misc";
-import { createWebsocketFactory, getNodeId, getTLSSocket } from "./nodeAuthentication";
-import debugbreak from "debugbreak";
-import http from "http";
+import { createWebsocketFactory, getTLSSocket } from "./nodeAuthentication";
 import { SocketFunction } from "../SocketFunction";
 import { gzip } from "zlib";
 import * as tls from "tls";
+import { registerNodeClient } from "./nodeCache";
 
 const retryInterval = 2000;
 
@@ -34,6 +32,7 @@ export interface CallFactory {
     // NOTE: May or may not have reconnection or retry logic inside of performCall.
     //  Trigger performLocalCall on the other side of the connection
     performCall(call: CallType): Promise<unknown>;
+    closedForever: boolean;
 }
 
 
@@ -83,7 +82,6 @@ export interface SenderInterface {
     nodeId?: string;
     // Only set AFTER "open" (if set at all, as in the browser we don't have access to the socket).
     socket?: tls.TLSSocket;
-    requestHost?: string;
 
     send(data: string | Buffer): void;
 
@@ -98,8 +96,6 @@ async function createCallFactory(
     location: NetworkLocation,
     serverLocation: NetworkLocation,
 ): Promise<CallFactory> {
-
-    let closedForever = false;
 
     let fromPort = 0;
     if (webSocketBase && webSocketBase instanceof ws.WebSocket) {
@@ -139,19 +135,54 @@ async function createCallFactory(
         serverLocation,
         fromPort,
         certInfo: undefined,
-        tlsAuthorizeError: undefined,
     };
+
+    let callFactory: CallFactory = {
+        nodeId: "STARTING (this string should never be seen)",
+        location,
+        closedForever: false,
+        async performCall(call: CallType) {
+            if (callFactory.closedForever) {
+                throw new Error(`Connection lost to ${niceConnectionName}`);
+            }
+
+            let seqNum = nextSeqNum++;
+            let fullCall: InternalCallType = {
+                isReturn: false,
+                args: call.args,
+                classGuid: call.classGuid,
+                functionName: call.functionName,
+                seqNum,
+                compress: !!SocketFunction.compression,
+            };
+            let data = Buffer.from(JSON.stringify(fullCall));
+            let resultPromise = new Promise((resolve, reject) => {
+                let callback = (result: InternalReturnType) => {
+                    if (SocketFunction.logMessages) {
+                        console.log(`SIZE\t${(formatNumberSuffixed(result.resultSize) + "B").padEnd(4, " ")}\t${call.classGuid}.${call.functionName}`);
+                    }
+                    pendingCalls.delete(seqNum);
+                    if (result.error) {
+                        reject(convertErrorStackToError(result.error));
+                    } else {
+                        resolve(result.result);
+                    }
+                };
+                pendingCalls.set(seqNum, { callback, data, call: fullCall, reconnectTimeout: call.reconnectTimeout });
+            });
+
+            await sendWithRetry(call.reconnectTimeout, data);
+
+            return await resultPromise;
+        }
+    };
+
     let webSocket!: SenderInterface;
     if (!webSocketBase) {
         await tryToReconnect();
     } else {
         webSocket = webSocketBase;
         setupWebsocket(webSocketBase);
-    }
-    if (isNode()) {
-        callerContext.nodeId = getNodeId(webSocket);
-    } else {
-        callerContext.nodeId = location.address + ":" + location.listeningPorts[0];
     }
 
     niceConnectionName = `${niceConnectionName} (${callerContext.nodeId})`;
@@ -200,7 +231,7 @@ async function createCallFactory(
                 let ports = location.listeningPorts;
 
                 if (ports.length === 0) {
-                    closedForever = true;
+                    callFactory.closedForever = true;
                     console.log(`No ports to reconnect for ${niceConnectionName}, pendingCall count: ${pendingCalls.size}`);
                     for (let call of pendingCalls.values()) {
                         call.callback({
@@ -235,20 +266,6 @@ async function createCallFactory(
                 if (!connectError) {
                     console.log(`Reconnected to ${location.address}:${port}`);
 
-                    // NOTE: Clientside doesn't have access to peer certificates, so it can't know the nodeId of the server
-                    //  that way. However, it can 
-                    if (isNode()) {
-                        let newNodeId = getNodeId(newWebSocket);
-                        let prevNodeId = callerContext.nodeId;
-                        if (prevNodeId === pendingNodeId) {
-                            callerContext.nodeId = newNodeId;
-                        } else {
-                            if (newNodeId !== prevNodeId) {
-                                throw new Error(`Connection lost to at ${niceConnectionName} ("${prevNodeId}"), but then re-established, however it is now "${newNodeId}"!`);
-                            }
-                        }
-                    }
-
                     // I'm not sure if we should clear reconnectAttempts? All the ports should be the same, and actually...
                     //  why would there even be a bad port?
                     //reconnectAttempts = 0;
@@ -279,7 +296,9 @@ async function createCallFactory(
     }
 
     function setupWebsocket(webSocket: SenderInterface) {
-        setCertInfo(webSocket.socket || (webSocket as any)._socket, callerContext);
+        initCertInfo(callerContext, webSocket);
+        registerNodeClient(callerContext.nodeId, callFactory);
+        callFactory.nodeId = callerContext.nodeId;
 
         webSocket.addEventListener("error", e => {
             console.log(`Websocket error for ${niceConnectionName}`, e);
@@ -382,42 +401,5 @@ async function createCallFactory(
         }
     }
 
-    return {
-        nodeId: callerContext.nodeId,
-        location,
-        async performCall(call: CallType) {
-            if (closedForever) {
-                throw new Error(`Connection lost to ${niceConnectionName}`);
-            }
-
-            let seqNum = nextSeqNum++;
-            let fullCall: InternalCallType = {
-                isReturn: false,
-                args: call.args,
-                classGuid: call.classGuid,
-                functionName: call.functionName,
-                seqNum,
-                compress: !!SocketFunction.compression,
-            };
-            let data = Buffer.from(JSON.stringify(fullCall));
-            let resultPromise = new Promise((resolve, reject) => {
-                let callback = (result: InternalReturnType) => {
-                    if (SocketFunction.logMessages) {
-                        console.log(`SIZE\t${(formatNumberSuffixed(result.resultSize) + "B").padEnd(4, " ")}\t${call.classGuid}.${call.functionName}`);
-                    }
-                    pendingCalls.delete(seqNum);
-                    if (result.error) {
-                        reject(convertErrorStackToError(result.error));
-                    } else {
-                        resolve(result.result);
-                    }
-                };
-                pendingCalls.set(seqNum, { callback, data, call: fullCall, reconnectTimeout: call.reconnectTimeout });
-            });
-
-            await sendWithRetry(call.reconnectTimeout, data);
-
-            return await resultPromise;
-        }
-    };
+    return callFactory;
 }
