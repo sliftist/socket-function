@@ -13,6 +13,7 @@ import { getArgs } from "./args";
 import { SenderInterface } from "./CallFactory";
 import { SocketFunction } from "../SocketFunction";
 import { getTrustedUserCertificates } from "./certStore";
+import { getClientNodeId, getNodeId, getNodeIdLocation } from "./nodeCache";
 
 export type CertInfo = { raw: Buffer | string; issuerCertificate: { raw: Buffer | string } };
 
@@ -69,26 +70,41 @@ export async function getOwnNodeId() {
     throw new Error(`TODO: Implement getOwnNodeId`);
 }
 
-export function getNodeIdFromCert(certRaw: CertInfo | undefined) {
+export function getNodeIdFromCert(certRaw: { raw: Buffer | string } | undefined, callbackPort: number | undefined) {
     if (!certRaw?.raw) return undefined;
     let cert = new crypto.X509Certificate(certRaw.raw);
-    return cert.subject;
+    if (!callbackPort) {
+        return getClientNodeId(cert.subject);
+    }
+    let subject = cert.subject;
+    if (subject.startsWith("CN=")) {
+        subject = subject.slice("CN=".length);
+    }
+    return getNodeId(subject, callbackPort);
 }
 
 /** NOTE: We create a factory, which embeds the key/cert information. Otherwise retries might use
  *      a different key/cert context.
  */
-export function createWebsocketFactory(): (address: string, port: number) => SenderInterface {
+export function createWebsocketFactory(): (nodeId: string) => SenderInterface {
 
     if (!isNode()) {
-        return (address: string, port: number) => {
+        return (nodeId: string) => {
+            let location = getNodeIdLocation(nodeId);
+            if (!location) throw new Error(`Cannot connect to ${nodeId}, no address known`);
+            let { address, port } = location;
+
             console.log(`Connecting to ${address}:${port}`);
             return new WebSocket(`wss://${address}:${port}`);
         };
     } else {
         let { key, cert } = getCertKeyPair();
         let rejectUnauthorized = SocketFunction.rejectUnauthorized;
-        return (address: string, port: number) => {
+        return (nodeId: string) => {
+            let location = getNodeIdLocation(nodeId);
+            if (!location) throw new Error(`Cannot connect to ${nodeId}, no address known`);
+            let { address, port } = location;
+
             console.log(`Connecting to ${address}:${port}`);
             let webSocket = new ws.WebSocket(`wss://${address}:${port}`, {
                 cert,
@@ -104,3 +120,4 @@ export function createWebsocketFactory(): (address: string, port: number) => Sen
         };
     }
 }
+

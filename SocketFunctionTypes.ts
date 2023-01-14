@@ -5,6 +5,7 @@ import * as tls from "tls";
 import { SenderInterface } from "./src/CallFactory";
 import { isNode } from "./src/misc";
 import { CertInfo, getNodeIdFromCert } from "./src/nodeAuthentication";
+import { getClientNodeId } from "./src/nodeCache";
 import { getCallObj } from "./src/nodeProxy";
 import { Args, MaybePromise } from "./src/types";
 
@@ -88,12 +89,13 @@ export interface SocketRegistered<ExposedType = any, DynamicCallContext extends 
     _classGuid: string;
 }
 export type CallerContext = Readonly<CallerContextBase>;
-type CallerContextBase = {
+export type CallerContextBase = {
     // IMPORTANT! Do not pass nodeId to other nodes with the intention of having
     //  them call functions directly using nodeId. Instead pass location, and have them use connect.
     //  - nodeId will be unique per thread, so is only useful for temporary communcation. If you want
     //      a more permanent identity, you must derive it from certInfo yourself.
     nodeId: string;
+
     /** Gives further info on the node. When we set this, we always make sure it has a verified
      *      issuer. It may be set by app code, which should make sure the issuer is verified (not
      *      necessarily by the machine, but just in some sense, 'verified', to secure the common name
@@ -101,43 +103,10 @@ type CallerContextBase = {
      *  IF set, is directly used to derive nodeId (by nodeAuthentication.ts)
      */
     certInfo: CertInfo | undefined;
-    updateCertInfo?: (certInfo: CertInfo | undefined) => void;
+    updateCertInfo?: (certInfo: CertInfo, callbackPort: number | undefined) => void;
 
-    fromPort: number;
-    // The location of the client (for reconnects, tracking, etc)
-    location: NetworkLocation;
-    // The location of the server (US). It helps if it is told, due to the fact that one server
-    //  can serve multiple domains, and so might not know how the client is connecting to it.
-    serverLocation: NetworkLocation;
+    // The nodeId they contacted. This is useful to determine their intention (otherwise
+    //  requests can be redirected to us and would accept them, even though they are being
+    //  blatantly MITMed).
+    localNodeId: string;
 };
-
-export function initCertInfo(
-    contextIn: CallerContext,
-    sender: { socket?: tls.TLSSocket; _socket?: tls.TLSSocket }
-) {
-    const context = contextIn as CallerContextBase;
-
-    context.updateCertInfo = (certRaw: CertInfo | undefined) => {
-        let nodeId = getNodeIdFromCert(certRaw);
-        if (nodeId) {
-            context.nodeId = nodeId;
-            // If the peer cert doesn't give a nodeId, don't even set it, as it is likely
-            //  just an empty object.
-            context.certInfo = certRaw;
-        } else {
-            const location = context.location;
-            // Just put a nodeId there so we can keep track of the connection
-            context.nodeId = location.address + ":" + location.listeningPorts[0] + "_" + Date.now() + "_" + Math.random();
-        }
-    };
-
-    let peerCert = (sender.socket || sender._socket)?.getPeerCertificate(true);
-    context.updateCertInfo(peerCert);
-}
-
-// IMPORTANT! Nodes at the same network location may vary, so you cannot store NetworkLocation
-//  in a list of allowed users, otherwise they can be impersonated!
-export interface NetworkLocation {
-    address: string;
-    listeningPorts: number[];
-}

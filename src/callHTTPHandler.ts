@@ -1,14 +1,11 @@
-import https from "https";
 import http from "http";
-import net from "net";
 import tls from "tls";
-import { CallerContext, CallType, NetworkLocation, initCertInfo } from "../SocketFunctionTypes";
+import { CallerContext, CallType } from "../SocketFunctionTypes";
 import { isDataImmutable, performLocalCall } from "./callManager";
-import debugbreak from "debugbreak";
-import * as cookie from "cookie";
 import { SocketFunction } from "../SocketFunction";
 import { gzip } from "zlib";
 import { formatNumberSuffixed, sha256Hash } from "./misc";
+import { getClientNodeId, getNodeId } from "./nodeCache";
 
 let defaultHTTPCall: CallType | undefined;
 
@@ -16,7 +13,7 @@ export function setDefaultHTTPCall(call: CallType) {
     defaultHTTPCall = call;
 }
 
-export function getServerLocationFromRequest(request: http.IncomingMessage): NetworkLocation {
+export function getServerLocationFromRequest(request: http.IncomingMessage) {
     let host = request.headers.host;
     if (!host) {
         throw new Error(`Missing host in request headers`);
@@ -30,8 +27,25 @@ export function getServerLocationFromRequest(request: http.IncomingMessage): Net
         address: host,
         // This is OUR location, so whatever they connected to us... we must be listening on!
         //  (and the localPort doesn't matter in this case)
-        listeningPorts: [port],
+        port,
     };
+}
+
+export function getNodeIdsFromRequest(request: http.IncomingMessage) {
+    // TODO: Support passing signed proof of userCertificate via headers in the HTTP request.
+    //  THAT WAY HTTP can have consistent nodeIds, instead of making them randomly every time!
+    //  (This isn't needed or possible for websockets, but they stay open, so calling functions
+    //      after they open to set the nodeId is possible, and preferred).
+    let remoteAddress = request.socket.remoteAddress;
+    if (!remoteAddress) {
+        throw new Error(`Missing remoteAddress`);
+    }
+    const nodeId = getClientNodeId(remoteAddress);
+
+    const serverLocation = getServerLocationFromRequest(request);
+    // IMPORTANT! Not the actual local id, but is the id the client called
+    const localNodeId = getNodeId(serverLocation.address, serverLocation.port);
+    return { nodeId, localNodeId };
 }
 
 export async function httpCallHandler(request: http.IncomingMessage, response: http.ServerResponse) {
@@ -61,30 +75,13 @@ export async function httpCallHandler(request: http.IncomingMessage, response: h
                 ;
         });
 
-        let socket = request.connection as tls.TLSSocket;
+        const { nodeId, localNodeId } = getNodeIdsFromRequest(request);
 
-        let address = socket.remoteAddress;
-        let port = socket.remotePort;
-        if (!address) {
-            throw new Error("Missing remote address");
-        }
-        if (!port) {
-            throw new Error("Missing remote port");
-        }
-
-        // TODO: Support passing signed proof of userCertificate via headers
-        //  in the HTTP request, so that HTTP requests can have consistent nodeIds
         let caller: CallerContext = {
-            nodeId: "",
-            fromPort: port,
-            location: {
-                address,
-                listeningPorts: [],
-            },
-            serverLocation: getServerLocationFromRequest(request),
+            nodeId,
             certInfo: undefined,
+            localNodeId,
         };
-        initCertInfo(caller, { socket });
 
         let classGuid = urlObj.searchParams.get("classGuid");
         let functionName = urlObj.searchParams.get("functionName");

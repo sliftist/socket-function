@@ -3,11 +3,11 @@ import http from "http";
 import net from "net";
 import tls from "tls";
 import * as ws from "ws";
-import { callFactoryFromWS } from "./CallFactory";
-import { getCertKeyPair } from "./nodeAuthentication";
-import { getServerLocationFromRequest, httpCallHandler } from "./callHTTPHandler";
+import { getCertKeyPair, getNodeIdFromCert } from "./nodeAuthentication";
+import { getNodeIdsFromRequest, httpCallHandler } from "./callHTTPHandler";
 import { SocketFunction } from "../SocketFunction";
 import { getTrustedUserCertificates, loadTrustedUserCertificates, watchUserCertificates } from "./certStore";
+import { createCallFactory } from "./CallFactory";
 
 export type SocketServerConfig = (
     {
@@ -23,8 +23,7 @@ export type SocketServerConfig = (
 
 export async function startSocketServer(
     config: SocketServerConfig
-) {
-
+): Promise<string> {
     let isSecure = "cert" in config || "key" in config || "pfx" in config;
     if (!isSecure) {
         let { key, cert } = getCertKeyPair();
@@ -89,7 +88,8 @@ export async function startSocketServer(
             }
         }
         webSocketServer.handleUpgrade(request, socket, upgradeHead, (ws) => {
-            callFactoryFromWS(ws, getServerLocationFromRequest(request)).catch(e => {
+            const { nodeId, localNodeId } = getNodeIdsFromRequest(request);
+            createCallFactory(ws, nodeId, localNodeId).catch(e => {
                 console.error(`Error in creating call factory, ${e.stack}`);
             });
         });
@@ -146,5 +146,13 @@ export async function startSocketServer(
 
     await listenPromise;
 
-    console.log(`Started Listening on ${host}:${config.port}`);
+    let port = (realServer.address() as net.AddressInfo).port;
+
+    console.log(`Started Listening on ${host}:${port}`);
+
+    let serverNodeId = getNodeIdFromCert({ raw: config.cert as Buffer | string }, port);
+    if (!serverNodeId) {
+        throw new Error(`Something is wrong with our cert, we don't have a nodeId?`);
+    }
+    return serverNodeId;
 }

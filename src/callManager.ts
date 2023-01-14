@@ -1,4 +1,4 @@
-import { CallContextType, CallerContext, CallType, ClientHookContext, HookContext, NetworkLocation, SocketExposedInterface, SocketExposedInterfaceClass, SocketExposedShape, SocketFunctionClientHook, SocketFunctionHook, SocketRegistered } from "../SocketFunctionTypes";
+import { CallContextType, CallerContext, CallType, ClientHookContext, HookContext, SocketExposedInterface, SocketExposedInterfaceClass, SocketExposedShape, SocketFunctionClientHook, SocketFunctionHook, SocketRegistered } from "../SocketFunctionTypes";
 import { _setSocketContext } from "../SocketFunction";
 
 let classes: {

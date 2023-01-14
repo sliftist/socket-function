@@ -1,7 +1,7 @@
-import { SocketExposedInterface, CallContextType, SocketFunctionHook, SocketFunctionClientHook, SocketExposedShape, SocketRegistered, NetworkLocation, CallerContext, SocketExposedInterfaceClass, CallType, FullCallType } from "./SocketFunctionTypes";
+import { SocketExposedInterface, CallContextType, SocketFunctionHook, SocketFunctionClientHook, SocketExposedShape, SocketRegistered, CallerContext, FullCallType } from "./SocketFunctionTypes";
 import { exposeClass, registerClass, registerGlobalClientHook, registerGlobalHook, runClientHooks } from "./src/callManager";
 import { SocketServerConfig, startSocketServer } from "./src/webSocketServer";
-import { getCallFactoryFromNodeId, getCreateCallFactoryLocation, getLocationFromNodeId, getNetworkLocationHash } from "./src/nodeCache";
+import { getCreateCallFactoryLocation, getNodeId, getNodeIdLocation } from "./src/nodeCache";
 import { getCallProxy } from "./src/nodeProxy";
 import { Args } from "./src/types";
 import { setDefaultHTTPCall } from "./src/callHTTPHandler";
@@ -53,10 +53,7 @@ export class SocketFunction {
                 console.log(`START\t\t\t${classGuid}.${functionName}`);
             }
             try {
-                let callFactory = await getCallFactoryFromNodeId(nodeId);
-                if (!callFactory) {
-                    throw new Error(`Cannot reach node ${nodeId}. It might have been incorrect provided to us via another node, which should have provided us a NetworkLocation instead.`);
-                }
+                let callFactory = await getCreateCallFactoryLocation(nodeId, SocketFunction.mountedNodeId);
 
                 let shapeObj = shape[functionName];
                 if (!shapeObj) {
@@ -91,11 +88,11 @@ export class SocketFunction {
      *      as we have no way of knowing how to contain a nodeId).
      *  */
     public static getHTTPCallLink(call: FullCallType): string {
-        let location = getLocationFromNodeId(call.nodeId);
+        let location = getNodeIdLocation(call.nodeId);
         if (!location) {
             throw new Error(`Cannot find call location for nodeId, and so do not know where call location is. NodeId ${call.nodeId}`);
         }
-        let url = new URL(`https://${location.address}:${location.listeningPorts[0]}`);
+        let url = new URL(`https://${location.address}:${location.port}`);
         url.searchParams.set("classGuid", call.classGuid);
         url.searchParams.set("functionName", call.functionName);
         url.searchParams.set("args", JSON.stringify(call.args));
@@ -110,8 +107,13 @@ export class SocketFunction {
         exposeClass(socketRegistered);
     }
 
+    public static mountedNodeId: string = "NOTMOUNTED";
     public static async mount(config: SocketServerConfig) {
-        await startSocketServer(config);
+        if (this.mountedNodeId !== "NOTMOUNTED") {
+            throw new Error("SocketFunction already mounted, mounting twice in one thread is not allowed.");
+        }
+        this.mountedNodeId = await startSocketServer(config);
+        return this.mountedNodeId;
     }
 
     /** Sets the default call when an http request is made, but no classGuid is set. */
@@ -130,28 +132,8 @@ export class SocketFunction {
         });
     }
 
-    public static async connect(location: NetworkLocation | { address: string; port: number }): Promise<string> {
-        if (!("listeningPorts" in location)) {
-            location = {
-                address: location.address,
-                listeningPorts: [location.port]
-            };
-        }
-        return await getCreateCallFactoryLocation(location);
-    }
-
-    public static connectSync(location: NetworkLocation | { address: string; port: number }): string {
-        if (!("listeningPorts" in location)) {
-            location = {
-                address: location.address,
-                listeningPorts: [location.port]
-            };
-        }
-        let tempNodeId = "syncTempNodeId_" + getNetworkLocationHash(location);
-
-        void getCreateCallFactoryLocation(location, tempNodeId);
-
-        return tempNodeId;
+    public static connect(location: { address: string, port: number }): string {
+        return getNodeId(location.address, location.port);
     }
 
     public static addGlobalHook<CallContext extends CallContextType>(hook: SocketFunctionHook<SocketExposedInterface, CallContext>) {

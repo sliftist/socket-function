@@ -1,12 +1,12 @@
-import { CallerContext, CallType, NetworkLocation, initCertInfo } from "../SocketFunctionTypes";
+import { CallerContext, CallerContextBase, CallType } from "../SocketFunctionTypes";
 import * as ws from "ws";
 import { performLocalCall } from "./callManager";
 import { convertErrorStackToError, formatNumberSuffixed, isNode } from "./misc";
-import { createWebsocketFactory, getTLSSocket } from "./nodeAuthentication";
+import { createWebsocketFactory, getNodeIdFromCert, getTLSSocket } from "./nodeAuthentication";
 import { SocketFunction } from "../SocketFunction";
 import { gzip } from "zlib";
 import * as tls from "tls";
-import { registerNodeClient } from "./nodeCache";
+import { getClientNodeId, getNodeIdLocation, registerNodeClient } from "./nodeCache";
 
 const retryInterval = 2000;
 
@@ -28,54 +28,10 @@ type InternalReturnType = {
 
 export interface CallFactory {
     nodeId: string;
-    location: NetworkLocation;
     // NOTE: May or may not have reconnection or retry logic inside of performCall.
     //  Trigger performLocalCall on the other side of the connection
     performCall(call: CallType): Promise<unknown>;
     closedForever: boolean;
-}
-
-
-export async function callFactoryFromLocation(
-    location: NetworkLocation
-): Promise<CallFactory> {
-    let listeningPort = location.listeningPorts[0];
-    if (typeof listeningPort !== "number") {
-        throw new Error(`Expected listeningPorts to be provided, but it was empty`);
-    }
-
-    // Because we are the client, we don't get to know our NetworkLocation (but we shouldn't
-    //  need to anyway).
-    let serverLocation: NetworkLocation = {
-        address: "localhost",
-        listeningPorts: [],
-    };
-
-    return await createCallFactory(undefined, location, serverLocation);
-}
-
-export async function callFactoryFromWS(
-    webSocket: ws.WebSocket & { nodeId?: string },
-    serverLocation: NetworkLocation,
-): Promise<CallFactory> {
-    let socket = getTLSSocket(webSocket);
-    let remoteAddress = socket.remoteAddress;
-    let remotePort = socket.remotePort;
-    if (!remoteAddress) {
-        throw new Error("No remote address?");
-    }
-    if (!remotePort) {
-        throw new Error("No remote port?");
-    }
-
-    // NOTE: We COULD reconnect to clients, but... chances are... when they go down,
-    //  their process is dead, and is going to stay dead.
-    let location: NetworkLocation = {
-        address: remoteAddress,
-        listeningPorts: [],
-    };
-
-    return await createCallFactory(webSocket, location, serverLocation);
 }
 
 export interface SenderInterface {
@@ -91,25 +47,16 @@ export interface SenderInterface {
     addEventListener(event: "message", listener: (data: ws.RawData | ws.MessageEvent | string) => void): void;
 }
 
-async function createCallFactory(
+export async function createCallFactory(
     webSocketBase: SenderInterface | undefined,
-    location: NetworkLocation,
-    serverLocation: NetworkLocation,
+    nodeId: string,
+    localNodeId: string,
 ): Promise<CallFactory> {
-
-    let fromPort = 0;
-    if (webSocketBase && webSocketBase instanceof ws.WebSocket) {
-        let socket = getTLSSocket(webSocketBase);
-        fromPort = socket.remotePort ?? fromPort;
-    }
-    let niceConnectionName = `${location.address}:${location.listeningPorts.join("|")}`;
-    if (fromPort && location.listeningPorts.length === 0) {
-        niceConnectionName += `(${fromPort})`;
-    }
+    let niceConnectionName = nodeId;
 
     const createWebsocket = createWebsocketFactory();
 
-    let retriesEnabled = location.listeningPorts.length > 0;
+    let retriesEnabled = !!getNodeIdLocation(nodeId);
 
     let lastReceivedSeqNum = 0;
 
@@ -128,18 +75,22 @@ async function createCallFactory(
     //  in return calls.
     let nextSeqNum = Math.random();
 
-    const pendingNodeId = "PENDING";
-    let callerContext: CallerContext = {
-        location,
-        nodeId: pendingNodeId,
-        serverLocation,
-        fromPort,
-        certInfo: undefined,
+    let callerContext: CallerContextBase = {
+        nodeId,
+        localNodeId,
+        certInfo: webSocketBase?.socket?.getPeerCertificate(true),
+        updateCertInfo: (certRaw, port) => {
+            let nodeId = getNodeIdFromCert(certRaw, port);
+            if (!nodeId) {
+                return;
+            }
+            callerContext.nodeId = nodeId;
+            callerContext.certInfo = certRaw;
+        }
     };
 
     let callFactory: CallFactory = {
-        nodeId: "STARTING (this string should never be seen)",
-        location,
+        nodeId,
         closedForever: false,
         async performCall(call: CallType) {
             if (callFactory.closedForever) {
@@ -228,9 +179,7 @@ async function createCallFactory(
         if (reconnectingPromise) return reconnectingPromise;
         return reconnectingPromise = (async () => {
             while (true) {
-                let ports = location.listeningPorts;
-
-                if (ports.length === 0) {
+                if (!retriesEnabled) {
                     callFactory.closedForever = true;
                     console.log(`No ports to reconnect for ${niceConnectionName}, pendingCall count: ${pendingCalls.size}`);
                     for (let call of pendingCalls.values()) {
@@ -246,8 +195,7 @@ async function createCallFactory(
                     return;
                 }
 
-                let port = ports[reconnectAttempts % ports.length];
-                let newWebSocket = createWebsocket(location.address, port);
+                let newWebSocket = createWebsocket(nodeId);
 
                 let connectError = await new Promise<string | undefined>(resolve => {
                     newWebSocket.addEventListener("open", () => {
@@ -264,7 +212,7 @@ async function createCallFactory(
                 setupWebsocket(newWebSocket);
 
                 if (!connectError) {
-                    console.log(`Reconnected to ${location.address}:${port}`);
+                    console.log(`Reconnected to ${niceConnectionName}`);
 
                     // I'm not sure if we should clear reconnectAttempts? All the ports should be the same, and actually...
                     //  why would there even be a bad port?
@@ -289,16 +237,14 @@ async function createCallFactory(
                 }
 
                 reconnectAttempts++;
-                console.error(`Connection retry to ${location.address}:${port} failed (attempt ${reconnectAttempts}), retrying in ${retryInterval}ms, error: ${JSON.stringify(connectError)}`);
+                console.error(`Connection retry to ${niceConnectionName} failed (attempt ${reconnectAttempts}), retrying in ${retryInterval}ms, error: ${JSON.stringify(connectError)}`);
                 await new Promise(resolve => setTimeout(resolve, retryInterval));
             }
         })();
     }
 
     function setupWebsocket(webSocket: SenderInterface) {
-        initCertInfo(callerContext, webSocket);
-        registerNodeClient(callerContext.nodeId, callFactory);
-        callFactory.nodeId = callerContext.nodeId;
+        registerNodeClient(callFactory);
 
         webSocket.addEventListener("error", e => {
             console.log(`Websocket error for ${niceConnectionName}`, e);
