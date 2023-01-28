@@ -37,12 +37,19 @@ export class SocketFunction {
     >(
         classGuid: string,
         instance: ClassInstance,
-        shape: Shape
+        shape: Shape,
+        defaultHooks?: SocketExposedShape[""]
     ):
         (
             SocketRegistered<ExtractShape<ClassInstance, Shape>, CallContext>
         ) {
 
+        for (let value of Object.values(shape)) {
+            if (!value) continue;
+            value.clientHooks = [...(defaultHooks?.clientHooks || []), ...(value.clientHooks || [])];
+            value.hooks = [...(defaultHooks?.hooks || []), ...(value.hooks || [])];
+            value.dataImmutable = defaultHooks?.dataImmutable ?? value.dataImmutable;
+        }
         registerClass(classGuid, instance as SocketExposedInterface, shape as any as SocketExposedShape);
 
         let nodeProxy = getCallProxy(classGuid, async (call) => {
@@ -64,6 +71,20 @@ export class SocketFunction {
 
                 if ("overrideResult" in hookResult) {
                     return hookResult.overrideResult;
+                }
+
+                if (hookResult.callTimeout !== undefined) {
+                    let timeout = hookResult.callTimeout;
+                    let time = Date.now();
+                    let timeoutPromise = new Promise((resolve, reject) => {
+                        setTimeout(() => {
+                            reject(new Error(`Call timed out after ${Date.now() - time}ms`));
+                        }, timeout);
+                    });
+                    return await Promise.race([
+                        callFactory.performCall(call),
+                        timeoutPromise,
+                    ]);
                 }
 
                 return await callFactory.performCall(call);
@@ -148,6 +169,11 @@ export class SocketFunction {
 const curSocketContext: SocketRegistered["context"] = {
     curContext: undefined,
     caller: undefined,
+    getCaller() {
+        const caller = curSocketContext.caller;
+        if (!caller) throw new Error(`Tried to access caller when not in the synchronous phase of a function call`);
+        return caller;
+    }
 };
 let socketContextSeqNum = 1;
 

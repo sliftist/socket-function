@@ -1,0 +1,1 @@
+/// <reference path="../typenode/index.d.ts" />

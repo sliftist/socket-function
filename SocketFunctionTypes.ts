@@ -53,14 +53,18 @@ export interface SocketFunctionHook<ExposedType extends SocketExposedInterface =
 }
 export type HookContext<ExposedType extends SocketExposedInterface = SocketExposedInterface, CallContext extends CallContextType = CallContextType> = {
     call: CallType;
-    context: SocketRegistered["context"];
-    // If the result is overriden, we continue evaluating hooks BUT NOT perform the final call
+    context: SocketRegistered<ExposedType, CallContext>["context"];
+    // If the result is overriden, we continue evaluating hooks BUT DO NOT perform the final call
     overrideResult?: unknown;
 };
 
 export type ClientHookContext<ExposedType extends SocketExposedInterface = SocketExposedInterface, CallContext extends CallContextType = CallContextType> = {
     call: CallType;
-    // If the result is overriden, we continue evaluating hooks BUT NOT perform the final call
+    /** If the calls takes longer than this (for ANY reason), we return with an error.
+     *      - Different from reconnectTimeout, which only errors if we lose the connection.
+    */
+    callTimeout?: number;
+    // If the result is overriden, we continue evaluating hooks BUT DO NOT perform the final call
     overrideResult?: unknown;
 };
 export interface SocketFunctionClientHook<ExposedType extends SocketExposedInterface = SocketExposedInterface, CallContext extends CallContextType = CallContextType> {
@@ -85,6 +89,7 @@ export interface SocketRegistered<ExposedType = any, DynamicCallContext extends 
         // If undefined we are not synchronously in a call
         curContext: DynamicCallContext | undefined;
         caller: CallerContext | undefined;
+        getCaller(): CallerContext;
     };
     _classGuid: string;
 }

@@ -1,3 +1,5 @@
+/// <reference path="../../typenode/index.d.ts" />
+/// <reference path="../require/RequireController.ts" />
 module.allowclient = true;
 
 import { SocketFunction } from "../SocketFunction";

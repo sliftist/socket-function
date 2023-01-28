@@ -181,7 +181,7 @@ export async function createCallFactory(
             while (true) {
                 if (!retriesEnabled) {
                     callFactory.closedForever = true;
-                    console.log(`No ports to reconnect for ${niceConnectionName}, pendingCall count: ${pendingCalls.size}`);
+                    console.log(`Cannot reconnect to ${niceConnectionName}, aborting pendingCalls: ${pendingCalls.size}`);
                     for (let call of pendingCalls.values()) {
                         call.callback({
                             isReturn: true,
@@ -214,8 +214,7 @@ export async function createCallFactory(
                 if (!connectError) {
                     console.log(`Reconnected to ${niceConnectionName}`);
 
-                    // I'm not sure if we should clear reconnectAttempts? All the ports should be the same, and actually...
-                    //  why would there even be a bad port?
+                    // I'm not sure if we should clear reconnectAttempts? Maybe if we eventually have a max reconnectAttempts?
                     //reconnectAttempts = 0;
                     reconnectingPromise = undefined;
 

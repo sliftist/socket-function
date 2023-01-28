@@ -6,19 +6,27 @@ import * as ws from "ws";
 import { getCertKeyPair, getNodeIdFromCert } from "./nodeAuthentication";
 import { getNodeIdsFromRequest, httpCallHandler } from "./callHTTPHandler";
 import { SocketFunction } from "../SocketFunction";
-import { getTrustedUserCertificates, loadTrustedUserCertificates, watchUserCertificates } from "./certStore";
+import { getTrustedUserCertificates, watchUserCertificates } from "./certStore";
 import { createCallFactory } from "./CallFactory";
+import { parseSNIExtension, parseTLSHello, SNIType } from "./tlsParsing";
+import debugbreak from "debugbreak";
 
 export type SocketServerConfig = (
-    {
+    https.ServerOptions & {
         port: number;
+
         // public sets ip to "0.0.0.0", otherwise it defaults to "127.0.0.1", which
         //  causes the server to only accept local connections.
         public?: boolean;
         ip?: string;
-    } & (
-        https.ServerOptions
-    )
+
+        /** If the SNI matches this domain, we use a different key/cert.
+         *  - Also requestCert may be specified (otherwise it defaults to true)
+         */
+        SNICerts?: {
+            [domain: string]: https.ServerOptions;
+        };
+    }
 );
 
 export async function startSocketServer(
@@ -31,69 +39,77 @@ export async function startSocketServer(
         config.cert = cert;
     }
 
-    await loadTrustedUserCertificates();
-
-    // TODO: Only allow unauthorized for ip certificates, and then for domains use the domain as the nodeId,
-    //  so it is easy to read, and consistent.
-    let options: https.ServerOptions = {
-        ...config,
-        rejectUnauthorized: SocketFunction.rejectUnauthorized,
-        requestCert: true,
-    };
-
-    let httpsServer = https.createServer(options);
-    watchUserCertificates(() => {
-        options.ca = tls.rootCertificates.concat(getTrustedUserCertificates());
-        httpsServer.setSecureContext(options);
-    });
-
-    httpsServer.on("connection", socket => {
-        console.log("Client connection established");
-        socket.on("error", e => {
-            console.log(`Client socket error ${e.message}`);
-        });
-        socket.on("close", () => {
-            console.log("Client socket closed");
-        });
-    });
-    httpsServer.on("error", e => {
-        console.error(`Connection attempt error ${e.message}`);
-    });
-    httpsServer.on("tlsClientError", e => {
-        console.error(`TLS client error ${e.message}`);
-    });
-
-
-    httpsServer.on("request", httpCallHandler);
 
     const webSocketServer = new ws.Server({
         noServer: true,
     });
-    httpsServer.on("upgrade", (request, socket, upgradeHead) => {
-        socket.on("error", e => {
-            console.log(`Client socket error ${e.message}`);
+
+    function setupHTTPSServer(options: https.ServerOptions) {
+        let httpsServer = https.createServer(options);
+        watchUserCertificates(() => {
+            options.ca = tls.rootCertificates.concat(getTrustedUserCertificates());
+            httpsServer.setSecureContext(options);
         });
 
-        let originHeader = request.headers["origin"];
-        if (originHeader) {
-            try {
-                let host = new URL("ws://" + request.headers["host"]).hostname;
-                let origin = new URL(originHeader).hostname;
-                if (host !== origin) {
-                    throw new Error(`Invalid cross thread request, ${JSON.stringify(host)} !== ${JSON.stringify(origin)}`);
-                }
-            } catch (e) {
-                console.error(e);
-                return;
-            }
-        }
-        webSocketServer.handleUpgrade(request, socket, upgradeHead, (ws) => {
-            const { nodeId, localNodeId } = getNodeIdsFromRequest(request);
-            createCallFactory(ws, nodeId, localNodeId).catch(e => {
-                console.error(`Error in creating call factory, ${e.stack}`);
+        httpsServer.on("connection", socket => {
+            console.log("Client connection established");
+            socket.on("error", e => {
+                console.log(`Client socket error ${e.message}`);
+            });
+            socket.on("close", () => {
+                console.log("Client socket closed");
             });
         });
-    });
+        httpsServer.on("error", e => {
+            console.error(`Connection attempt error ${e.message}`);
+        });
+        httpsServer.on("tlsClientError", e => {
+            console.error(`TLS client error ${e.message}`);
+        });
+
+        httpsServer.on("request", httpCallHandler);
+
+        httpsServer.on("upgrade", (request, socket, upgradeHead) => {
+            socket.on("error", e => {
+                console.log(`Client socket error ${e.message}`);
+            });
+
+            let originHeader = request.headers["origin"];
+            if (originHeader) {
+                try {
+                    let host = new URL("ws://" + request.headers["host"]).hostname;
+                    let origin = new URL(originHeader).hostname;
+                    if (host !== origin) {
+                        throw new Error(`Invalid cross thread request, ${JSON.stringify(host)} !== ${JSON.stringify(origin)}`);
+                    }
+                } catch (e) {
+                    console.error(e);
+                    return;
+                }
+            }
+            webSocketServer.handleUpgrade(request, socket, upgradeHead, (ws) => {
+                const { nodeId, localNodeId } = getNodeIdsFromRequest(request);
+                createCallFactory(ws, nodeId, localNodeId).catch(e => {
+                    console.error(`Error in creating call factory, ${e.stack}`);
+                });
+            });
+        });
+        return httpsServer;
+    }
+
+    // TODO: Only allow unauthorized for ip certificates, and then for domains use the domain as the nodeId,
+    //  so it is easy to read, and consistent.
+    let options: https.ServerOptions = {
+        rejectUnauthorized: SocketFunction.rejectUnauthorized,
+        requestCert: true,
+        ...config,
+    };
+
+    const mainHTTPSServer = setupHTTPSServer(options);
+    let sniServers = new Map<string, https.Server>();
+    for (let [domain, obj] of Object.entries(config.SNICerts || {})) {
+        sniServers.set(domain, setupHTTPSServer(obj));
+    }
 
     let httpServer = http.createServer({}, async function (req, res) {
         let url = new URL("http://" + req.headers.host + req.url);
@@ -114,7 +130,15 @@ export async function startSocketServer(
         socket.once("data", buffer => {
             // All HTTPS requests start with 22, and no HTTP requests start with 22,
             //  so we just need to read the first byte.
-            let server = buffer[0] === 22 ? httpsServer : httpServer;
+
+            let server: https.Server | http.Server;
+            if (buffer[0] !== 22) {
+                server = httpServer;
+            } else {
+                let data = parseTLSHello(buffer);
+                let sni = data.extensions.filter(x => x.type === SNIType).flatMap(x => parseSNIExtension(x.data))[0];
+                server = sniServers.get(sni) || mainHTTPSServer;
+            }
 
             // NOTE: Messages aren't dequeued until the current handler finishes, so we don't need to pause the socket or anything.
             server.emit("connection", socket);

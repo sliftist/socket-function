@@ -30,6 +30,14 @@ export function getNodeIdLocation(nodeId: string): { address: string, port: numb
     return { address, port: parseInt(port) };
 }
 
+export function getNodeIdDomain(nodeId: string): string {
+    let location = getNodeIdLocation(nodeId);
+    if (!location) {
+        throw new Error(`Cannot get domain from nodeId, which is only usable as a client. NodeId: ${JSON.stringify(nodeId)}`);
+    }
+    return new URL(location.address).hostname.split(".").slice(-2).join(".");
+}
+
 // NOTE: CallFactory turns into an actual CallFactory when registerNodeClient is called
 // nodeId => 
 const nodeCache = new Map<string, MaybePromise<CallFactory>>();

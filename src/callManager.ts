@@ -40,7 +40,7 @@ export async function performLocalCall(
     }
 
     let curContext: CallContextType = {};
-    let serverContext = await runServerHooks(call, { caller, curContext }, functionShape);
+    let serverContext = await runServerHooks(call, { caller, curContext, getCaller: () => caller }, functionShape);
     if ("overrideResult" in serverContext) {
         return serverContext.overrideResult;
     }
@@ -75,8 +75,20 @@ export function exposeClass(exposedClass: SocketRegistered) {
 export function registerGlobalHook(hook: SocketFunctionHook) {
     globalHooks.push(hook);
 }
+export function unregisterGlobalHook(hook: SocketFunctionHook) {
+    let index = globalHooks.indexOf(hook);
+    if (index >= 0) {
+        globalHooks.splice(index, 1);
+    }
+}
 export function registerGlobalClientHook(hook: SocketFunctionClientHook) {
     globalClientHooks.push(hook);
+}
+export function unregisterGlobalClientHook(hook: SocketFunctionClientHook) {
+    let index = globalClientHooks.indexOf(hook);
+    if (index >= 0) {
+        globalClientHooks.splice(index, 1);
+    }
 }
 
 export async function runClientHooks(
