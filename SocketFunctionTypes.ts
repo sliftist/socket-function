@@ -1,3 +1,5 @@
+/// <reference path="./require/RequireController.ts" />
+
 module.allowclient = true;
 
 import { getCallObj } from "./src/nodeProxy";
@@ -44,6 +46,8 @@ export interface FullCallType extends CallType {
 
 export interface SocketFunctionHook<ExposedType extends SocketExposedInterface = SocketExposedInterface, CallContext extends CallContextType = CallContextType> {
     (config: HookContext<ExposedType, CallContext>): MaybePromise<void>;
+    /** NOTE: This is useful when we need a clientside hook to set up state specifically for our serverside hook. */
+    clientHook?: SocketFunctionClientHook<ExposedType, CallContext>;
 }
 export type HookContext<ExposedType extends SocketExposedInterface = SocketExposedInterface, CallContext extends CallContextType = CallContextType> = {
     call: FullCallType;

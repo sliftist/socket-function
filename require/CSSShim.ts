@@ -1,3 +1,4 @@
+/// <reference path=".//RequireController.ts" />
 import debugbreak from "debugbreak";
 import { compileTransformBefore } from "typenode";
 

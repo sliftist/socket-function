@@ -1,9 +1,11 @@
+/// <reference path="./require/RequireController.ts" />
+
 import { SocketExposedInterface, CallContextType, SocketFunctionHook, SocketFunctionClientHook, SocketExposedShape, SocketRegistered, CallerContext, FullCallType } from "./SocketFunctionTypes";
 import { exposeClass, registerClass, registerGlobalClientHook, registerGlobalHook, runClientHooks } from "./src/callManager";
 import { SocketServerConfig, startSocketServer } from "./src/webSocketServer";
 import { getCreateCallFactoryLocation, getNodeId, getNodeIdLocation } from "./src/nodeCache";
 import { getCallProxy } from "./src/nodeProxy";
-import { Args } from "./src/types";
+import { Args, MaybePromise } from "./src/types";
 import { setDefaultHTTPCall } from "./src/callHTTPHandler";
 
 module.allowclient = true;
@@ -29,6 +31,9 @@ export class SocketFunction {
     };
     public static httpETagCache = false;
 
+    private static onMountCallbacks = new Map<string, (() => MaybePromise<void>)[]>();
+    public static exposedClasses = new Set<string>();
+
     public static register<
         ClassInstance extends object,
         Shape extends SocketExposedShape<SocketExposedInterface, CallContext>,
@@ -37,7 +42,9 @@ export class SocketFunction {
         classGuid: string,
         instance: ClassInstance,
         shape: Shape,
-        defaultHooks?: SocketExposedShape[""]
+        defaultHooks?: SocketExposedShape[""] & {
+            onMount?: () => MaybePromise<void>;
+        }
     ):
         (
             SocketRegistered<ExtractShape<ClassInstance, Shape>, CallContext>
@@ -101,6 +108,16 @@ export class SocketFunction {
             _classGuid: classGuid,
         };
 
+        let onMount = defaultHooks?.onMount;
+        if (onMount) {
+            let callbacks = SocketFunction.onMountCallbacks.get(classGuid);
+            if (!callbacks) {
+                callbacks = [];
+                SocketFunction.onMountCallbacks.set(classGuid, callbacks);
+            }
+            callbacks.push(onMount);
+        }
+
         return output as any;
     }
 
@@ -125,15 +142,33 @@ export class SocketFunction {
      */
     public static expose(socketRegistered: SocketRegistered) {
         exposeClass(socketRegistered);
+        SocketFunction.exposedClasses.add(socketRegistered._classGuid);
+
+        if (this.hasMounted) {
+            let mountCallbacks = SocketFunction.onMountCallbacks.get(socketRegistered._classGuid);
+            for (let onMount of mountCallbacks || []) {
+                Promise.resolve(onMount()).catch(e => {
+                    console.error("Error in onMount callback exposed after mount", e);
+                });
+            }
+        }
     }
 
     public static mountedNodeId: string = "NOTMOUNTED";
-    public static async mount(config: SocketServerConfig & { nodeId: string }) {
+    private static hasMounted = false;
+    public static async mount(config: SocketServerConfig) {
         if (this.mountedNodeId !== "NOTMOUNTED") {
             throw new Error("SocketFunction already mounted, mounting twice in one thread is not allowed.");
         }
-        this.mountedNodeId = config.nodeId;
-        await startSocketServer(config);
+        this.mountedNodeId = await startSocketServer(config);
+        this.hasMounted = true;
+        for (let classGuid of SocketFunction.exposedClasses) {
+            let callbacks = SocketFunction.onMountCallbacks.get(classGuid);
+            if (!callbacks) continue;
+            for (let callback of callbacks) {
+                await callback();
+            }
+        }
         return this.mountedNodeId;
     }
 

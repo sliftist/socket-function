@@ -1,3 +1,4 @@
+/// <reference path="../../typenode/index.d.ts" />
 import debugbreak from "debugbreak";
 import fs from "fs";
 import { SocketFunction } from "../SocketFunction";

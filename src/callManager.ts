@@ -1,5 +1,6 @@
 import { CallContextType, CallerContext, CallType, ClientHookContext, FullCallType, HookContext, SocketExposedInterface, SocketExposedInterfaceClass, SocketExposedShape, SocketFunctionClientHook, SocketFunctionHook, SocketRegistered } from "../SocketFunctionTypes";
 import { _setSocketContext } from "../SocketFunction";
+import { isNode } from "./misc";
 
 let classes: {
     [classGuid: string]: {
@@ -96,7 +97,32 @@ export async function runClientHooks(
     hooks: SocketExposedShape[""],
 ): Promise<ClientHookContext> {
     let context: ClientHookContext = { call: callType };
-    for (let hook of globalClientHooks.concat(hooks.clientHooks || [])) {
+    // NOTE: These defaults are important, or else calls can just lock up forever
+    //  - Any calls that do work should greatly extend the callTimeout (probably to an hour, at least). But,
+    //      most of our calls don't, so they should REALLY be completing with a minute. Also,
+    //      generally speaking nothing is so important that we need to spend more than 30 seconds reconnecting
+    //      to make the call
+    if (isNode()) {
+        context.callTimeout = 1000 * 60 * 1;
+        context.call.reconnectTimeout = 1000 * 30;
+    } else {
+        // MUST longer timeouts in the browser, as it is a lot easier for your phone to lose internet connectivity
+        //  for a few minutes, AND, the browser will have a lot of local state (textboxes, etc), that we really don't
+        //  want to lose. Also, a server doesn't mind restarting a process, but a user WILL mind having to refresh a page.
+        context.callTimeout = 1000 * 60 * 15;
+        context.call.reconnectTimeout = 1000 * 60 * 5;
+    }
+
+    let clientHooks = (
+        globalClientHooks
+            .concat(hooks.clientHooks || [])
+    );
+    for (let otherClientHook of globalHooks.concat(hooks.hooks || []).map(x => x.clientHook)) {
+        if (otherClientHook) {
+            clientHooks.push(otherClientHook);
+        }
+    }
+    for (let hook of clientHooks) {
         await hook(context);
         if ("overrideResult" in context) {
             break;

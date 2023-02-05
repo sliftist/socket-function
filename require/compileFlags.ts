@@ -1,3 +1,4 @@
+/// <reference path="./RequireController.ts" />
 module.allowclient = true;
 
 /**

@@ -9,11 +9,11 @@ import { getTrustedCertificates, watchTrustedCertificates } from "./certStore";
 import { createCallFactory } from "./CallFactory";
 import { parseSNIExtension, parseTLSHello, SNIType } from "./tlsParsing";
 import debugbreak from "debugbreak";
+import { getNodeId } from "./nodeCache";
+import crypto from "crypto";
 
 export type SocketServerConfig = (
     https.ServerOptions & {
-        nodeId?: string;
-
         key: string | Buffer;
         cert: string | Buffer;
 
@@ -33,7 +33,7 @@ export type SocketServerConfig = (
 
 export async function startSocketServer(
     config: SocketServerConfig
-): Promise<void> {
+): Promise<string> {
 
     const webSocketServer = new ws.Server({
         noServer: true,
@@ -97,6 +97,12 @@ export async function startSocketServer(
     let options: https.ServerOptions = {
         ...config,
     };
+    if (!config.cert) {
+        throw new Error("No cert specified");
+    }
+    if (!config.key) {
+        throw new Error("No key specified");
+    }
 
     const mainHTTPSServer = setupHTTPSServer(options);
     let sniServers = new Map<string, https.Server>();
@@ -165,5 +171,17 @@ export async function startSocketServer(
 
     let port = (realServer.address() as net.AddressInfo).port;
 
-    console.log(`Started Listening on ${config.nodeId || host}:${port}`);
+    let nodeId = getNodeId(getCommonName(config.cert), port);
+
+    console.log(`Started Listening on ${nodeId}`);
+
+    return nodeId;
+}
+
+function getCommonName(cert: Buffer | string) {
+    let subject = new crypto.X509Certificate(cert).subject;
+    let subjectKVPs = new Map(subject.split(",").map(x => x.trim().split("=")).map(x => [x[0], x.slice(1).join("=")]));
+    let commonName = subjectKVPs.get("CN");
+    if (!commonName) throw new Error(`No common name in subject: ${subject}`);
+    return commonName;
 }

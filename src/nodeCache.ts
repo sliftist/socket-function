@@ -19,11 +19,21 @@ export function getNodeId(domain: string, port: number): string {
 
 /** A nodeId not available for reconnecting. */
 export function getClientNodeId(address: string): string {
-    return `client_${address}:${Date.now()}:${Math.random()}`;
+    return `client:${address}:${Date.now()}:${Math.random()}`;
+}
+/** Will always be available, even if getNodeIdLocation is not (as we don't always have the port,
+ *      but we should always have an address).
+ *  - Rarely used, as for logging you can just log the nodeId. ALSO, it isn't sufficient to reconnect, as the port is also needed!
+ *  */
+export function getNodeIdIP(nodeId: string): string {
+    if (nodeId.startsWith("client:")) {
+        return nodeId.split(":")[1];
+    }
+    return getNodeIdLocation(nodeId)!.address;
 }
 
 export function getNodeIdLocation(nodeId: string): { address: string, port: number; } | undefined {
-    if (nodeId.startsWith("client_")) {
+    if (nodeId.startsWith("client:")) {
         return undefined;
     }
     let [address, port] = nodeId.split(":");

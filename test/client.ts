@@ -1,3 +1,5 @@
+/// <reference path="../require/RequireController.ts" />
+
 // https://letx.ca:2542/?classGuid=RequireController-e2f811f3-14b8-4759-b0d6-73f14516cf1d&functionName=requireHTML&args=[%22./test/test%22]
 
 //import typescript from "typescript";
@@ -23,8 +25,6 @@ void main();
 
 async function main() {
     if (isNode()) return;
-
-    SocketFunction.rejectUnauthorized = false;
 
     SocketFunction.expose(Test);
 
