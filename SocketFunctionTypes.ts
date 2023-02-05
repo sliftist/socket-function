@@ -1,11 +1,5 @@
 module.allowclient = true;
 
-import debugbreak from "debugbreak";
-import * as tls from "tls";
-import { SenderInterface } from "./src/CallFactory";
-import { isNode } from "./src/misc";
-import { CertInfo, getNodeIdFromCert } from "./src/nodeAuthentication";
-import { getClientNodeId } from "./src/nodeCache";
 import { getCallObj } from "./src/nodeProxy";
 import { Args, MaybePromise } from "./src/types";
 
@@ -52,14 +46,14 @@ export interface SocketFunctionHook<ExposedType extends SocketExposedInterface =
     (config: HookContext<ExposedType, CallContext>): MaybePromise<void>;
 }
 export type HookContext<ExposedType extends SocketExposedInterface = SocketExposedInterface, CallContext extends CallContextType = CallContextType> = {
-    call: CallType;
+    call: FullCallType;
     context: SocketRegistered<ExposedType, CallContext>["context"];
     // If the result is overriden, we continue evaluating hooks BUT DO NOT perform the final call
     overrideResult?: unknown;
 };
 
 export type ClientHookContext<ExposedType extends SocketExposedInterface = SocketExposedInterface, CallContext extends CallContextType = CallContextType> = {
-    call: CallType;
+    call: FullCallType;
     /** If the calls takes longer than this (for ANY reason), we return with an error.
      *      - Different from reconnectTimeout, which only errors if we lose the connection.
     */
@@ -100,15 +94,6 @@ export type CallerContextBase = {
     //  - nodeId will be unique per thread, so is only useful for temporary communcation. If you want
     //      a more permanent identity, you must derive it from certInfo yourself.
     nodeId: string;
-
-    /** Gives further info on the node. When we set this, we always make sure it has a verified
-     *      issuer. It may be set by app code, which should make sure the issuer is verified (not
-     *      necessarily by the machine, but just in some sense, 'verified', to secure the common name
-     *      of the cert and prevent anyone from using the same common name as someone else).
-     *  IF set, is directly used to derive nodeId (by nodeAuthentication.ts)
-     */
-    certInfo: CertInfo | undefined;
-    updateCertInfo?: (certInfo: CertInfo, callbackPort: number | undefined) => void;
 
     // The nodeId they contacted. This is useful to determine their intention (otherwise
     //  requests can be redirected to us and would accept them, even though they are being

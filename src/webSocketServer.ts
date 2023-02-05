@@ -3,16 +3,20 @@ import http from "http";
 import net from "net";
 import tls from "tls";
 import * as ws from "ws";
-import { getCertKeyPair, getNodeIdFromCert } from "./nodeAuthentication";
 import { getNodeIdsFromRequest, httpCallHandler } from "./callHTTPHandler";
 import { SocketFunction } from "../SocketFunction";
-import { getTrustedUserCertificates, watchUserCertificates } from "./certStore";
+import { getTrustedCertificates, watchTrustedCertificates } from "./certStore";
 import { createCallFactory } from "./CallFactory";
 import { parseSNIExtension, parseTLSHello, SNIType } from "./tlsParsing";
 import debugbreak from "debugbreak";
 
 export type SocketServerConfig = (
     https.ServerOptions & {
+        nodeId?: string;
+
+        key: string | Buffer;
+        cert: string | Buffer;
+
         port: number;
 
         // public sets ip to "0.0.0.0", otherwise it defaults to "127.0.0.1", which
@@ -20,9 +24,7 @@ export type SocketServerConfig = (
         public?: boolean;
         ip?: string;
 
-        /** If the SNI matches this domain, we use a different key/cert.
-         *  - Also requestCert may be specified (otherwise it defaults to true)
-         */
+        /** If the SNI matches this domain, we use a different key/cert. */
         SNICerts?: {
             [domain: string]: https.ServerOptions;
         };
@@ -31,14 +33,7 @@ export type SocketServerConfig = (
 
 export async function startSocketServer(
     config: SocketServerConfig
-): Promise<string> {
-    let isSecure = "cert" in config || "key" in config || "pfx" in config;
-    if (!isSecure) {
-        let { key, cert } = getCertKeyPair();
-        config.key = key;
-        config.cert = cert;
-    }
-
+): Promise<void> {
 
     const webSocketServer = new ws.Server({
         noServer: true,
@@ -46,8 +41,8 @@ export async function startSocketServer(
 
     function setupHTTPSServer(options: https.ServerOptions) {
         let httpsServer = https.createServer(options);
-        watchUserCertificates(() => {
-            options.ca = tls.rootCertificates.concat(getTrustedUserCertificates());
+        watchTrustedCertificates(() => {
+            options.ca = getTrustedCertificates();
             httpsServer.setSecureContext(options);
         });
 
@@ -100,8 +95,6 @@ export async function startSocketServer(
     // TODO: Only allow unauthorized for ip certificates, and then for domains use the domain as the nodeId,
     //  so it is easy to read, and consistent.
     let options: https.ServerOptions = {
-        rejectUnauthorized: SocketFunction.rejectUnauthorized,
-        requestCert: true,
         ...config,
     };
 
@@ -172,11 +165,5 @@ export async function startSocketServer(
 
     let port = (realServer.address() as net.AddressInfo).port;
 
-    console.log(`Started Listening on ${host}:${port}`);
-
-    let serverNodeId = getNodeIdFromCert({ raw: config.cert as Buffer | string }, port);
-    if (!serverNodeId) {
-        throw new Error(`Something is wrong with our cert, we don't have a nodeId?`);
-    }
-    return serverNodeId;
+    console.log(`Started Listening on ${config.nodeId || host}:${port}`);
 }

@@ -1,4 +1,4 @@
-import { CallContextType, CallerContext, CallType, ClientHookContext, HookContext, SocketExposedInterface, SocketExposedInterfaceClass, SocketExposedShape, SocketFunctionClientHook, SocketFunctionHook, SocketRegistered } from "../SocketFunctionTypes";
+import { CallContextType, CallerContext, CallType, ClientHookContext, FullCallType, HookContext, SocketExposedInterface, SocketExposedInterfaceClass, SocketExposedShape, SocketFunctionClientHook, SocketFunctionHook, SocketRegistered } from "../SocketFunctionTypes";
 import { _setSocketContext } from "../SocketFunction";
 
 let classes: {
@@ -14,7 +14,7 @@ let globalClientHooks: SocketFunctionClientHook[] = [];
 
 export async function performLocalCall(
     config: {
-        call: CallType;
+        call: FullCallType;
         caller: CallerContext;
     }
 ): Promise<unknown> {
@@ -92,7 +92,7 @@ export function unregisterGlobalClientHook(hook: SocketFunctionClientHook) {
 }
 
 export async function runClientHooks(
-    callType: CallType,
+    callType: FullCallType,
     hooks: SocketExposedShape[""],
 ): Promise<ClientHookContext> {
     let context: ClientHookContext = { call: callType };
@@ -106,7 +106,7 @@ export async function runClientHooks(
 }
 
 async function runServerHooks(
-    callType: CallType,
+    callType: FullCallType,
     context: SocketRegistered["context"],
     hooks: SocketExposedShape[""],
 ): Promise<HookContext> {

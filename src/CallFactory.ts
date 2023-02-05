@@ -1,8 +1,8 @@
-import { CallerContext, CallerContextBase, CallType } from "../SocketFunctionTypes";
+import { CallerContext, CallerContextBase, CallType, FullCallType } from "../SocketFunctionTypes";
 import * as ws from "ws";
 import { performLocalCall } from "./callManager";
 import { convertErrorStackToError, formatNumberSuffixed, isNode } from "./misc";
-import { createWebsocketFactory, getNodeIdFromCert, getTLSSocket } from "./nodeAuthentication";
+import { createWebsocketFactory, getTLSSocket } from "./nodeAuthentication";
 import { SocketFunction } from "../SocketFunction";
 import { gzip } from "zlib";
 import * as tls from "tls";
@@ -10,7 +10,7 @@ import { getClientNodeId, getNodeIdLocation, registerNodeClient } from "./nodeCa
 
 const retryInterval = 2000;
 
-type InternalCallType = CallType & {
+type InternalCallType = FullCallType & {
     seqNum: number;
     isReturn: false;
     compress: boolean;
@@ -77,16 +77,7 @@ export async function createCallFactory(
 
     let callerContext: CallerContextBase = {
         nodeId,
-        localNodeId,
-        certInfo: webSocketBase?.socket?.getPeerCertificate(true),
-        updateCertInfo: (certRaw, port) => {
-            let nodeId = getNodeIdFromCert(certRaw, port);
-            if (!nodeId) {
-                return;
-            }
-            callerContext.nodeId = nodeId;
-            callerContext.certInfo = certRaw;
-        }
+        localNodeId
     };
 
     let callFactory: CallFactory = {
@@ -99,6 +90,7 @@ export async function createCallFactory(
 
             let seqNum = nextSeqNum++;
             let fullCall: InternalCallType = {
+                nodeId,
                 isReturn: false,
                 args: call.args,
                 classGuid: call.classGuid,

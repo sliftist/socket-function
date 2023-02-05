@@ -28,7 +28,6 @@ export class SocketFunction {
         type: "gzip";
     };
     public static httpETagCache = false;
-    public static rejectUnauthorized = true;
 
     public static register<
         ClassInstance extends object,
@@ -129,11 +128,12 @@ export class SocketFunction {
     }
 
     public static mountedNodeId: string = "NOTMOUNTED";
-    public static async mount(config: SocketServerConfig) {
+    public static async mount(config: SocketServerConfig & { nodeId: string }) {
         if (this.mountedNodeId !== "NOTMOUNTED") {
             throw new Error("SocketFunction already mounted, mounting twice in one thread is not allowed.");
         }
-        this.mountedNodeId = await startSocketServer(config);
+        this.mountedNodeId = config.nodeId;
+        await startSocketServer(config);
         return this.mountedNodeId;
     }
 

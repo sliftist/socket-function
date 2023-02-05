@@ -1,6 +1,6 @@
 import http from "http";
 import tls from "tls";
-import { CallerContext, CallType } from "../SocketFunctionTypes";
+import { CallerContext, CallType, FullCallType } from "../SocketFunctionTypes";
 import { isDataImmutable, performLocalCall } from "./callManager";
 import { SocketFunction } from "../SocketFunction";
 import { gzip } from "zlib";
@@ -79,7 +79,6 @@ export async function httpCallHandler(request: http.IncomingMessage, response: h
 
         let caller: CallerContext = {
             nodeId,
-            certInfo: undefined,
             localNodeId,
         };
 
@@ -112,7 +111,8 @@ export async function httpCallHandler(request: http.IncomingMessage, response: h
             args = JSON.parse(payload.toString())["args"] as unknown[];
         }
 
-        let call: CallType = {
+        let call: FullCallType = {
+            nodeId,
             classGuid,
             functionName,
             args,
