@@ -11,6 +11,7 @@ import { parseSNIExtension, parseTLSHello, SNIType } from "./tlsParsing";
 import debugbreak from "debugbreak";
 import { getNodeId } from "./nodeCache";
 import crypto from "crypto";
+import { Watchable } from "./misc";
 
 export type SocketServerConfig = (
     https.ServerOptions & {
@@ -18,6 +19,8 @@ export type SocketServerConfig = (
         cert: string | Buffer;
 
         port: number;
+        /** You can also set `port: 0` if you don't care what port you want at all.  */
+        useAvailablePortIfPortInUse?: boolean;
 
         // public sets ip to "0.0.0.0", otherwise it defaults to "127.0.0.1", which
         //  causes the server to only accept local connections.
@@ -26,7 +29,7 @@ export type SocketServerConfig = (
 
         /** If the SNI matches this domain, we use a different key/cert. */
         SNICerts?: {
-            [domain: string]: https.ServerOptions;
+            [domain: string]: Watchable<https.ServerOptions>;
         };
     }
 );
@@ -39,11 +42,25 @@ export async function startSocketServer(
         noServer: true,
     });
 
-    function setupHTTPSServer(options: https.ServerOptions) {
-        let httpsServer = https.createServer(options);
+    async function setupHTTPSServer(watchOptions: Watchable<https.ServerOptions>) {
+        let httpsServerLast: https.Server | undefined;
+        let onHttpServer: (server: https.Server) => void;
+        let httpServerPromise = new Promise<https.Server>(r => onHttpServer = r);
+        let lastOptions!: https.ServerOptions;
+        await watchOptions(value => {
+            lastOptions = { ...value, ca: getTrustedCertificates() };
+            if (!httpsServerLast) {
+                httpsServerLast = https.createServer(lastOptions);
+            } else {
+                httpsServerLast.setSecureContext(lastOptions);
+            }
+            onHttpServer(httpsServerLast);
+        });
+        let httpsServer = await httpServerPromise;
+
         watchTrustedCertificates(() => {
-            options.ca = getTrustedCertificates();
-            httpsServer.setSecureContext(options);
+            lastOptions.ca = getTrustedCertificates();
+            httpsServer.setSecureContext(lastOptions);
         });
 
         httpsServer.on("connection", socket => {
@@ -104,10 +121,10 @@ export async function startSocketServer(
         throw new Error("No key specified");
     }
 
-    const mainHTTPSServer = setupHTTPSServer(options);
+    const mainHTTPSServer = await setupHTTPSServer(callback => callback(options));
     let sniServers = new Map<string, https.Server>();
     for (let [domain, obj] of Object.entries(config.SNICerts || {})) {
-        sniServers.set(domain, setupHTTPSServer(obj));
+        sniServers.set(domain, await setupHTTPSServer(obj));
     }
 
     let httpServer = http.createServer({}, async function (req, res) {
@@ -136,6 +153,7 @@ export async function startSocketServer(
             } else {
                 let data = parseTLSHello(buffer);
                 let sni = data.extensions.filter(x => x.type === SNIType).flatMap(x => parseSNIExtension(x.data))[0];
+                console.log(`Received TCP connection with SNI ${JSON.stringify(sni)}`);
                 server = sniServers.get(sni) || mainHTTPSServer;
             }
 
@@ -164,15 +182,34 @@ export async function startSocketServer(
         host = "0.0.0.0";
     }
 
-    console.log(`Trying to listening on ${host}:${config.port}`);
-    realServer.listen(config.port, host);
+    let port = config.port;
+    if (config.useAvailablePortIfPortInUse && port) {
+        async function isPortInUse(port: number): Promise<boolean> {
+            return new Promise<boolean>((resolve, reject) => {
+                let server = net.createServer();
+                server.listen(port, host)
+                    .on("listening", function () {
+                        server.close();
+                        resolve(false);
+                    }).on("close", function () {
+                        resolve(true);
+                    }).on("error", function (e) {
+                        resolve(true);
+                    });
+            });
+        }
+        if (await isPortInUse(port)) {
+            port = 0;
+        }
+    }
+
+    console.log(`Trying to listening on ${host}:${port}`);
+    realServer.listen(port, host);
 
     await listenPromise;
 
-    let port = (realServer.address() as net.AddressInfo).port;
-
+    port = (realServer.address() as net.AddressInfo).port;
     let nodeId = getNodeId(getCommonName(config.cert), port);
-
     console.log(`Started Listening on ${nodeId}`);
 
     return nodeId;

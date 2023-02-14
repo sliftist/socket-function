@@ -41,7 +41,7 @@ class TestBase {
 export const Test = SocketFunction.register(
     "80d9f328-72df-4baa-8be8-019c1003d4a2",
     new TestBase(),
-    {
+    () => ({
         add: {
             // hooks: [
             //     async (config) => {
@@ -49,17 +49,11 @@ export const Test = SocketFunction.register(
             //     }
             // ]
         },
-        callMe: {
-            clientHooks: [
-                async (config) => {
-                    config.call.reconnectTimeout = 2000;
-                }
-            ]
-        },
+        callMe: {},
         callBack: {
 
         },
         //fncNotAsync: {},
         //notAFnc: {},
-    }
+    })
 );

@@ -64,8 +64,8 @@ class HotReloadControllerBase {
 export const HotReloadController = SocketFunction.register(
     "HotReloadController-032b2250-3aac-4187-8c95-75412742b8f5",
     new HotReloadControllerBase(),
-    {
+    () => ({
         watchFiles: {},
         fileUpdated: {}
-    }
+    })
 );

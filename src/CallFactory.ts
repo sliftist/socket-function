@@ -2,13 +2,13 @@ import { CallerContext, CallerContextBase, CallType, FullCallType } from "../Soc
 import * as ws from "ws";
 import { performLocalCall } from "./callManager";
 import { convertErrorStackToError, formatNumberSuffixed, isNode } from "./misc";
-import { createWebsocketFactory, getTLSSocket } from "./nodeAuthentication";
+import { createWebsocketFactory, getTLSSocket } from "./websocketFactory";
 import { SocketFunction } from "../SocketFunction";
 import { gzip } from "zlib";
 import * as tls from "tls";
 import { getClientNodeId, getNodeIdLocation, registerNodeClient } from "./nodeCache";
-
-const retryInterval = 2000;
+import debugbreak from "debugbreak";
+import { lazy } from "./caching";
 
 type InternalCallType = FullCallType & {
     seqNum: number;
@@ -45,6 +45,8 @@ export interface SenderInterface {
     addEventListener(event: "close", listener: () => void): void;
     addEventListener(event: "error", listener: (err: { message: string }) => void): void;
     addEventListener(event: "message", listener: (data: ws.RawData | ws.MessageEvent | string) => void): void;
+
+    readyState: number;
 }
 
 export async function createCallFactory(
@@ -55,19 +57,13 @@ export async function createCallFactory(
     let niceConnectionName = nodeId;
 
     const createWebsocket = createWebsocketFactory();
-
-    let retriesEnabled = !!getNodeIdLocation(nodeId);
+    const registerOnce = lazy(() => registerNodeClient(callFactory));
 
     let lastReceivedSeqNum = 0;
-
-    let reconnectingPromise: Promise<void> | undefined;
-    let reconnectAttempts = 0;
-
 
     let pendingCalls: Map<number, {
         data: Buffer;
         call: InternalCallType;
-        reconnectTimeout: number | undefined;
         callback: (resultJSON: InternalReturnType) => void;
     }> = new Map();
     // NOTE: It is important to make this as random as possible, to prevent
@@ -111,144 +107,78 @@ export async function createCallFactory(
                         resolve(result.result);
                     }
                 };
-                pendingCalls.set(seqNum, { callback, data, call: fullCall, reconnectTimeout: call.reconnectTimeout });
+                pendingCalls.set(seqNum, { callback, data, call: fullCall });
             });
 
-            await sendWithRetry(call.reconnectTimeout, data);
+            await send(data);
 
             return await resultPromise;
         }
     };
 
-    let webSocket!: SenderInterface;
-    if (!webSocketBase) {
-        await tryToReconnect();
-    } else {
-        webSocket = webSocketBase;
-        setupWebsocket(webSocketBase);
+    let webSocketPromise: Promise<SenderInterface> | undefined;
+    if (webSocketBase) {
+        webSocketPromise = Promise.resolve(webSocketBase);
+        await initializeWebsocket(webSocketBase);
     }
 
-    niceConnectionName = `${niceConnectionName} (${callerContext.nodeId})`;
+    async function initializeWebsocket(newWebSocket: SenderInterface) {
+        registerOnce();
 
-    async function sendWithRetry(reconnectTimeout: number | undefined, data: Buffer) {
-        if (!retriesEnabled) {
-            webSocket.send(data);
-            return;
-        }
-
-        while (true) {
-            if (reconnectingPromise) {
-                if (reconnectTimeout) {
-                    await Promise.race([
-                        reconnectingPromise,
-                        new Promise<SenderInterface>(resolve =>
-                            setTimeout(() => {
-                                retriesEnabled = false;
-                                resolve(webSocket);
-                            }, reconnectTimeout)
-                        )
-                    ]);
-                } else {
-                    await reconnectingPromise;
-                }
-            }
-
-            if (!retriesEnabled) {
-                webSocket.send(data);
-                break;
-            }
-
-            try {
-                webSocket.send(data);
-                break;
-            } catch (e) {
-                // Ignore errors, as we will catch them synchronously in the next loop.
-                void (tryToReconnect());
-            }
-        }
-    }
-    function tryToReconnect(): Promise<void> {
-        if (reconnectingPromise) return reconnectingPromise;
-        return reconnectingPromise = (async () => {
-            while (true) {
-                if (!retriesEnabled) {
-                    callFactory.closedForever = true;
-                    console.log(`Cannot reconnect to ${niceConnectionName}, aborting pendingCalls: ${pendingCalls.size}`);
-                    for (let call of pendingCalls.values()) {
-                        call.callback({
-                            isReturn: true,
-                            result: undefined,
-                            error: `Connection lost to ${niceConnectionName}`,
-                            seqNum: call.call.seqNum,
-                            resultSize: 0,
-                            compressed: false,
-                        });
-                    }
-                    return;
-                }
-
-                let newWebSocket = createWebsocket(nodeId);
-
-                let connectError = await new Promise<string | undefined>(resolve => {
-                    newWebSocket.addEventListener("open", () => {
-                        resolve(undefined);
-                    });
-                    newWebSocket.addEventListener("close", () => {
-                        resolve("Connection closed for non-error reason?");
-                    });
-                    newWebSocket.addEventListener("error", e => {
-                        resolve(String(e.message));
-                    });
+        function onClose(error: string) {
+            webSocketPromise = undefined;
+            for (let [key, call] of pendingCalls) {
+                pendingCalls.delete(key);
+                call.callback({
+                    isReturn: true,
+                    result: undefined,
+                    error: error,
+                    seqNum: call.call.seqNum,
+                    resultSize: 0,
+                    compressed: false,
                 });
-
-                setupWebsocket(newWebSocket);
-
-                if (!connectError) {
-                    console.log(`Reconnected to ${niceConnectionName}`);
-
-                    // I'm not sure if we should clear reconnectAttempts? Maybe if we eventually have a max reconnectAttempts?
-                    //reconnectAttempts = 0;
-                    reconnectingPromise = undefined;
-
-                    webSocket = newWebSocket;
-
-                    for (let call of pendingCalls.values()) {
-                        sendWithRetry(call.reconnectTimeout, call.data).catch(e => {
-                            call.callback({
-                                isReturn: true,
-                                result: undefined,
-                                error: String(e),
-                                seqNum: call.call.seqNum,
-                                resultSize: 0,
-                                compressed: false,
-                            });
-                        });
-                    }
-                    return;
-                }
-
-                reconnectAttempts++;
-                console.error(`Connection retry to ${niceConnectionName} failed (attempt ${reconnectAttempts}), retrying in ${retryInterval}ms, error: ${JSON.stringify(connectError)}`);
-                await new Promise(resolve => setTimeout(resolve, retryInterval));
             }
-        })();
+        }
+
+        newWebSocket.addEventListener("error", e => {
+            // NOTE: No more logging, as we throw, so the caller should be logging the
+            //  error (or swallowing it, if that is what it wants to do).
+            //console.log(`Websocket error for ${niceConnectionName}`, e.message);
+            onClose(`Connection error for ${niceConnectionName}: ${e.message}`);
+        });
+
+        newWebSocket.addEventListener("close", async () => {
+            //console.log(`Websocket closed ${niceConnectionName}`);
+            onClose(`Connection closed to ${niceConnectionName}`);
+        });
+
+        newWebSocket.addEventListener("message", onMessage);
+
+
+        if (newWebSocket.readyState === 0 /* CONNECTING */) {
+            await new Promise<void>(resolve => {
+                newWebSocket.addEventListener("open", () => {
+                    console.log(`Connection established to ${niceConnectionName}`);
+                    resolve();
+                });
+                newWebSocket.addEventListener("close", () => resolve());
+                newWebSocket.addEventListener("error", () => resolve());
+            });
+        } else if (newWebSocket.readyState !== 1 /* OPEN */) {
+            onClose(`Websocket received in closed state`);
+        }
     }
 
-    function setupWebsocket(webSocket: SenderInterface) {
-        registerNodeClient(callFactory);
+    async function send(data: Buffer) {
+        webSocketPromise = webSocketPromise || tryToReconnect();
+        let webSocket = await webSocketPromise;
+        webSocket.send(data);
+    }
+    async function tryToReconnect(): Promise<SenderInterface> {
+        let newWebSocket = createWebsocket(nodeId);
+        await initializeWebsocket(newWebSocket);
 
-        webSocket.addEventListener("error", e => {
-            console.log(`Websocket error for ${niceConnectionName}`, e);
-        });
-
-        webSocket.addEventListener("close", async () => {
-            console.log(`Websocket closed ${niceConnectionName}`);
-            if (retriesEnabled) {
-                await tryToReconnect();
-            }
-        });
-
-        webSocket.addEventListener("message", onMessage);
+        return newWebSocket;
     }
 
 
@@ -328,7 +258,7 @@ export async function createCallFactory(
                     } else {
                         result = Buffer.from(JSON.stringify(response));
                     }
-                    await sendWithRetry(call.reconnectTimeout, result);
+                    await send(result);
                 }
                 return;
             }

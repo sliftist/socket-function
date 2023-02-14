@@ -33,6 +33,7 @@ export function cacheEmptyArray<T>(array: T[]): T[] {
 
 export function cache<Output, Key>(getValue: (key: Key) => Output): {
     (key: Key): Output;
+    clear(key: Key): void;
 } {
     let startingCalculating = new Set<Key>();
     let values = new Map<Key, Output>();
@@ -51,6 +52,9 @@ export function cache<Output, Key>(getValue: (key: Key) => Output): {
         values.set(key, value);
         return value;
     }
+    cache.clear = (key: Key) => {
+        values.delete(key);
+    };
     return cache;
 }
 

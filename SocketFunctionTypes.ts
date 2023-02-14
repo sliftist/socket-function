@@ -36,9 +36,6 @@ export interface CallType {
     classGuid: string;
     functionName: string;
     args: unknown[];
-    // NOTE: When making calls this needs to be set in the client hook.
-    //  To set a timeout on returns, you can set it in the server hook.
-    reconnectTimeout?: number;
 }
 export interface FullCallType extends CallType {
     nodeId: string;
@@ -58,10 +55,6 @@ export type HookContext<ExposedType extends SocketExposedInterface = SocketExpos
 
 export type ClientHookContext<ExposedType extends SocketExposedInterface = SocketExposedInterface, CallContext extends CallContextType = CallContextType> = {
     call: FullCallType;
-    /** If the calls takes longer than this (for ANY reason), we return with an error.
-     *      - Different from reconnectTimeout, which only errors if we lose the connection.
-    */
-    callTimeout?: number;
     // If the result is overriden, we continue evaluating hooks BUT DO NOT perform the final call
     overrideResult?: unknown;
 };

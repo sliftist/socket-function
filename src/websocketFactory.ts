@@ -4,6 +4,7 @@ import { isNode } from "./misc";
 import { SenderInterface } from "./CallFactory";
 import { getTrustedCertificates } from "./certStore";
 import { getNodeIdLocation } from "./nodeCache";
+import debugbreak from "debugbreak";
 
 
 export function getTLSSocket(webSocket: ws.WebSocket) {

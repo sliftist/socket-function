@@ -1,4 +1,7 @@
 import * as crypto from "crypto";
+import { MaybePromise } from "./types";
+
+export type Watchable<T> = (callback: (value: T) => void) => MaybePromise<void>;
 
 export function convertErrorStackToError(error: string): Error {
     let errorObj = new Error();

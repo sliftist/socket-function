@@ -7,6 +7,8 @@ import { getCreateCallFactoryLocation, getNodeId, getNodeIdLocation } from "./sr
 import { getCallProxy } from "./src/nodeProxy";
 import { Args, MaybePromise } from "./src/types";
 import { setDefaultHTTPCall } from "./src/callHTTPHandler";
+import debugbreak from "debugbreak";
+import { lazy } from "./src/caching";
 
 module.allowclient = true;
 
@@ -34,6 +36,8 @@ export class SocketFunction {
     private static onMountCallbacks = new Map<string, (() => MaybePromise<void>)[]>();
     public static exposedClasses = new Set<string>();
 
+    // NOTE: We use callbacks we don't run into issues with cyclic dependencies
+    //  (ex, using a hook in a controller where the hook also calls the controller).
     public static register<
         ClassInstance extends object,
         Shape extends SocketExposedShape<SocketExposedInterface, CallContext>,
@@ -41,22 +45,28 @@ export class SocketFunction {
     >(
         classGuid: string,
         instance: ClassInstance,
-        shape: Shape,
-        defaultHooks?: SocketExposedShape[""] & {
+        shapeFnc: () => Shape,
+        defaultHooksFnc?: () => SocketExposedShape[""] & {
             onMount?: () => MaybePromise<void>;
         }
-    ):
-        (
-            SocketRegistered<ExtractShape<ClassInstance, Shape>, CallContext>
-        ) {
+    ): SocketRegistered<ExtractShape<ClassInstance, Shape>, CallContext> {
+        let getDefaultHooks = defaultHooksFnc && lazy(defaultHooksFnc);
+        const getShape = lazy(() => {
+            let shape = shapeFnc();
+            let defaultHooks = getDefaultHooks?.();
 
-        for (let value of Object.values(shape)) {
-            if (!value) continue;
-            value.clientHooks = [...(defaultHooks?.clientHooks || []), ...(value.clientHooks || [])];
-            value.hooks = [...(defaultHooks?.hooks || []), ...(value.hooks || [])];
-            value.dataImmutable = defaultHooks?.dataImmutable ?? value.dataImmutable;
-        }
-        registerClass(classGuid, instance as SocketExposedInterface, shape as any as SocketExposedShape);
+            for (let value of Object.values(shape)) {
+                if (!value) continue;
+                value.clientHooks = [...(defaultHooks?.clientHooks || []), ...(value.clientHooks || [])];
+                value.hooks = [...(defaultHooks?.hooks || []), ...(value.hooks || [])];
+                value.dataImmutable = defaultHooks?.dataImmutable ?? value.dataImmutable;
+            }
+            return shape as any as SocketExposedShape;
+        });
+
+        setImmediate(() => {
+            registerClass(classGuid, instance as SocketExposedInterface, getShape());
+        });
 
         let nodeProxy = getCallProxy(classGuid, async (call) => {
             let nodeId = call.nodeId;
@@ -68,7 +78,7 @@ export class SocketFunction {
             try {
                 let callFactory = await getCreateCallFactoryLocation(nodeId, SocketFunction.mountedNodeId);
 
-                let shapeObj = shape[functionName];
+                let shapeObj = getShape()[functionName];
                 if (!shapeObj) {
                     throw new Error(`Function ${functionName} is not in shape`);
                 }
@@ -77,20 +87,6 @@ export class SocketFunction {
 
                 if ("overrideResult" in hookResult) {
                     return hookResult.overrideResult;
-                }
-
-                if (hookResult.callTimeout !== undefined) {
-                    let timeout = hookResult.callTimeout;
-                    let time = Date.now();
-                    let timeoutPromise = new Promise((resolve, reject) => {
-                        setTimeout(() => {
-                            reject(new Error(`Call timed out after ${Date.now() - time}ms`));
-                        }, timeout);
-                    });
-                    return await Promise.race([
-                        callFactory.performCall(call),
-                        timeoutPromise,
-                    ]);
                 }
 
                 return await callFactory.performCall(call);
@@ -108,15 +104,17 @@ export class SocketFunction {
             _classGuid: classGuid,
         };
 
-        let onMount = defaultHooks?.onMount;
-        if (onMount) {
-            let callbacks = SocketFunction.onMountCallbacks.get(classGuid);
-            if (!callbacks) {
-                callbacks = [];
-                SocketFunction.onMountCallbacks.set(classGuid, callbacks);
+        setImmediate(() => {
+            let onMount = getDefaultHooks?.().onMount;
+            if (onMount) {
+                let callbacks = SocketFunction.onMountCallbacks.get(classGuid);
+                if (!callbacks) {
+                    callbacks = [];
+                    SocketFunction.onMountCallbacks.set(classGuid, callbacks);
+                }
+                callbacks.push(onMount);
             }
-            callbacks.push(onMount);
-        }
+        });
 
         return output as any;
     }

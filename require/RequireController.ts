@@ -10,7 +10,7 @@ module.allowclient = true;
 declare global {
     namespace NodeJS {
         interface Module {
-            /** Indiciates the module is allowed clientside. */
+            /** Indicates the module is allowed clientside. */
             allowclient?: boolean;
 
             /** Indicates the module is definitely not allowed clientside */
@@ -238,10 +238,10 @@ export function setRequireBootRequire(path: string) {
 export const RequireController = SocketFunction.register(
     "RequireController-e2f811f3-14b8-4759-b0d6-73f14516cf1d",
     baseController,
-    {
+    () => ({
         getModules: {},
         requireHTML: {},
         bufferJS: {},
         requireJS: {},
-    }
+    })
 );
