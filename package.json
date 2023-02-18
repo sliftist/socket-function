@@ -1,6 +1,6 @@
 {
 	"name": "socket-function",
-	"version": "0.8.36",
+	"version": "0.8.37",
 	"main": "index.js",
 	"license": "MIT",
 	"note1": "note on node-forge fork, see https://github.com/digitalbazaar/forge/issues/744 for details",
