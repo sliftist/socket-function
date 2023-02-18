@@ -10,6 +10,8 @@ import { getClientNodeId, getNodeIdLocation, registerNodeClient } from "./nodeCa
 import debugbreak from "debugbreak";
 import { lazy } from "./caching";
 
+const MIN_RETRY_DELAY = 1000;
+
 type InternalCallType = FullCallType & {
     seqNum: number;
     isReturn: false;
@@ -28,10 +30,13 @@ type InternalReturnType = {
 
 export interface CallFactory {
     nodeId: string;
+    lastClosed: number;
+    closedForever?: boolean;
+    isConnected?: boolean;
     // NOTE: May or may not have reconnection or retry logic inside of performCall.
     //  Trigger performLocalCall on the other side of the connection
     performCall(call: CallType): Promise<unknown>;
-    closedForever: boolean;
+    onNextDisconnect(callback: () => void): void;
 }
 
 export interface SenderInterface {
@@ -59,6 +64,8 @@ export async function createCallFactory(
     const createWebsocket = createWebsocketFactory();
     const registerOnce = lazy(() => registerNodeClient(callFactory));
 
+    const canReconnect = !!getNodeIdLocation(nodeId);
+
     let lastReceivedSeqNum = 0;
 
     let pendingCalls: Map<number, {
@@ -71,19 +78,23 @@ export async function createCallFactory(
     //  in return calls.
     let nextSeqNum = Math.random();
 
+    let lastConnectionAttempt = 0;
+
     let callerContext: CallerContextBase = {
         nodeId,
         localNodeId
     };
 
+    let disconnectCallbacks: (() => void)[] = [];
+    function onNextDisconnect(callback: () => void): void {
+        disconnectCallbacks.push(callback);
+    }
+
     let callFactory: CallFactory = {
         nodeId,
-        closedForever: false,
+        lastClosed: 0,
+        onNextDisconnect,
         async performCall(call: CallType) {
-            if (callFactory.closedForever) {
-                throw new Error(`Connection lost to ${niceConnectionName}`);
-            }
-
             let seqNum = nextSeqNum++;
             let fullCall: InternalCallType = {
                 nodeId,
@@ -126,7 +137,11 @@ export async function createCallFactory(
         registerOnce();
 
         function onClose(error: string) {
+            callFactory.lastClosed = Date.now();
             webSocketPromise = undefined;
+            if (!canReconnect) {
+                callFactory.closedForever = true;
+            }
             for (let [key, call] of pendingCalls) {
                 pendingCalls.delete(key);
                 call.callback({
@@ -137,6 +152,14 @@ export async function createCallFactory(
                     resultSize: 0,
                     compressed: false,
                 });
+            }
+
+            let callbacks = disconnectCallbacks;
+            disconnectCallbacks = [];
+            for (let callback of callbacks) {
+                try {
+                    callback();
+                } catch { }
             }
         }
 
@@ -159,6 +182,7 @@ export async function createCallFactory(
             await new Promise<void>(resolve => {
                 newWebSocket.addEventListener("open", () => {
                     console.log(`Connection established to ${niceConnectionName}`);
+                    callFactory.isConnected = true;
                     resolve();
                 });
                 newWebSocket.addEventListener("close", () => resolve());
@@ -166,15 +190,29 @@ export async function createCallFactory(
             });
         } else if (newWebSocket.readyState !== 1 /* OPEN */) {
             onClose(`Websocket received in closed state`);
+            callFactory.isConnected = true;
         }
     }
 
     async function send(data: Buffer) {
-        webSocketPromise = webSocketPromise || tryToReconnect();
+        if (!webSocketPromise) {
+            if (canReconnect) {
+                webSocketPromise = tryToReconnect();
+            } else {
+                throw new Error(`Cannot send data to ${niceConnectionName} as the connection has closed`);
+            }
+        }
         let webSocket = await webSocketPromise;
         webSocket.send(data);
     }
     async function tryToReconnect(): Promise<SenderInterface> {
+        // Don't try to reconnect too often!
+        let timeSinceLastAttempt = Date.now() - lastConnectionAttempt;
+        if (timeSinceLastAttempt < MIN_RETRY_DELAY) {
+            await new Promise(r => setTimeout(r, MIN_RETRY_DELAY - timeSinceLastAttempt));
+        }
+        lastConnectionAttempt = Date.now();
+
         let newWebSocket = createWebsocket(nodeId);
         await initializeWebsocket(newWebSocket);
 

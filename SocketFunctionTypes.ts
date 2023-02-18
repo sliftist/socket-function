@@ -2,6 +2,7 @@
 
 module.allowclient = true;
 
+import { SocketFunction } from "./SocketFunction";
 import { getCallObj } from "./src/nodeProxy";
 import { Args, MaybePromise } from "./src/types";
 
@@ -21,14 +22,14 @@ export type SocketExposedInterfaceClass = {
     new(): unknown;
     prototype: unknown;
 };
-export interface SocketExposedShape<ExposedType extends SocketExposedInterface = SocketExposedInterface, CallContext extends CallContextType = CallContextType> {
+export interface SocketExposedShape<ExposedType extends SocketExposedInterface = SocketExposedInterface> {
     [functionName: string]: {
         /** Indicates with the same input, we give the same output, forever,
          *      independent of code changes. This only works for data storage.
          */
         dataImmutable?: boolean;
-        hooks?: SocketFunctionHook<ExposedType, CallContext>[];
-        clientHooks?: SocketFunctionClientHook<ExposedType, CallContext>[];
+        hooks?: SocketFunctionHook<ExposedType>[];
+        clientHooks?: SocketFunctionClientHook<ExposedType>[];
     };
 }
 
@@ -41,32 +42,27 @@ export interface FullCallType extends CallType {
     nodeId: string;
 }
 
-export interface SocketFunctionHook<ExposedType extends SocketExposedInterface = SocketExposedInterface, CallContext extends CallContextType = CallContextType> {
-    (config: HookContext<ExposedType, CallContext>): MaybePromise<void>;
+export interface SocketFunctionHook<ExposedType extends SocketExposedInterface = SocketExposedInterface> {
+    (config: HookContext<ExposedType>): MaybePromise<void>;
     /** NOTE: This is useful when we need a clientside hook to set up state specifically for our serverside hook. */
-    clientHook?: SocketFunctionClientHook<ExposedType, CallContext>;
+    clientHook?: SocketFunctionClientHook<ExposedType>;
 }
-export type HookContext<ExposedType extends SocketExposedInterface = SocketExposedInterface, CallContext extends CallContextType = CallContextType> = {
-    call: FullCallType;
-    context: SocketRegistered<ExposedType, CallContext>["context"];
-    // If the result is overriden, we continue evaluating hooks BUT DO NOT perform the final call
-    overrideResult?: unknown;
-};
-
-export type ClientHookContext<ExposedType extends SocketExposedInterface = SocketExposedInterface, CallContext extends CallContextType = CallContextType> = {
+export type HookContext<ExposedType extends SocketExposedInterface = SocketExposedInterface> = {
     call: FullCallType;
     // If the result is overriden, we continue evaluating hooks BUT DO NOT perform the final call
     overrideResult?: unknown;
 };
-export interface SocketFunctionClientHook<ExposedType extends SocketExposedInterface = SocketExposedInterface, CallContext extends CallContextType = CallContextType> {
-    (config: ClientHookContext<ExposedType, CallContext>): MaybePromise<void>;
+
+export type ClientHookContext<ExposedType extends SocketExposedInterface = SocketExposedInterface> = {
+    call: FullCallType;
+    // If the result is overriden, we continue evaluating hooks BUT DO NOT perform the final call
+    overrideResult?: unknown;
+};
+export interface SocketFunctionClientHook<ExposedType extends SocketExposedInterface = SocketExposedInterface> {
+    (config: ClientHookContext<ExposedType>): MaybePromise<void>;
 }
 
-export type CallContextType = {
-    [key: string]: unknown;
-};
-
-export interface SocketRegistered<ExposedType = any, DynamicCallContext extends CallContextType = CallContextType> {
+export interface SocketRegistered<ExposedType = any> {
     nodes: {
         // NOTE: Don't pass around nodeId to other nodes, instead pass around NetworkLocation (which they
         //  then turn into a nodeId, which they can then check permissions on themself).
@@ -75,12 +71,6 @@ export interface SocketRegistered<ExposedType = any, DynamicCallContext extends 
                 [getCallObj]: (...args: Args<ExposedType[functionName]>) => FullCallType;
             }
         };
-    };
-    context: {
-        // If undefined we are not synchronously in a call
-        curContext: DynamicCallContext | undefined;
-        caller: CallerContext | undefined;
-        getCaller(): CallerContext;
     };
     _classGuid: string;
 }

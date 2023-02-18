@@ -59,13 +59,16 @@ export function registerNodeClient(callFactory: CallFactory) {
     startCleanupLoop();
 }
 
-export function getCreateCallFactoryLocation(nodeId: string, mountedNodeId: string): MaybePromise<CallFactory> {
+export function getCreateCallFactory(nodeId: string, mountedNodeId: string): MaybePromise<CallFactory> {
     let callFactory = nodeCache.get(nodeId);
     if (callFactory === undefined) {
         callFactory = createCallFactory(undefined, nodeId, mountedNodeId);
         nodeCache.set(nodeId, callFactory);
     }
     return callFactory;
+}
+export function getCallFactory(nodeId: string): MaybePromise<CallFactory | undefined> {
+    return nodeCache.get(nodeId);
 }
 
 const startCleanupLoop = lazy(() => {

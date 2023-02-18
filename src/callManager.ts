@@ -1,4 +1,4 @@
-import { CallContextType, CallerContext, CallType, ClientHookContext, FullCallType, HookContext, SocketExposedInterface, SocketExposedInterfaceClass, SocketExposedShape, SocketFunctionClientHook, SocketFunctionHook, SocketRegistered } from "../SocketFunctionTypes";
+import { CallerContext, CallType, ClientHookContext, FullCallType, HookContext, SocketExposedInterface, SocketExposedInterfaceClass, SocketExposedShape, SocketFunctionClientHook, SocketFunctionHook, SocketRegistered } from "../SocketFunctionTypes";
 import { _setSocketContext } from "../SocketFunction";
 import { isNode } from "./misc";
 import debugbreak from "debugbreak";
@@ -41,14 +41,13 @@ export async function performLocalCall(
         throw new Error(`Function ${call.functionName} does not exist`);
     }
 
-    let curContext: CallContextType = {};
-    let serverContext = await runServerHooks(call, { caller, curContext, getCaller: () => caller }, functionShape);
+    let serverContext = await runServerHooks(call, caller, functionShape);
     if ("overrideResult" in serverContext) {
         return serverContext.overrideResult;
     }
 
     // NOTE: We purposely don't await inside _setSocketContext, so the context is reset synchronously
-    let result = _setSocketContext(curContext, caller, () => {
+    let result = _setSocketContext(caller, () => {
         return controller[call.functionName](...call.args);
     });
 
@@ -119,12 +118,12 @@ export async function runClientHooks(
 
 async function runServerHooks(
     callType: FullCallType,
-    context: SocketRegistered["context"],
+    caller: CallerContext,
     hooks: SocketExposedShape[""],
 ): Promise<HookContext> {
-    let hookContext: HookContext = { call: callType, context };
+    let hookContext: HookContext = { call: callType };
     for (let hook of globalHooks.concat(hooks.hooks || [])) {
-        await hook(hookContext);
+        await _setSocketContext(caller, () => hook(hookContext));
         if ("overrideResult" in hookContext) {
             break;
         }

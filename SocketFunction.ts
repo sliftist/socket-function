@@ -1,9 +1,9 @@
 /// <reference path="./require/RequireController.ts" />
 
-import { SocketExposedInterface, CallContextType, SocketFunctionHook, SocketFunctionClientHook, SocketExposedShape, SocketRegistered, CallerContext, FullCallType } from "./SocketFunctionTypes";
+import { SocketExposedInterface, SocketFunctionHook, SocketFunctionClientHook, SocketExposedShape, SocketRegistered, CallerContext, FullCallType } from "./SocketFunctionTypes";
 import { exposeClass, registerClass, registerGlobalClientHook, registerGlobalHook, runClientHooks } from "./src/callManager";
 import { SocketServerConfig, startSocketServer } from "./src/webSocketServer";
-import { getCreateCallFactoryLocation, getNodeId, getNodeIdLocation } from "./src/nodeCache";
+import { getCallFactory, getCreateCallFactory, getNodeId, getNodeIdLocation } from "./src/nodeCache";
 import { getCallProxy } from "./src/nodeProxy";
 import { Args, MaybePromise } from "./src/types";
 import { setDefaultHTTPCall } from "./src/callHTTPHandler";
@@ -36,12 +36,18 @@ export class SocketFunction {
     private static onMountCallbacks = new Map<string, (() => MaybePromise<void>)[]>();
     public static exposedClasses = new Set<string>();
 
+    public static callerContext: CallerContext | undefined;
+    public static getCaller(): CallerContext {
+        const caller = SocketFunction.callerContext;
+        if (!caller) throw new Error(`Tried to access caller when not in the synchronous phase of a function call`);
+        return caller;
+    }
+
     // NOTE: We use callbacks we don't run into issues with cyclic dependencies
     //  (ex, using a hook in a controller where the hook also calls the controller).
     public static register<
         ClassInstance extends object,
-        Shape extends SocketExposedShape<SocketExposedInterface, CallContext>,
-        CallContext extends CallContextType
+        Shape extends SocketExposedShape<SocketExposedInterface>,
     >(
         classGuid: string,
         instance: ClassInstance,
@@ -49,7 +55,7 @@ export class SocketFunction {
         defaultHooksFnc?: () => SocketExposedShape[""] & {
             onMount?: () => MaybePromise<void>;
         }
-    ): SocketRegistered<ExtractShape<ClassInstance, Shape>, CallContext> {
+    ): SocketRegistered<ExtractShape<ClassInstance, Shape>> {
         let getDefaultHooks = defaultHooksFnc && lazy(defaultHooksFnc);
         const getShape = lazy(() => {
             let shape = shapeFnc();
@@ -76,7 +82,7 @@ export class SocketFunction {
                 console.log(`START\t\t\t${classGuid}.${functionName}`);
             }
             try {
-                let callFactory = await getCreateCallFactoryLocation(nodeId, SocketFunction.mountedNodeId);
+                let callFactory = await getCreateCallFactory(nodeId, SocketFunction.mountedNodeId);
 
                 let shapeObj = getShape()[functionName];
                 if (!shapeObj) {
@@ -99,7 +105,6 @@ export class SocketFunction {
         });
 
         let output: SocketRegistered = {
-            context: curSocketContext,
             nodes: nodeProxy,
             _classGuid: classGuid,
         };
@@ -117,6 +122,40 @@ export class SocketFunction {
         });
 
         return output as any;
+    }
+
+    public static onNextDisconnect(nodeId: string, callback: () => void) {
+        (async () => {
+            let factory = await getCallFactory(nodeId);
+            if (!factory) {
+                callback();
+                return;
+            }
+
+            factory.onNextDisconnect(callback);
+        })().catch(() => {
+            callback();
+        });
+    }
+    public static getLastDisconnectTime(nodeId: string): number | undefined {
+        let factory = getCallFactory(nodeId);
+        if (!factory) {
+            return undefined;
+        }
+        if (factory instanceof Promise) {
+            return undefined;
+        }
+        return factory.lastClosed;
+    }
+    public static isNodeConnected(nodeId: string): boolean {
+        let factory = getCallFactory(nodeId);
+        if (!factory) {
+            return false;
+        }
+        if (factory instanceof Promise) {
+            return false;
+        }
+        return !!factory.isConnected;
     }
 
     /** NOTE: Only works if the nodeIs used is from SocketFunction.connect (we can't convert arbitrary nodeIds into urls,
@@ -190,41 +229,29 @@ export class SocketFunction {
         return getNodeId(location.address, location.port);
     }
 
-    public static addGlobalHook<CallContext extends CallContextType>(hook: SocketFunctionHook<SocketExposedInterface, CallContext>) {
+    public static addGlobalHook(hook: SocketFunctionHook<SocketExposedInterface>) {
         registerGlobalHook(hook as SocketFunctionHook);
     }
-    public static addGlobalClientHook<CallContext extends CallContextType>(hook: SocketFunctionClientHook<SocketExposedInterface, CallContext>) {
+    public static addGlobalClientHook(hook: SocketFunctionClientHook<SocketExposedInterface>) {
         registerGlobalClientHook(hook as SocketFunctionClientHook);
     }
 }
 
 
-const curSocketContext: SocketRegistered["context"] = {
-    curContext: undefined,
-    caller: undefined,
-    getCaller() {
-        const caller = curSocketContext.caller;
-        if (!caller) throw new Error(`Tried to access caller when not in the synchronous phase of a function call`);
-        return caller;
-    }
-};
 let socketContextSeqNum = 1;
 
 export function _setSocketContext<T>(
-    callContext: CallContextType,
     caller: CallerContext,
     code: () => T,
 ) {
     socketContextSeqNum++;
     let seqNum = socketContextSeqNum;
-    curSocketContext.curContext = callContext;
-    curSocketContext.caller = caller;
+    SocketFunction.callerContext = caller;
     try {
         return code();
     } finally {
         if (seqNum === socketContextSeqNum) {
-            curSocketContext.curContext = undefined;
-            curSocketContext.caller = undefined;
+            SocketFunction.callerContext = undefined;
         }
     }
 }
