@@ -34,6 +34,7 @@ export function cacheEmptyArray<T>(array: T[]): T[] {
 export function cache<Output, Key>(getValue: (key: Key) => Output): {
     (key: Key): Output;
     clear(key: Key): void;
+    forceSet(key: Key, value: Output): void;
 } {
     let startingCalculating = new Set<Key>();
     let values = new Map<Key, Output>();
@@ -54,6 +55,11 @@ export function cache<Output, Key>(getValue: (key: Key) => Output): {
     }
     cache.clear = (key: Key) => {
         values.delete(key);
+        startingCalculating.delete(key);
+    };
+    cache.forceSet = (key: Key, value: Output) => {
+        values.set(key, value);
+        startingCalculating.add(key);
     };
     return cache;
 }
@@ -270,7 +276,7 @@ export function cacheShallowConfigArgEqual<Fnc extends AnyFunction>(
         }
         let keys = Object.keys(configArg);
         keys.sort();
-        return keys.flatMap(key => [key, (configArg as any)[key]]);
+        return keys.flatMap(key => [key, configArg[key]]);
     }
     let output = Object.assign(
         ((configArg: object) => {

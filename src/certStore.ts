@@ -1,4 +1,5 @@
 import * as tls from "tls";
+import { sha256Hash } from "./misc";
 
 let trustedCerts = new Set<string>();
 let watchCallbacks = new Set<(certs: string[]) => void>();
@@ -14,6 +15,7 @@ export function trustCertificate(cert: string | Buffer) {
     }
 }
 export function getTrustedCertificates(): string[] {
+    //console.log(`trustedCerts = ${Array.from(trustedCerts).map(x => sha256Hash(x).slice(0, 10))}`);
     return tls.rootCertificates.concat(Array.from(trustedCerts));
 }
 

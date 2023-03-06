@@ -16,7 +16,6 @@
         global: window,
     });
 
-
     // Not real modules, as we just define their exports
     const builtInModuleExports = {
         worker_threads: {
@@ -253,6 +252,7 @@
                             if (property === "__esModule") return undefined;
                             // NOTE: Return a toString that evaluates to "" so we can EXPLICITLY detect non-loaded modules
                             if (property === unloadedModule) return true;
+                            if (property === "default") return exportsOverride;
 
                             throw new Error(`Module ${childId} is serverside only. Tried to access ${property} from ${module.id}`);
                         }
@@ -263,6 +263,7 @@
                             if (property === "__esModule") return undefined;
                             // NOTE: Return a toString that evaluates to "" so we can EXPLICITLY detect non-loaded modules
                             if (property === unloadedModule) return true;
+                            if (property === "default") return exportsOverride;
 
                             serializedModule;
 
@@ -415,7 +416,12 @@
                             }
                             __setModuleDefault(result, mod);
                             return result;
-                        }
+                        },
+                        __importDefault(mod) {
+                            // If typescript isn't going to complain about importing from a module with no default export,
+                            //  then we'll just change our implementation to work the same way as typescript types...
+                            return mod.default ? mod : { default: mod };
+                        },
                     },
                     module.exports,
                     module.require,

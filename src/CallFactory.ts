@@ -9,6 +9,8 @@ import * as tls from "tls";
 import { getClientNodeId, getNodeIdLocation, registerNodeClient } from "./nodeCache";
 import debugbreak from "debugbreak";
 import { lazy } from "./caching";
+import { JSONLACKS } from "./JSONLACKS/JSONLACKS";
+import { red } from "./formatting/logColors";
 
 const MIN_RETRY_DELAY = 1000;
 
@@ -37,6 +39,7 @@ export interface CallFactory {
     //  Trigger performLocalCall on the other side of the connection
     performCall(call: CallType): Promise<unknown>;
     onNextDisconnect(callback: () => void): void;
+    connectionId: { nodeId: string };
 }
 
 export interface SenderInterface {
@@ -56,8 +59,10 @@ export interface SenderInterface {
 
 export async function createCallFactory(
     webSocketBase: SenderInterface | undefined,
+    // The node id we are connecting to (or that connected to us)
     nodeId: string,
-    localNodeId: string,
+    // The node id that we were contacted on
+    localNodeId = "",
 ): Promise<CallFactory> {
     let niceConnectionName = nodeId;
 
@@ -65,8 +70,6 @@ export async function createCallFactory(
     const registerOnce = lazy(() => registerNodeClient(callFactory));
 
     const canReconnect = !!getNodeIdLocation(nodeId);
-
-    let lastReceivedSeqNum = 0;
 
     let pendingCalls: Map<number, {
         data: Buffer;
@@ -76,7 +79,7 @@ export async function createCallFactory(
     // NOTE: It is important to make this as random as possible, to prevent
     //  reconnections dues to a process being reset causing seqNum collisions
     //  in return calls.
-    let nextSeqNum = Math.random();
+    let nextSeqNum = Date.now() + Math.random();
 
     let lastConnectionAttempt = 0;
 
@@ -93,6 +96,7 @@ export async function createCallFactory(
     let callFactory: CallFactory = {
         nodeId,
         lastClosed: 0,
+        connectionId: { nodeId },
         onNextDisconnect,
         async performCall(call: CallType) {
             let seqNum = nextSeqNum++;
@@ -105,7 +109,12 @@ export async function createCallFactory(
                 seqNum,
                 compress: !!SocketFunction.compression,
             };
-            let data = Buffer.from(JSON.stringify(fullCall));
+            let time = Date.now();
+            let data = Buffer.from(JSONLACKS.stringify(fullCall));
+            time = Date.now() - time;
+            if (time > SocketFunction.WIRE_WARN_TIME) {
+                console.log(red(`Slow serialize, took ${time}ms to serialize ${data.byteLength} bytes. For ${call.classGuid}.${call.functionName}`));
+            }
             let resultPromise = new Promise((resolve, reject) => {
                 let callback = (result: InternalReturnType) => {
                     if (SocketFunction.logMessages) {
@@ -120,6 +129,10 @@ export async function createCallFactory(
                 };
                 pendingCalls.set(seqNum, { callback, data, call: fullCall });
             });
+
+            if (data.byteLength > SocketFunction.MAX_MESSAGE_SIZE * 1.5) {
+                throw new Error(`Call too large to send (${call.classGuid}.${call.functionName}, size: ${data.byteLength} > ${SocketFunction.MAX_MESSAGE_SIZE}). If you need to handle very large static data use some external service, such as Backblaze B2 or AWS S3. Or consider fragmenting data at an application level, because sending large data will cause large lag spikes for other clients using this server. Or, if absolutely required, set SocketFunction.MAX_MESSAGE_SIZE to a higher value.`);
+            }
 
             await send(data);
 
@@ -137,6 +150,7 @@ export async function createCallFactory(
         registerOnce();
 
         function onClose(error: string) {
+            callFactory.connectionId = { nodeId };
             callFactory.lastClosed = Date.now();
             webSocketPromise = undefined;
             if (!canReconnect) {
@@ -181,7 +195,9 @@ export async function createCallFactory(
         if (newWebSocket.readyState === 0 /* CONNECTING */) {
             await new Promise<void>(resolve => {
                 newWebSocket.addEventListener("open", () => {
-                    console.log(`Connection established to ${niceConnectionName}`);
+                    if (!SocketFunction.silent) {
+                        console.log(`Connection established to ${niceConnectionName}`);
+                    }
                     callFactory.isConnected = true;
                     resolve();
                 });
@@ -248,9 +264,15 @@ export async function createCallFactory(
                     (message as any) = Buffer.from(arrayBuffer);
                 }
 
-                let call = JSON.parse(message.toString()) as InternalCallType | InternalReturnType;
+                let time = Date.now();
+                let call = JSONLACKS.parse(message.toString(), { extended: false }) as InternalCallType | InternalReturnType;
+                time = Date.now() - time;
+
                 if (call.isReturn) {
                     let callbackObj = pendingCalls.get(call.seqNum);
+                    if (time > SocketFunction.WIRE_WARN_TIME) {
+                        console.log(red(`Slow parse, took ${time}ms to parse ${message.length} bytes, for receieving result of call to ${callbackObj?.call.classGuid}.${callbackObj?.call.functionName}`));
+                    }
                     if (!callbackObj) {
                         console.log(`Got return for unknown call ${call.seqNum}`);
                         return;
@@ -258,11 +280,9 @@ export async function createCallFactory(
                     call.resultSize = resultSize;
                     callbackObj.callback(call);
                 } else {
-                    if (call.seqNum <= lastReceivedSeqNum) {
-                        console.log(`Received out of sequence call ${call.seqNum}`);
-                        return;
+                    if (time > SocketFunction.WIRE_WARN_TIME) {
+                        console.log(red(`Slow parse, took ${time}ms to parse ${message.length} bytes, for call to ${call.classGuid}.${call.functionName}`));
                     }
-                    lastReceivedSeqNum = call.seqNum;
 
                     let response: InternalReturnType;
                     try {
@@ -288,13 +308,24 @@ export async function createCallFactory(
                     let result: Buffer;
                     if (isNode() && call.compress && SocketFunction.compression?.type === "gzip") {
                         response.compressed = true;
-                        result = Buffer.from(JSON.stringify(response));
+                        result = Buffer.from(JSONLACKS.stringify(response));
                         result = await new Promise<Buffer>((resolve, reject) =>
                             gzip(result, (err, result) => err ? reject(err) : resolve(result))
                         );
                         result = Buffer.concat([new Uint8Array([0]), result]);
                     } else {
-                        result = Buffer.from(JSON.stringify(response));
+                        result = Buffer.from(JSONLACKS.stringify(response));
+                    }
+                    if (result.byteLength > SocketFunction.MAX_MESSAGE_SIZE * 1.5) {
+                        response = {
+                            isReturn: true,
+                            result: undefined,
+                            seqNum: call.seqNum,
+                            error: new Error(`Response too large to send (${call.classGuid}.${call.functionName}, size: ${result.byteLength} > ${SocketFunction.MAX_MESSAGE_SIZE}). If you need to handle very large static data use some external service, such as Backblaze B2 or AWS S3. Or consider fragmenting data at an application level, because sending large data will cause large lag spikes for other clients using this server. Or, if absolutely required, set SocketFunction.MAX_MESSAGE_SIZE to a higher value.`).stack,
+                            resultSize: resultSize,
+                            compressed: false,
+                        };
+                        result = Buffer.from(JSONLACKS.stringify(response));
                     }
                     await send(result);
                 }
@@ -302,6 +333,8 @@ export async function createCallFactory(
             }
             throw new Error(`Unhandled data type ${typeof message}`);
         } catch (e: any) {
+            debugbreak(1);
+            debugger;
             console.error(e.stack);
         }
     }

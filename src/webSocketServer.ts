@@ -64,12 +64,18 @@ export async function startSocketServer(
         });
 
         httpsServer.on("connection", socket => {
-            console.log("Client connection established");
+            if (!SocketFunction.silent) {
+                console.log("Client connection established");
+            }
             socket.on("error", e => {
-                console.log(`Client socket error ${e.message}`);
+                if (!SocketFunction.silent) {
+                    console.log(`Client socket error ${e.message}`);
+                }
             });
             socket.on("close", () => {
-                console.log("Client socket closed");
+                if (!SocketFunction.silent) {
+                    console.log("Client socket closed");
+                }
             });
         });
         httpsServer.on("error", e => {
@@ -83,7 +89,9 @@ export async function startSocketServer(
 
         httpsServer.on("upgrade", (request, socket, upgradeHead) => {
             socket.on("error", e => {
-                console.log(`Client socket error ${e.message}`);
+                if (!SocketFunction.silent) {
+                    console.log(`Client socket error ${e.message}`);
+                }
             });
 
             let originHeader = request.headers["origin"];
@@ -153,7 +161,9 @@ export async function startSocketServer(
             } else {
                 let data = parseTLSHello(buffer);
                 let sni = data.extensions.filter(x => x.type === SNIType).flatMap(x => parseSNIExtension(x.data))[0];
-                console.log(`Received TCP connection with SNI ${JSON.stringify(sni)}`);
+                if (!SocketFunction.silent) {
+                    console.log(`Received TCP connection with SNI ${JSON.stringify(sni)}`);
+                }
                 server = sniServers.get(sni) || mainHTTPSServer;
             }
 
@@ -176,10 +186,9 @@ export async function startSocketServer(
         });
     });
 
-
-    let host = config.ip ?? "127.0.0.1";
-    if (config.public) {
-        host = "0.0.0.0";
+    let host = config.public ? "0.0.0.0" : "127.0.0.1";
+    if (config.ip) {
+        host = config.ip;
     }
 
     let port = config.port;
@@ -203,14 +212,18 @@ export async function startSocketServer(
         }
     }
 
-    console.log(`Trying to listening on ${host}:${port}`);
+    if (!SocketFunction.silent) {
+        console.log(`Trying to listening on ${host}:${port}`);
+    }
     realServer.listen(port, host);
 
     await listenPromise;
 
     port = (realServer.address() as net.AddressInfo).port;
     let nodeId = getNodeId(getCommonName(config.cert), port);
-    console.log(`Started Listening on ${nodeId}`);
+    if (!SocketFunction.silent) {
+        console.log(`Started Listening on ${nodeId}`);
+    }
 
     return nodeId;
 }

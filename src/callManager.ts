@@ -2,6 +2,7 @@ import { CallerContext, CallType, ClientHookContext, FullCallType, HookContext, 
 import { _setSocketContext } from "../SocketFunction";
 import { isNode } from "./misc";
 import debugbreak from "debugbreak";
+import { measureWrap } from "./profiling/measure";
 
 let classes: {
     [classGuid: string]: {
@@ -92,11 +93,12 @@ export function unregisterGlobalClientHook(hook: SocketFunctionClientHook) {
     }
 }
 
-export async function runClientHooks(
+export const runClientHooks = measureWrap(async function runClientHooks(
     callType: FullCallType,
     hooks: SocketExposedShape[""],
+    connectionId: { nodeId: string },
 ): Promise<ClientHookContext> {
-    let context: ClientHookContext = { call: callType };
+    let context: ClientHookContext = { call: callType, connectionId };
 
     let clientHooks = (
         globalClientHooks
@@ -113,10 +115,11 @@ export async function runClientHooks(
             break;
         }
     }
-    return context;
-}
 
-async function runServerHooks(
+    return context;
+});
+
+export const runServerHooks = measureWrap(async function runServerHooks(
     callType: FullCallType,
     caller: CallerContext,
     hooks: SocketExposedShape[""],
@@ -129,4 +132,4 @@ async function runServerHooks(
         }
     }
     return hookContext;
-}
+});

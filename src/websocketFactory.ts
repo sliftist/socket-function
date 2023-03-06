@@ -5,6 +5,7 @@ import { SenderInterface } from "./CallFactory";
 import { getTrustedCertificates } from "./certStore";
 import { getNodeIdLocation } from "./nodeCache";
 import debugbreak from "debugbreak";
+import { SocketFunction } from "../SocketFunction";
 
 
 export function getTLSSocket(webSocket: ws.WebSocket) {
@@ -22,7 +23,9 @@ export function createWebsocketFactory(): (nodeId: string) => SenderInterface {
             if (!location) throw new Error(`Cannot connect to ${nodeId}, no address known`);
             let { address, port } = location;
 
-            console.log(`Connecting to ${address}:${port}`);
+            if (!SocketFunction.silent) {
+                console.log(`Connecting to ${address}:${port}`);
+            }
             return new WebSocket(`wss://${address}:${port}`);
         };
     } else {
@@ -31,7 +34,9 @@ export function createWebsocketFactory(): (nodeId: string) => SenderInterface {
             if (!location) throw new Error(`Cannot connect to ${nodeId}, no address known`);
             let { address, port } = location;
 
-            console.log(`Connecting to ${address}:${port}`);
+            if (!SocketFunction.silent) {
+                console.log(`Connecting to ${address}:${port}`);
+            }
             let webSocket = new ws.WebSocket(`wss://${address}:${port}`, {
                 ca: tls.rootCertificates.concat(getTrustedCertificates()),
             });

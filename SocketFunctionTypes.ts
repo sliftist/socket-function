@@ -57,6 +57,7 @@ export type ClientHookContext<ExposedType extends SocketExposedInterface = Socke
     call: FullCallType;
     // If the result is overriden, we continue evaluating hooks BUT DO NOT perform the final call
     overrideResult?: unknown;
+    connectionId: { nodeId: string };
 };
 export interface SocketFunctionClientHook<ExposedType extends SocketExposedInterface = SocketExposedInterface> {
     (config: ClientHookContext<ExposedType>): MaybePromise<void>;
@@ -85,5 +86,6 @@ export type CallerContextBase = {
     // The nodeId they contacted. This is useful to determine their intention (otherwise
     //  requests can be redirected to us and would accept them, even though they are being
     //  blatantly MITMed).
+    //  IF they are the server, calling us back, then this will just be ""
     localNodeId: string;
 };

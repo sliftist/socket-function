@@ -79,6 +79,11 @@
   resolved "https://registry.yarnpkg.com/@types/node/-/node-18.7.16.tgz#0eb3cce1e37c79619943d2fd903919fc30850601"
   integrity sha512-EQHhixfu+mkqHMZl1R2Ovuvn47PUw18azMJOTwSZr9/fhzHNGXAJ0ma0dayRVchprpCj0Kc1K1xKoWaATWF1qg==
 
+"@types/pegjs@^0.10.3":
+  version "0.10.3"
+  resolved "https://registry.yarnpkg.com/@types/pegjs/-/pegjs-0.10.3.tgz#9e254036c6bf2254cd98caec447a1d79b6607bff"
+  integrity sha512-C/ZkUNe7HONOaDHXfNTZOUzrOvOgrWdrJj1JZ3QTEPi5gOIygcjCpXyxpdJTKVvWFzbobajRbMbQY8d0WrZ6fg==
+
 "@types/semver@^7.3.12":
   version "7.3.13"
   resolved "https://registry.yarnpkg.com/@types/semver/-/semver-7.3.13.tgz#da4bfd73f49bd541d28920ab0e2bf0ee80f71c91"
@@ -804,6 +809,11 @@ path-type@^4.0.0:
   resolved "https://registry.yarnpkg.com/path-type/-/path-type-4.0.0.tgz#84ed01c0a7ba380afe09d90a8c180dcd9d03043b"
   integrity sha512-gDKb8aZMDeD/tZWs9P6+q0J9Mwkdl6xMV8TjnGP3qJVJ06bdMgkbBlLU8IdfOsIsFz2BW1rNVT3XuNEl8zPAvw==
 
+pegjs@^0.10.0:
+  version "0.10.0"
+  resolved "https://registry.yarnpkg.com/pegjs/-/pegjs-0.10.0.tgz#cf8bafae6eddff4b5a7efb185269eaaf4610ddbd"
+  integrity sha512-qI5+oFNEGi3L5HAxDwN2LA4Gg7irF70Zs25edhjld9QemOgp0CbvMtbFcMvFtEo1OityPrcCzkQFB8JP/hxgow==
+
 picomatch@^2.3.1:
   version "2.3.1"
   resolved "https://registry.yarnpkg.com/picomatch/-/picomatch-2.3.1.tgz#3ba3833733646d9d3e4995946c1365a67fb07a42"
@@ -828,6 +838,11 @@ queue-microtask@^1.2.2:
   version "1.2.3"
   resolved "https://registry.yarnpkg.com/queue-microtask/-/queue-microtask-1.2.3.tgz#4929228bbc724dfac43e0efb058caf7b6cfb6243"
   integrity sha512-NuaNSa6flKT5JaSYQzJok04JzTL1CA6aGhv5rfLW3PgqA+M2ChpZQnAC8h8i4ZFkBS8X5RqkDBHA7r4hej3K9A==
+
+rdtsc-now@^0.3.0:
+  version "0.3.0"
+  resolved "https://registry.yarnpkg.com/rdtsc-now/-/rdtsc-now-0.3.0.tgz#55f121300e4dc1ddce43aaebc92d35e4fd49f844"
+  integrity sha512-GYAZiz18hVHZus737qf/ZwdVq14zw5vmVQJk+47P6ShPWQYeqstjPaSknj87QjszN6vJ+cbbTy3y4LoO66mi1Q==
 
 regexpp@^3.2.0:
   version "3.2.0"
@@ -961,11 +976,12 @@ typedev@^0.1.1:
     debugbreak "^0.6.3"
     eslint "^8.18.0"
 
-typenode@^4.9.4-a:
-  version "4.9.4-a"
-  resolved "https://registry.yarnpkg.com/typenode/-/typenode-4.9.4-a.tgz#57406a82565bfffdaa5b9d4124b1e2a22ea7c9d4"
-  integrity sha512-YqgcCoNbGWIy4hddbgX4mkG2P+qUfxBaJ35EgQ/1jATF7/fixVO9DmkxIPQ5VdX29BOiXz77eRHHtSNAw3OwsQ==
+typenode@^4.9.4-b:
+  version "4.9.4-b"
+  resolved "https://registry.yarnpkg.com/typenode/-/typenode-4.9.4-b.tgz#ea4b80ec30a7808ac4c3707314239ffa9c475e9c"
+  integrity sha512-c+N+aB+Mi7+u2vIHNskUhkU9RKvLzj6paHX6FlyAe5+0CZBLqZNYtTyXM8HCjvXtyEEDaGXXBL4Gs4OdVJbrOQ==
   dependencies:
+    "@types/pegjs" "^0.10.3"
     source-map-support "^0.5.21"
     typescript "^4.9.4"
 

@@ -1,0 +1,18 @@
+import { hslToHex, hslToRGB } from "./colors";
+
+function ansiHSL(h: number, s: number, l: number, text: string): string {
+    let { r, g, b } = hslToRGB({ h, s, l });
+    return ansiRGB(r, g, b, text);
+}
+function ansiRGB(r: number, g: number, b: number, text: string): string {
+    return `\x1b[38;2;${r};${g};${b}m${text}\x1b[39m`;
+}
+
+const lightness = 68;
+export const blue = ansiHSL.bind(null, 235, 100, lightness);
+export const red = ansiHSL.bind(null, 0, 100, lightness);
+export const green = (text: string) => `\x1b[32m${text}\x1b[39m`; // chalk.hsl(120, 100, lightness).bind(chalk);
+export const yellow = (text: string) => `\x1b[33m${text}\x1b[39m`;
+export const white = ansiHSL.bind(null, 0, 0, 80);
+
+export const magenta = (text: string) => `\x1b[35m${text}\x1b[39m`;

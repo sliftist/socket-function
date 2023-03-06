@@ -28,10 +28,16 @@ type PickByType<T, Value> = {
 
 export class SocketFunction {
     public static logMessages = false;
+
+    public static MAX_MESSAGE_SIZE = 1024 * 1024 * 32;
     public static compression: undefined | {
         type: "gzip";
     };
+
     public static httpETagCache = false;
+    public static silent = true;
+
+    public static WIRE_WARN_TIME = 100;
 
     private static onMountCallbacks = new Map<string, (() => MaybePromise<void>)[]>();
     public static exposedClasses = new Set<string>();
@@ -82,14 +88,14 @@ export class SocketFunction {
                 console.log(`START\t\t\t${classGuid}.${functionName}`);
             }
             try {
-                let callFactory = await getCreateCallFactory(nodeId, SocketFunction.mountedNodeId);
+                let callFactory = await getCreateCallFactory(nodeId);
 
                 let shapeObj = getShape()[functionName];
                 if (!shapeObj) {
                     throw new Error(`Function ${functionName} is not in shape`);
                 }
 
-                let hookResult = await runClientHooks(call, shapeObj as SocketExposedShape[""]);
+                let hookResult = await runClientHooks(call, shapeObj as SocketExposedShape[""], callFactory.connectionId);
 
                 if ("overrideResult" in hookResult) {
                     return hookResult.overrideResult;
@@ -191,11 +197,17 @@ export class SocketFunction {
         }
     }
 
-    public static mountedNodeId: string = "NOTMOUNTED";
+    public static mountedNodeId: string = "";
+    public static mountedIP: string = "";
     private static hasMounted = false;
     public static async mount(config: SocketServerConfig) {
-        if (this.mountedNodeId !== "NOTMOUNTED") {
+        if (this.mountedNodeId) {
             throw new Error("SocketFunction already mounted, mounting twice in one thread is not allowed.");
+        }
+
+        this.mountedIP = config.public ? "0.0.0.0" : "127.0.0.1";
+        if (config.ip) {
+            this.mountedIP = config.ip;
         }
         this.mountedNodeId = await startSocketServer(config);
         this.hasMounted = true;
