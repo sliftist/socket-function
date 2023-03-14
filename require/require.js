@@ -242,6 +242,15 @@
             }
 
             let resolvedPath = serializedModule.requests[request];
+            if (resolvedPath !== "NOTALLOWEDCLIENTSIDE" && !serializedModules[resolvedPath]) {
+                if (!asyncIsFine) {
+                    console.warn(`Accessed unexpected module %c${request}%c in %c${module.id}%c\n\tTreating it as an async require.\n\tAll modules require synchronously clientside must be required serverside at a module level.`,
+                        "color: red", "color: unset",
+                        "color: red", "color: unset",
+                    );
+                }
+                return rootRequire(resolvedPath);
+            }
 
             let exportsOverride = undefined;
             if (resolvedPath === "NOTALLOWEDCLIENTSIDE" || !serializedModules[resolvedPath].allowclient) {
@@ -337,6 +346,7 @@
         module.id = resolvedId;
         module.filename = serializedModule?.filename;
         module.exports = {};
+        module.exports.default = module.exports;
         module.children = [];
 
         module.load = load;
@@ -383,19 +393,6 @@
 
             let dirname = module.filename.replace(/\\/g, "/").split("/").slice(0, -1).join("/");
 
-            var __createBinding = (Object.create ? (function (o, m, k, k2) {
-                if (k2 === undefined) k2 = k;
-                Object.defineProperty(o, k2, { enumerable: true, get: function () { return m[k]; } });
-            }) : (function (o, m, k, k2) {
-                if (k2 === undefined) k2 = k;
-                o[k2] = m[k];
-            }));
-            var __setModuleDefault = (Object.create ? (function (o, v) {
-                Object.defineProperty(o, "default", { enumerable: true, value: v });
-            }) : function (o, v) {
-                o["default"] = v;
-            });
-
             let time = Date.now();
             currentModuleEvaluationStack.push(module.filename);
             try {
@@ -405,21 +402,9 @@
                         //  which checks for unloadedModule and returns undefined in that case.
                         __importStar(mod) {
                             if (mod[unloadedModule]) return undefined;
-                            if (mod && mod.__esModule) return mod;
-                            var result = {};
-                            if (mod !== null && mod !== undefined) {
-                                for (var k in mod) {
-                                    if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) {
-                                        __createBinding(result, mod, k);
-                                    }
-                                }
-                            }
-                            __setModuleDefault(result, mod);
-                            return result;
+                            return mod;
                         },
                         __importDefault(mod) {
-                            // If typescript isn't going to complain about importing from a module with no default export,
-                            //  then we'll just change our implementation to work the same way as typescript types...
                             return mod.default ? mod : { default: mod };
                         },
                     },

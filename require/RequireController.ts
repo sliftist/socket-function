@@ -13,6 +13,11 @@ declare global {
             /** Indicates the module is allowed clientside. */
             allowclient?: boolean;
 
+            /** Causes the module to not preload, requiring `await import()` for it to load correctly
+             *      - Shouldn't be set recursively, otherwise nested packages will break.
+             */
+            lazyload?: boolean;
+
             /** Indicates the module is definitely not allowed clientside */
             serveronly?: boolean;
 
@@ -118,7 +123,8 @@ class RequireControllerBase {
         let modules: {
             [resolvedPath: string]: SerializedModule;
         } = Object.create(null);
-        function addModule(module: NodeJS.Module) {
+        function addModule(module: NodeJS.Module, rootImport = false) {
+            if (!rootImport && module.lazyload) return;
             if (!module.requireControllerSeqNum) {
                 module.requireControllerSeqNum = nextModuleSeqNum++;
             }
@@ -223,7 +229,7 @@ class RequireControllerBase {
                 clientModule = createNotFoundModule(`Module ${pathRequest} (resolved to ${resolvedPath}) is not allowed clientside (set module.allowclient in it, or call setFlag when it is imported).`);
             }
 
-            addModule(clientModule);
+            addModule(clientModule, true);
         }
 
         return { requestsResolvedPaths, modules, requireSeqNumProcessId };

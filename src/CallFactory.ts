@@ -1,7 +1,7 @@
 import { CallerContext, CallerContextBase, CallType, FullCallType } from "../SocketFunctionTypes";
 import * as ws from "ws";
 import { performLocalCall } from "./callManager";
-import { convertErrorStackToError, formatNumberSuffixed, isNode } from "./misc";
+import { convertErrorStackToError, formatNumberSuffixed, isNode, list } from "./misc";
 import { createWebsocketFactory, getTLSSocket } from "./websocketFactory";
 import { SocketFunction } from "../SocketFunction";
 import { gzip } from "zlib";
@@ -11,6 +11,7 @@ import debugbreak from "debugbreak";
 import { lazy } from "./caching";
 import { JSONLACKS } from "./JSONLACKS/JSONLACKS";
 import { red } from "./formatting/logColors";
+import { isSplitableArray } from "./fixLargeNetworkCalls";
 
 const MIN_RETRY_DELAY = 1000;
 
@@ -115,6 +116,31 @@ export async function createCallFactory(
             if (time > SocketFunction.WIRE_WARN_TIME) {
                 console.log(red(`Slow serialize, took ${time}ms to serialize ${data.byteLength} bytes. For ${call.classGuid}.${call.functionName}`));
             }
+
+            if (data.byteLength > SocketFunction.MAX_MESSAGE_SIZE * 1.5) {
+                let splitArgIndex = call.args.findIndex(isSplitableArray);
+                if (splitArgIndex >= 0) {
+                    let SPLIT_GROUPS = 10;
+                    let splitArg = call.args[splitArgIndex] as unknown[];
+                    let subCalls = list(SPLIT_GROUPS).map(index => {
+                        let start = Math.floor(index / SPLIT_GROUPS * splitArg.length);
+                        let end = Math.floor((index + 1) / SPLIT_GROUPS * splitArg.length);
+                        return splitArg.slice(start, end);
+                    }).filter(x => x.length > 0);
+                    for (let splitList of subCalls) {
+                        let subCall = { ...call };
+                        subCall.args = subCall.args.slice();
+                        subCall.args[splitArgIndex] = splitList;
+                        await callFactory.performCall(subCall);
+                    }
+                    // Eh... we COULD return the array of results, but... then the result would sometimes be an array,
+                    //  some times not, so, it is better to return a string which will make it more clear why it sometimes varies.
+                    return "CALLS_SPLIT_DUE_TO_LARGE_ARGS";
+                }
+
+                throw new Error(`Call too large to send (${call.classGuid}.${call.functionName}, size: ${data.byteLength} > ${SocketFunction.MAX_MESSAGE_SIZE}). If you need to handle very large static data use some external service, such as Backblaze B2 or AWS S3. Or consider fragmenting data at an application level, because sending large data will cause large lag spikes for other clients using this server. Or, if absolutely required, set SocketFunction.MAX_MESSAGE_SIZE to a higher value.`);
+            }
+
             let resultPromise = new Promise((resolve, reject) => {
                 let callback = (result: InternalReturnType) => {
                     if (SocketFunction.logMessages) {
@@ -129,10 +155,6 @@ export async function createCallFactory(
                 };
                 pendingCalls.set(seqNum, { callback, data, call: fullCall });
             });
-
-            if (data.byteLength > SocketFunction.MAX_MESSAGE_SIZE * 1.5) {
-                throw new Error(`Call too large to send (${call.classGuid}.${call.functionName}, size: ${data.byteLength} > ${SocketFunction.MAX_MESSAGE_SIZE}). If you need to handle very large static data use some external service, such as Backblaze B2 or AWS S3. Or consider fragmenting data at an application level, because sending large data will cause large lag spikes for other clients using this server. Or, if absolutely required, set SocketFunction.MAX_MESSAGE_SIZE to a higher value.`);
-            }
 
             await send(data);
 

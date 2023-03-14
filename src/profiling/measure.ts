@@ -12,6 +12,10 @@ export function enableMeasurements() {
     }
     measurementsEnabled = true;
 }
+/** NOTE: Must be called BEFORE anything else is imported! */
+export function disableMeasurements() {
+    measurementsEnabled = false;
+}
 
 let functionsSkipped = 0;
 
@@ -209,7 +213,7 @@ interface ProfileEntry {
     stillOpenCount: number;
 }
 
-let measurementsEnabled = false;
+let measurementsEnabled = true;
 
 let outstandingProfiles: MeasureProfile[] = [];
 function recordOwnTime(ownTimeObj: OwnTimeObj) {

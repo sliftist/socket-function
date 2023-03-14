@@ -92,3 +92,36 @@ export function runInSerial<T extends (...args: any[]) => Promise<any>>(fnc: T):
         }
     }) as T;
 }
+
+export function runInfinitePoll(
+    delayTime: number,
+    fnc: () => Promise<void> | void
+) {
+    void (async () => {
+        while (true) {
+            await delay(delayTime);
+            try {
+                await fnc();
+            } catch (e: any) {
+                console.error(`Error in infinite poll ${fnc.name || fnc.toString().slice(0, 100).split("\n").slice(0, 2).join("\n")} (continuing poll loop)\n${e.stack}`);
+            }
+        }
+    })();
+}
+
+export async function runInfinitePollCallAtStart(
+    delayTime: number,
+    fnc: () => Promise<void> | void
+) {
+    void (async () => {
+        while (true) {
+            await delay(delayTime);
+            try {
+                await fnc();
+            } catch (e: any) {
+                console.error(`Error in infinite poll ${fnc.name} (continuing poll loop)\n${e.stack}`);
+            }
+        }
+    })();
+    return await fnc();
+}

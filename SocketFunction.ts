@@ -9,6 +9,7 @@ import { Args, MaybePromise } from "./src/types";
 import { setDefaultHTTPCall } from "./src/callHTTPHandler";
 import debugbreak from "debugbreak";
 import { lazy } from "./src/caching";
+import { delay } from "./src/batching";
 
 module.allowclient = true;
 
@@ -76,7 +77,7 @@ export class SocketFunction {
             return shape as any as SocketExposedShape;
         });
 
-        setImmediate(() => {
+        void Promise.resolve().then(() => {
             registerClass(classGuid, instance as SocketExposedInterface, getShape());
         });
 
@@ -115,7 +116,7 @@ export class SocketFunction {
             _classGuid: classGuid,
         };
 
-        setImmediate(() => {
+        void Promise.resolve().then(() => {
             let onMount = getDefaultHooks?.().onMount;
             if (onMount) {
                 let callbacks = SocketFunction.onMountCallbacks.get(classGuid);
@@ -209,6 +210,10 @@ export class SocketFunction {
         if (config.ip) {
             this.mountedIP = config.ip;
         }
+
+        // Wait for any additionals functions to expose themselves
+        await delay("immediate");
+
         this.mountedNodeId = await startSocketServer(config);
         this.hasMounted = true;
         for (let classGuid of SocketFunction.exposedClasses) {
