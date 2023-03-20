@@ -10,8 +10,9 @@ import { getClientNodeId, getNodeIdLocation, registerNodeClient } from "./nodeCa
 import debugbreak from "debugbreak";
 import { lazy } from "./caching";
 import { JSONLACKS } from "./JSONLACKS/JSONLACKS";
-import { red } from "./formatting/logColors";
-import { isSplitableArray } from "./fixLargeNetworkCalls";
+import { red, yellow } from "./formatting/logColors";
+import { isSplitableArray, markArrayAsSplitable } from "./fixLargeNetworkCalls";
+import { delay } from "./batching";
 
 const MIN_RETRY_DELAY = 1000;
 
@@ -56,6 +57,8 @@ export interface SenderInterface {
     addEventListener(event: "message", listener: (data: ws.RawData | ws.MessageEvent | string) => void): void;
 
     readyState: number;
+
+    ping?(): void;
 }
 
 export async function createCallFactory(
@@ -81,6 +84,18 @@ export async function createCallFactory(
     //  reconnections dues to a process being reset causing seqNum collisions
     //  in return calls.
     let nextSeqNum = Date.now() + Math.random();
+
+    // NOTE: I'm not sure if this is needed, I thought it was, but... now I think
+    //  it probably isn't...
+    // if (webSocketBase?.readyState === 1 /* OPEN */ && webSocketBase.ping) {
+    //     // Heartbeat loop, otherwise onDisconnect is never called.
+    //     ((async () => {
+    //         while (webSocketBase?.readyState === 1 /* OPEN */ && webSocketBase.ping) {
+    //             await delay(1000 * 60);
+    //             webSocketBase.ping?.();
+    //         }
+    //     }))().catch(() => { });
+    // }
 
     let lastConnectionAttempt = 0;
 
@@ -120,6 +135,7 @@ export async function createCallFactory(
             if (data.byteLength > SocketFunction.MAX_MESSAGE_SIZE * 1.5) {
                 let splitArgIndex = call.args.findIndex(isSplitableArray);
                 if (splitArgIndex >= 0) {
+                    console.log(yellow(`Splitting large call due to large args: ${call.classGuid}.${call.functionName}`));
                     let SPLIT_GROUPS = 10;
                     let splitArg = call.args[splitArgIndex] as unknown[];
                     let subCalls = list(SPLIT_GROUPS).map(index => {
@@ -127,12 +143,15 @@ export async function createCallFactory(
                         let end = Math.floor((index + 1) / SPLIT_GROUPS * splitArg.length);
                         return splitArg.slice(start, end);
                     }).filter(x => x.length > 0);
-                    for (let splitList of subCalls) {
+
+                    let calls = subCalls.map(async splitList => {
                         let subCall = { ...call };
                         subCall.args = subCall.args.slice();
-                        subCall.args[splitArgIndex] = splitList;
+                        subCall.args[splitArgIndex] = markArrayAsSplitable(splitList);
                         await callFactory.performCall(subCall);
-                    }
+                    });
+                    await Promise.allSettled(calls);
+                    await Promise.all(calls);
                     // Eh... we COULD return the array of results, but... then the result would sometimes be an array,
                     //  some times not, so, it is better to return a string which will make it more clear why it sometimes varies.
                     return "CALLS_SPLIT_DUE_TO_LARGE_ARGS";
@@ -355,7 +374,7 @@ export async function createCallFactory(
             }
             throw new Error(`Unhandled data type ${typeof message}`);
         } catch (e: any) {
-            debugbreak(1);
+            debugbreak(2);
             debugger;
             console.error(e.stack);
         }

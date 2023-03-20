@@ -38,7 +38,7 @@ export function createWebsocketFactory(): (nodeId: string) => SenderInterface {
                 console.log(`Connecting to ${address}:${port}`);
             }
             let webSocket = new ws.WebSocket(`wss://${address}:${port}`, {
-                ca: tls.rootCertificates.concat(getTrustedCertificates()),
+                ca: getTrustedCertificates()
             });
             let result = Object.assign(webSocket, { socket: undefined as tls.TLSSocket | undefined });
             webSocket.once("upgrade", e => {

@@ -1,6 +1,6 @@
 import debugbreak from "debugbreak";
 import { formatTime, formatNumber } from "../formatting/format";
-import { red, yellow, blue } from "../formatting/logColors";
+import { red, yellow, blue, magenta } from "../formatting/logColors";
 
 import { getOwnTime, getPendingOwnTimeInstances, getPendingOwnTimeObjs, OwnTimeObj } from "./getOwnTime";
 import { addToStats, addToStatsValue, createStatsValue, getStatsTop, StatsValue } from "./stats";
@@ -108,9 +108,9 @@ export function logMeasureTable(
     let totalTime = entries.map(x => getTime(x).sum).reduce((a, b) => a + b, 0);
 
     console.log();
-    let title = yellow(`Profiled ${formatTime(totalTime)}`);
+    let title = yellow(`Profiled ${formatTime(totalTime)} (logged at ${new Date().toISOString()})`);
     if (name) {
-        title += ` ${blue(name)}`;
+        title = `(${blue(name)}) ${title}`;
     }
     console.log(title);
     function percent(value: number) {
@@ -142,7 +142,7 @@ export function logMeasureTable(
 
         let ownTimeTop = getStatsTop(getTime(entry));
         if (ownTimeTop.topHeavy) {
-            output += red(`    TOP ${percent(ownTimeTop.valueFraction)} of the time is owned by ${percent(ownTimeTop.countFraction)} of the calls`);
+            output += red(`    TOP ${percent(ownTimeTop.valueFraction)} of the time is owned by ${percent(ownTimeTop.countFraction)} of the calls (${formatTime(ownTimeTop.value / ownTimeTop.count)} per * ${formatNumber(ownTimeTop.count)} = ${formatTime(ownTimeTop.value)})`);
         }
 
         if (entry.stillOpenCount > 0) {

@@ -3,7 +3,6 @@ import { AnyFunction, Args, canHaveChildren } from "./types";
 
 export function lazy<T>(factory: () => T): () => T {
     let value: { value: T } | undefined = undefined;
-
     return () => {
         if (!value) {
             value = { value: factory() };
@@ -33,8 +32,10 @@ export function cacheEmptyArray<T>(array: T[]): T[] {
 
 export function cache<Output, Key>(getValue: (key: Key) => Output): {
     (key: Key): Output;
+    // NOTE: If you want to clear all, just make a new cache!
     clear(key: Key): void;
     forceSet(key: Key, value: Output): void;
+    getAllKeys(): Key[];
 } {
     let startingCalculating = new Set<Key>();
     let values = new Map<Key, Output>();
@@ -60,6 +61,9 @@ export function cache<Output, Key>(getValue: (key: Key) => Output): {
     cache.forceSet = (key: Key, value: Output) => {
         values.set(key, value);
         startingCalculating.add(key);
+    };
+    cache.getAllKeys = () => {
+        return [...values.keys()];
     };
     return cache;
 }

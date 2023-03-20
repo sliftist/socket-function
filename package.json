@@ -10,7 +10,7 @@
 		"node-forge": "https://github.com/sliftist/forge#name",
 		"preact": "^10.10.6",
 		"rdtsc-now": "^0.3.0",
-		"typenode": "^4.9.4-c",
+		"typenode": "^4.9.4-f",
 		"ws": "^8.8.0"
 	},
 	"scripts": {

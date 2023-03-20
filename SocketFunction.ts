@@ -201,6 +201,8 @@ export class SocketFunction {
     public static mountedNodeId: string = "";
     public static mountedIP: string = "";
     private static hasMounted = false;
+    private static onMountCallback: () => void = () => { };
+    public static mountPromise: Promise<void> = new Promise(r => this.onMountCallback = r);
     public static async mount(config: SocketServerConfig) {
         if (this.mountedNodeId) {
             throw new Error("SocketFunction already mounted, mounting twice in one thread is not allowed.");
@@ -223,6 +225,7 @@ export class SocketFunction {
                 await callback();
             }
         }
+        this.onMountCallback();
         return this.mountedNodeId;
     }
 

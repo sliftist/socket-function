@@ -139,6 +139,9 @@ export function getKeys(obj: unknown) {
     }
     return keyArray;
 }
+export function getStringKeys<T extends {}>(obj: T): ((keyof T) & string)[] {
+    return Object.keys(obj) as any;
+}
 
 if (isNode()) {
     // TODO: Find a better place for this...
