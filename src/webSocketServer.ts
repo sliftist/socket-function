@@ -28,6 +28,11 @@ export type SocketServerConfig = (
         public?: boolean;
         ip?: string;
 
+        // NOTE: Any same origin accesses are allowed (header.origin === header.host)
+        // For example, to allow "letx.ca" to access the server (when the hosted domain
+        //  may be, "querysub.com", for example), use ["letx.ca"]
+        allowHostnames?: string[];
+
         /** If the SNI matches this domain, we use a different key/cert. */
         SNICerts?: {
             [domain: string]: Watchable<https.ServerOptions>;
@@ -58,6 +63,11 @@ export async function startSocketServer(
             onHttpServer(httpsServerLast);
         });
         let httpsServer = await httpServerPromise;
+
+        let allowedHostnames = new Set<string>();
+        for (let hostname of config.allowHostnames || []) {
+            allowedHostnames.add(hostname);
+        }
 
         watchTrustedCertificates(() => {
             lastOptions.ca = getTrustedCertificates();
@@ -100,8 +110,8 @@ export async function startSocketServer(
                 try {
                     let host = new URL("ws://" + request.headers["host"]).hostname;
                     let origin = new URL(originHeader).hostname;
-                    if (host !== origin) {
-                        throw new Error(`Invalid cross thread request, ${JSON.stringify(host)} !== ${JSON.stringify(origin)}`);
+                    if (host !== origin && !allowedHostnames.has(origin)) {
+                        throw new Error(`Invalid cross domain request, ${JSON.stringify(host)} !== ${JSON.stringify(origin)} (also not config.allowedHostnames ${JSON.stringify(config.allowHostnames)})`);
                     }
                 } catch (e) {
                     console.error(e);

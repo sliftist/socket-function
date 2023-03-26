@@ -1,4 +1,6 @@
 (function () {
+    //# sourceURL=require.js
+
     // Globals
     Object.assign(window, {
         process: {

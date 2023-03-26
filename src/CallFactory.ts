@@ -374,9 +374,15 @@ export async function createCallFactory(
             }
             throw new Error(`Unhandled data type ${typeof message}`);
         } catch (e: any) {
-            debugbreak(2);
-            debugger;
-            console.error(e.stack);
+            // NOTE: I'm looking for all types of errors here (specifically, .send errors), in case
+            //  there are errors I should be handling.
+            if (e.stack.startsWith("Error: Cannot send data to") && e.stack.includes("as the connection has closed")) {
+                // This is fine, just ignore it
+            } else {
+                debugbreak(2);
+                debugger;
+                console.error(e.stack);
+            }
         }
     }
 

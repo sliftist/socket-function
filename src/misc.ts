@@ -149,3 +149,24 @@ if (isNode()) {
         console.error(`Uncaught promise rejection: ${String(reason.stack || reason)}`);
     });
 }
+
+export function keyBy<T, K>(arr: T[], getKey: (value: T) => K): Map<K, T> {
+    let map = new Map<K, T>();
+    for (let item of arr) {
+        map.set(getKey(item), item);
+    }
+    return map;
+}
+export function keyByArray<T, K>(arr: T[], getKey: (value: T) => K): Map<K, T[]> {
+    let map = new Map<K, T[]>();
+    for (let item of arr) {
+        let key = getKey(item);
+        let arr = map.get(key);
+        if (!arr) {
+            arr = [];
+            map.set(key, arr);
+        }
+        arr.push(item);
+    }
+    return map;
+}

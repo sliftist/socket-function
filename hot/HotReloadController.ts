@@ -5,12 +5,24 @@ module.allowclient = true;
 import { SocketFunction } from "../SocketFunction";
 import { cache, lazy } from "../src/caching";
 import * as fs from "fs";
+import debugbreak from "debugbreak";
+import { isNode } from "../src/misc";
 
-/** Hot reloads server and client files, just trigger a refresh clientside,
- *      while triggering per file re-evaluation and export updates serverside.
- *      - Requires HotReloadController to be exposed both serverside and clientside.
+/** Enables some hot reload functionality.
+ *      - Triggers a refresh clientside
+ *      - Triggers a reload server, for modules marked with `module.hotreload`
  */
-export function watchFilesAndTriggerHotReloading() {
+export function watchFilesAndTriggerHotReloading(noAutomaticBrowserWatch = false) {
+
+    SocketFunction.expose(HotReloadController);
+    if (!isNode()) {
+        if (!noAutomaticBrowserWatch) {
+            HotReloadController.nodes[SocketFunction.locationNode()]
+                .watchFiles()
+                .catch(e => console.error("watchFiles error", e))
+                ;
+        }
+    }
     setInterval(() => {
         for (let module of Object.values(require.cache)) {
             if (!module) continue;
@@ -19,6 +31,14 @@ export function watchFilesAndTriggerHotReloading() {
     }, 5000);
 }
 
+declare global {
+    namespace NodeJS {
+        interface Module {
+            hotreload?: boolean;
+            noserverhotreload?: boolean;
+        }
+    }
+}
 
 const hotReloadModule = cache((module: NodeJS.Module) => {
     if (!module.updateContents) return;
@@ -26,6 +46,18 @@ const hotReloadModule = cache((module: NodeJS.Module) => {
         if (curr.mtime.getTime() === prev.mtime.getTime()) return;
         console.log(`Hot reloading due to change: ${module.filename}`);
         module.updateContents?.();
+        if (isNode()) {
+            if (
+                module.hotreload
+                // A fairly big hack (as this could just be in a string, or something similar), but... it also VERY useful
+                || module.moduleContents?.includes("\nmodule.hotreload = true;" + "\n")
+                || module.moduleContents?.includes("\r\nmodule.hotreload = true;" + "\r\n")
+            ) {
+                console.log(`Reloading ${module.id}`);
+                module.loaded = false;
+                module.load(module.id);
+            }
+        }
         triggerClientSideReload();
     });
 });
@@ -50,10 +82,7 @@ class HotReloadControllerBase {
     // TODO: Also hot reload when we reconnect to the server, as it is likely setup will need to
     //  be rerun in that case as well (for example, we need to call watchFiles again!)
     async watchFiles() {
-        let callerId = HotReloadController.context.caller?.nodeId;
-        if (!callerId) {
-            throw new Error("No nodeId?");
-        }
+        let callerId = SocketFunction.getCaller().nodeId;
         clientWatcherNodes.add(callerId);
     }
     async fileUpdated() {

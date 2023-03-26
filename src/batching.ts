@@ -113,15 +113,18 @@ export async function runInfinitePollCallAtStart(
     delayTime: number,
     fnc: () => Promise<void> | void
 ) {
-    void (async () => {
-        while (true) {
-            await delay(delayTime);
-            try {
-                await fnc();
-            } catch (e: any) {
-                console.error(`Error in infinite poll ${fnc.name} (continuing poll loop)\n${e.stack}`);
+    try {
+        return await fnc();
+    } finally {
+        void (async () => {
+            while (true) {
+                await delay(delayTime);
+                try {
+                    await fnc();
+                } catch (e: any) {
+                    console.error(`Error in infinite poll ${fnc.name} (continuing poll loop)\n${e.stack}`);
+                }
             }
-        }
-    })();
-    return await fnc();
+        })();
+    }
 }

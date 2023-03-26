@@ -8,19 +8,13 @@ class TestBase {
     memberVariable = 5;
 
     async add(lhs: number, rhs: number) {
-        let caller = Test.context.caller?.nodeId;
-        if (!caller) {
-            throw new Error("No caller?");
-        }
+        let caller = SocketFunction.getCaller().nodeId;
         console.log(`Caller is ${caller}`);
         return lhs + rhs;
     }
 
     async callMe() {
-        let caller = Test.context.caller?.nodeId;
-        if (!caller) {
-            throw new Error("No caller?");
-        }
+        let caller = SocketFunction.getCaller().nodeId;
         console.log(`Caller is ${caller}`);
         void (async () => {
             let seqNum = 1;

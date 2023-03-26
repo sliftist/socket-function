@@ -249,6 +249,10 @@ export class SocketFunction {
         return getNodeId(location.address, location.port);
     }
 
+    public static locationNode() {
+        return SocketFunction.connect({ address: location.hostname, port: +location.port });
+    }
+
     public static addGlobalHook(hook: SocketFunctionHook<SocketExposedInterface>) {
         registerGlobalHook(hook as SocketFunctionHook);
     }

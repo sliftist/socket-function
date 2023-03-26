@@ -839,10 +839,10 @@ queue-microtask@^1.2.2:
   resolved "https://registry.yarnpkg.com/queue-microtask/-/queue-microtask-1.2.3.tgz#4929228bbc724dfac43e0efb058caf7b6cfb6243"
   integrity sha512-NuaNSa6flKT5JaSYQzJok04JzTL1CA6aGhv5rfLW3PgqA+M2ChpZQnAC8h8i4ZFkBS8X5RqkDBHA7r4hej3K9A==
 
-rdtsc-now@^0.3.0:
-  version "0.3.0"
-  resolved "https://registry.yarnpkg.com/rdtsc-now/-/rdtsc-now-0.3.0.tgz#55f121300e4dc1ddce43aaebc92d35e4fd49f844"
-  integrity sha512-GYAZiz18hVHZus737qf/ZwdVq14zw5vmVQJk+47P6ShPWQYeqstjPaSknj87QjszN6vJ+cbbTy3y4LoO66mi1Q==
+rdtsc-now@^0.3.1:
+  version "0.3.1"
+  resolved "https://registry.yarnpkg.com/rdtsc-now/-/rdtsc-now-0.3.1.tgz#b2ed2bbf45a84fff73004e309f44e79c7fe8a628"
+  integrity sha512-qzRjlmIEqAp4wjPq9bEvnzm++NdYw/6sPuclzp+B4SxdVWD+AIma4raoxNJBCEuaoKIQCnrICoObdE8DY5MEug==
 
 regexpp@^3.2.0:
   version "3.2.0"
@@ -897,18 +897,17 @@ slash@^3.0.0:
   resolved "https://registry.yarnpkg.com/slash/-/slash-3.0.0.tgz#6539be870c165adbd5240220dbe361f1bc4d4634"
   integrity sha512-g9Q1haeby36OSStwb4ntCGGGaKsaVSjQ68fBxoQcutl5fS1vuY18H3wSt3jFyFtrkx+Kz0V1G85A4MyAdDMi2Q==
 
-source-map-support@^0.5.21:
-  version "0.5.21"
-  resolved "https://registry.yarnpkg.com/source-map-support/-/source-map-support-0.5.21.tgz#04fe7c7f9e1ed2d662233c28cb2b35b9f63f6e4f"
-  integrity sha512-uBHU3L3czsIyYXKX88fdrGovxdSCoTGDRZ6SYXtSRxLZUzHg5P/66Ht6uoUlHu9EZod+inXhKo3qQgwXUT/y1w==
+source-map-js@^0.6.2:
+  version "0.6.2"
+  resolved "https://registry.yarnpkg.com/source-map-js/-/source-map-js-0.6.2.tgz#0bb5de631b41cfbda6cfba8bd05a80efdfd2385e"
+  integrity sha512-/3GptzWzu0+0MBQFrDKzw/DvvMTUORvgY6k6jd/VS6iCR4RDTKWH6v6WPwQoUO8667uQEf9Oe38DxAYWY5F/Ug==
+
+"source-map-support@https://github.com/7rulnik/node-source-map-support":
+  version "0.5.19"
+  resolved "https://github.com/7rulnik/node-source-map-support#8b8b1fc09db65eebea4f1326af35842f901078a3"
   dependencies:
     buffer-from "^1.0.0"
-    source-map "^0.6.0"
-
-source-map@^0.6.0:
-  version "0.6.1"
-  resolved "https://registry.yarnpkg.com/source-map/-/source-map-0.6.1.tgz#74722af32e9614e9c287a8d0bbde48b5e2f1a263"
-  integrity sha512-UjgapumWlbMhkBgzT7Ykc5YXUT46F0iKu8SGXq0bcwP5dz/h0Plj6enJqjz1Zbq2l5WaqYnrVbwWOWMyF3F47g==
+    source-map-js "^0.6.2"
 
 strip-ansi@^6.0.1:
   version "6.0.1"
@@ -976,13 +975,13 @@ typedev@^0.1.1:
     debugbreak "^0.6.3"
     eslint "^8.18.0"
 
-typenode@^4.9.4-b:
-  version "4.9.4-b"
-  resolved "https://registry.yarnpkg.com/typenode/-/typenode-4.9.4-b.tgz#ea4b80ec30a7808ac4c3707314239ffa9c475e9c"
-  integrity sha512-c+N+aB+Mi7+u2vIHNskUhkU9RKvLzj6paHX6FlyAe5+0CZBLqZNYtTyXM8HCjvXtyEEDaGXXBL4Gs4OdVJbrOQ==
+typenode@^4.9.4-f:
+  version "4.9.4-f"
+  resolved "https://registry.yarnpkg.com/typenode/-/typenode-4.9.4-f.tgz#8bda91ddfb95c2b23a206d1fc1de8bb4b97d373b"
+  integrity sha512-nxyyG0cbhpuzUBD3NQYKH5kxWxl0KsFB57HSStF/Anzehcl1RmYtF6e9YFVm3dEtOIwIVyM9RZrCN4wcGe5gBg==
   dependencies:
     "@types/pegjs" "^0.10.3"
-    source-map-support "^0.5.21"
+    source-map-support "https://github.com/7rulnik/node-source-map-support"
     typescript "^4.9.4"
 
 typescript@^4.9.4:
