@@ -7,6 +7,7 @@ import { cache, lazy } from "../src/caching";
 import * as fs from "fs";
 import debugbreak from "debugbreak";
 import { isNode } from "../src/misc";
+import { red } from "../src/formatting/logColors";
 
 /** Enables some hot reload functionality.
  *      - Triggers a refresh clientside
@@ -54,8 +55,13 @@ const hotReloadModule = cache((module: NodeJS.Module) => {
                 || module.moduleContents?.includes("\r\nmodule.hotreload = true;" + "\r\n")
             ) {
                 console.log(`Reloading ${module.id}`);
-                module.loaded = false;
-                module.load(module.id);
+                try {
+                    module.loaded = false;
+                    module.load(module.id);
+                } catch (e) {
+                    console.error(red(`Error hot reloading ${module.id}`));
+                    console.error(e);
+                }
             }
         }
         triggerClientSideReload();

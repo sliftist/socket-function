@@ -13,6 +13,9 @@ import { getNodeId } from "./nodeCache";
 import crypto from "crypto";
 import { Watchable } from "./misc";
 import { delay, runInfinitePoll } from "./batching";
+import { magenta } from "./formatting/logColors";
+import { yellow } from "./formatting/logColors";
+import { green } from "./formatting/logColors";
 
 export type SocketServerConfig = (
     https.ServerOptions & {
@@ -224,7 +227,7 @@ export async function startSocketServer(
     }
 
     if (!SocketFunction.silent) {
-        console.log(`Trying to listening on ${host}:${port}`);
+        console.log(yellow(`Trying to listening on ${host}:${port}`));
     }
     realServer.listen(port, host);
 
@@ -233,7 +236,7 @@ export async function startSocketServer(
     port = (realServer.address() as net.AddressInfo).port;
     let nodeId = getNodeId(getCommonName(config.cert), port);
     if (!SocketFunction.silent) {
-        console.log(`Started Listening on ${nodeId}`);
+        console.log(green(`Started Listening on ${nodeId}`));
     }
 
     return nodeId;
