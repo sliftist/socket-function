@@ -1,6 +1,6 @@
 {
 	"name": "socket-function",
-	"version": "0.8.40",
+	"version": "0.9.0",
 	"main": "index.js",
 	"license": "MIT",
 	"note1": "note on node-forge fork, see https://github.com/digitalbazaar/forge/issues/744 for details",
@@ -10,7 +10,7 @@
 		"node-forge": "https://github.com/sliftist/forge#name",
 		"preact": "^10.10.6",
 		"rdtsc-now": "^0.3.1",
-		"typenode": "^4.9.4-f",
+		"typenode": "^4.9.4-g",
 		"ws": "^8.8.0"
 	},
 	"scripts": {
