@@ -4,6 +4,8 @@ import { red, yellow, blue, magenta } from "../formatting/logColors";
 
 import { getOwnTime, getPendingOwnTimeInstances, getPendingOwnTimeObjs, OwnTimeObj } from "./getOwnTime";
 import { addToStats, addToStatsValue, createStatsValue, getStatsTop, StatsValue } from "./stats";
+import { white } from "../formatting/logColors";
+import { isNode } from "../misc";
 
 /** NOTE: Must be called BEFORE anything else is imported! */
 export function enableMeasurements() {
@@ -126,7 +128,33 @@ export function logMeasureTable(
         output += `${blue(entry.name)}`;
         output += Array(maxNameLength + 4 - entry.name.length).fill(" ").join("");
 
-        let text = `${percent(getTime(entry).sum / totalTime).padStart(6, " ")} ( ${formatTime(getTime(entry).sum / getTime(entry).count).padStart(6, " ")} per * ${formatNumber(getTime(entry).count).padStart(6, " ")} = ${formatTime(getTime(entry).sum).padStart(6, " ")} )`;
+        function p(count: number, text: string | number) {
+            return String(text).padStart(count, " ");
+        }
+        let fractionText = percent(getTime(entry).sum / totalTime);
+        let perText = formatTime(getTime(entry).sum / getTime(entry).count);
+        let countText = formatNumber(getTime(entry).count);
+        let sumText = formatTime(getTime(entry).sum);
+
+        let equation = `${p(6, perText)} per * ${p(6, countText)} = ${p(6, sumText)}`;
+
+        let ownTimeTop = getStatsTop(getTime(entry));
+        if (ownTimeTop.topHeavy) {
+            let topText = formatTime(ownTimeTop.value);
+            let topCountText = formatNumber(ownTimeTop.count);
+            let bottomText = formatTime(getTime(entry).sum - ownTimeTop.value, ownTimeTop.value);
+            let bottomCountText = formatNumber(getTime(entry).count - ownTimeTop.count);
+            let topPart = `${p(6, topText)} per * ${topCountText}`;
+            let bottomPart = `${bottomText} * ${bottomCountText}`;
+            if (isNode()) {
+                topPart = red(topPart);
+            } else {
+                bottomPart = white(bottomPart);
+            }
+            equation = `${topPart}  +  ${bottomPart} = ${sumText}`;
+        }
+
+        let text = `${p(6, fractionText)} ( ${equation} )`;
         let overhead = measureOverhead * getTime(entry).count;
         let overheadFraction = overhead / getTime(entry).sum;
         let overheadIsAProblem = overheadFraction > 0.5;
@@ -138,11 +166,6 @@ export function logMeasureTable(
 
         if (overheadIsAProblem) {
             output += red(`    measurement overhead is ~${percent(overheadFraction)} of the time.`);
-        }
-
-        let ownTimeTop = getStatsTop(getTime(entry));
-        if (ownTimeTop.topHeavy) {
-            output += red(`    TOP ${percent(ownTimeTop.valueFraction)} of the time is owned by ${percent(ownTimeTop.countFraction)} of the calls (${formatTime(ownTimeTop.value / ownTimeTop.count)} per * ${formatNumber(ownTimeTop.count)} = ${formatTime(ownTimeTop.value)})`);
         }
 
         if (entry.stillOpenCount > 0) {

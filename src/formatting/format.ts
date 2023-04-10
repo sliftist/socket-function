@@ -1,21 +1,25 @@
-export function formatTime(milliseconds: number | undefined): string {
+export function formatTime(milliseconds: number | undefined, maxAbsoluteValue?: number): string {
     if (typeof milliseconds !== "number") return "";
     if (milliseconds === 0) return "0ms";
     if (milliseconds < 0) {
-        return "-" + formatTime(-milliseconds);
+        return "-" + formatTime(-milliseconds, maxAbsoluteValue);
     }
-    if (milliseconds < 1 / 1000) {
+    let scale = milliseconds;
+    if (maxAbsoluteValue) {
+        scale = Math.max(scale, maxAbsoluteValue);
+    }
+    if (scale < 1 / 1000) {
         return formatMaxDecimals(milliseconds * 1000 * 1000, 3) + "ns";
-    } else if (milliseconds < 1) {
+    } else if (scale < 1) {
         return formatMaxDecimals(milliseconds * 1000, 3) + "us";
-    } else if (milliseconds < 1000) {
+    } else if (scale < 1000) {
         return formatMaxDecimals(milliseconds, 3) + "ms";
         // Use seconds until we have 10 minutes, as decimal minutes are confusing
-    } else if (milliseconds < 1000 * 60 * 10) {
+    } else if (scale < 1000 * 60 * 10) {
         return formatMaxDecimals(milliseconds / 1000, 3) + "s";
-    } else if (milliseconds < 1000 * 60 * 60) {
+    } else if (scale < 1000 * 60 * 60) {
         return formatMaxDecimals(milliseconds / 1000 / 60, 3) + "m";
-    } else if (milliseconds < 1000 * 60 * 60 * 24) {
+    } else if (scale < 1000 * 60 * 60 * 24) {
         return formatMaxDecimals(milliseconds / 1000 / 60 / 60, 3) + "h";
         // } else if (milliseconds < 1000 * 60 * 60 * 24 * 10) {
         //     let remaining = Math.round(milliseconds / 1000);

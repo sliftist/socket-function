@@ -11,7 +11,7 @@ module.allowclient = true;
 export const forceModule = true;
 
 declare global {
-    function setFlag(require: NodeRequire, request: string, flag: string, recursive?: boolean): void;
+    //function setFlag(require: NodeRequire, request: string, flag: string, recursive?: boolean): void;
 }
 
 function setRecursive(bangPart: string, module: NodeJS.Module) {
