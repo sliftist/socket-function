@@ -43,18 +43,24 @@ export function measureFnc(target: any, propertyKey: string, descriptor: Propert
     }
     descriptor.value = measureWrap(descriptor.value, name);
 }
+
+// https://stackoverflow.com/questions/5905492/dynamic-function-name-in-javascript
+export function nameFunction<T extends Function>(name: string, fnc: T) {
+    Object.defineProperty(fnc, "name", { value: name });
+    return fnc;
+}
 export function measureWrap<T extends (...args: any[]) => any>(fnc: T, name?: string): T {
     if (!measurementsEnabled) {
         functionsSkipped++;
         return fnc;
     }
     let usedName = name || fnc.name;
-    return (function (this: any, ...args: unknown[]): unknown {
+    return nameFunction(usedName, (function (this: any, ...args: unknown[]): unknown {
         if (outstandingProfiles.length === 0) {
             return fnc.apply(this, args);
         }
         return getOwnTime(usedName, () => fnc.apply(this, args), recordOwnTime);
-    }) as T;
+    })) as T;
 }
 export function measureBlock<T extends (...args: any[]) => any>(fnc: T, name?: string): ReturnType<T> {
     return measureWrap(fnc, name)();

@@ -215,14 +215,20 @@
         }
     }
 
-    function createRequire(module, serializedModule, asyncIsFine) {
+    function createRequire(module, serializedModule, asyncIsFineOuter) {
         require.cache = moduleCache;
         require.resolve = function (request) {
             // TODO: Maybe do a request, making this async, if it isn't found?
             return serializedModule.requests[request];
         };
         return require;
-        function require(request) {
+        function require(request, asyncIsFine) {
+            if (asyncIsFineOuter) {
+                asyncIsFine = true;
+            }
+            if (typeof asyncIsFine !== "boolean") {
+                asyncIsFine = false;
+            }
             if (request in builtInModuleExports) {
                 return builtInModuleExports[request];
             }
@@ -234,7 +240,6 @@
                         "color: red", "color: unset",
                     );
                 }
-                debugger;
                 return rootRequire(request);
             }
 
@@ -251,6 +256,7 @@
                         "color: red", "color: unset",
                     );
                 }
+                debugger;
                 return rootRequire(resolvedPath);
             }
 
