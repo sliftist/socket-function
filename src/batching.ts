@@ -25,6 +25,12 @@ export function delay(delayTime: DelayType): Promise<void> {
             return delay("afterpromises");
         }
     } else {
+        // NOTE: setTimeout can't wait this short of a time, so just setImmediate. This should be hard to distinguish
+        //  anyways, as setImmediate (at least in nodejs), should happen after io, so... it should just work
+        //  (the only difference is there will be less unnecessary delay).
+        if (delayTime < 10) {
+            return delay("immediate");
+        }
         return new Promise<void>(resolve => setTimeout(resolve, delayTime));
     }
 }
@@ -32,6 +38,13 @@ export function delay(delayTime: DelayType): Promise<void> {
 export function batchFunction<Arg, Result = void>(
     config: {
         delay: DelayType;
+        /** Instead of immediately waiting delay, starts by waiting 0ms, and every call increments the delay factor
+         *      by 1. Delay is `factor * (delay / throttleWindow)`. For every delay interval we have no calls, we decrease by
+         *      no_calls/delay.
+         *      - This essentially turns delay into a `calls per second` type indicator (ex, 10ms is 100 callers
+         *          per second, 500ms is 2 calls, etc), which is accurate over delay * throttleWindow time.
+         */
+        throttleWindow?: number;
         name?: string;
     },
     fnc: (arg: Arg[]) => (Promise<Result> | Result)
@@ -43,7 +56,35 @@ export function batchFunction<Arg, Result = void>(
         args: Arg[];
         promise: Promise<Result>;
     } | undefined;
+    let curDelay = config.delay;
+    let delayRamp = 0;
+    if (config.throttleWindow && typeof curDelay === "number") {
+        delayRamp = curDelay / config.throttleWindow;
+    }
+    let delayTime = 0;
+    if (typeof curDelay === "number") {
+        delayTime = curDelay;
+    }
+    let countSinceBreak = 0;
+    let lastCall = 0;
     return async arg => {
+        let now = Date.now();
+        if (delayRamp) {
+            let savedCount = (now - lastCall) / delayTime;
+            if (savedCount >= 1) {
+                countSinceBreak -= savedCount;
+            }
+            if (countSinceBreak < 0) {
+                countSinceBreak = 0;
+            }
+
+            countSinceBreak++;
+            // Set the max fairly high, as we basically ignore small delay times, so we need a high max to allow
+            //  our delay to even apply!
+            curDelay = Math.min(delayTime * 20, delayRamp * countSinceBreak);
+        }
+        lastCall = now;
+
         if (!batched) {
             await prevPromise;
         }
@@ -54,7 +95,7 @@ export function batchFunction<Arg, Result = void>(
 
         let args: Arg[] = [arg];
         let promise = Promise.resolve().then(async () => {
-            await delay(config.delay);
+            await delay(curDelay);
             // After we call the function, we can no longer accept args
             batched = undefined;
             return await fnc(args);

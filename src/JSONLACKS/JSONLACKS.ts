@@ -46,9 +46,18 @@ export class JSONLACKS {
     }
     /** Is useful when serializing an array to a file with one object per line */
     @measureFnc
-    public static stringifyFile(obj: unknown[], config?: JSONLACKS_StringifyConfig): string {
+    public static stringifyFile(obj: unknown[], config?: JSONLACKS_StringifyConfig): Buffer {
         let serialized = JSONLACKS.escapeSpecialObjects(obj, config) as unknown[];
-        return measureBlock(function JSONstringifyAndJoin() { return serialized.map(x => JSON.stringify(x)).join("\n"); });
+        return measureBlock(function JSONstringifyAndJoin() {
+            let buffers: Buffer[] = [];
+            const chunkCount = 1000;
+            for (let i = 0; i < serialized.length; i += chunkCount) {
+                let str = serialized.slice(i, i + chunkCount).map(x => JSON.stringify(x) + "\n").join("");
+                buffers.push(Buffer.from(str));
+            }
+            // Break up into chunks, as string => Buffer i
+            return Buffer.concat(buffers);
+        });
     }
     // TIMING: Seems to be about 40X slower than JSON.parse unless extended is set to false,
     //  then it is about 2X slower (although it depends on the size and complexity of the objects!)

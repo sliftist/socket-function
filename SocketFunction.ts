@@ -86,7 +86,7 @@ export class SocketFunction {
             let functionName = call.functionName;
             let time = Date.now();
             if (SocketFunction.logMessages) {
-                console.log(`START\t\t\t${classGuid}.${functionName}`);
+                console.log(`START\t\t\t${classGuid}.${functionName} at ${Date.now()}`);
             }
             try {
                 let callFactory = await getCreateCallFactory(nodeId);
@@ -106,7 +106,7 @@ export class SocketFunction {
             } finally {
                 time = Date.now() - time;
                 if (SocketFunction.logMessages) {
-                    console.log(`TIME\t${time}ms\t${classGuid}.${functionName}`);
+                    console.log(`FINISHED\t${time}ms\t${classGuid}.${functionName} at ${Date.now()}`);
                 }
             }
         });

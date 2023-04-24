@@ -163,7 +163,7 @@ export async function createCallFactory(
             let resultPromise = new Promise((resolve, reject) => {
                 let callback = (result: InternalReturnType) => {
                     if (SocketFunction.logMessages) {
-                        console.log(`SIZE\t${(formatNumberSuffixed(result.resultSize) + "B").padEnd(4, " ")}\t${call.classGuid}.${call.functionName}`);
+                        console.log(`SIZE\t${(formatNumberSuffixed(result.resultSize) + "B").padEnd(4, " ")}\t${call.classGuid}.${call.functionName} at ${Date.now()}`);
                     }
                     pendingCalls.delete(seqNum);
                     if (result.error) {

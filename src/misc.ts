@@ -170,3 +170,130 @@ export function keyByArray<T, K>(arr: T[], getKey: (value: T) => K): Map<K, T[]>
     }
     return map;
 }
+
+export function deepCloneJSON<T>(obj: T): T {
+    return JSON.parse(JSON.stringify(obj));
+}
+
+
+
+export interface PromiseObj<T = void> {
+    resolve: (value: T | Promise<T>) => void;
+    reject: (error: any) => void;
+    promise: Promise<T>;
+    value: { value?: T; error?: string } | undefined;
+    /** Resolve called does not mean the value is ready, as it may be resolved with a promise. */
+    resolveCalled?: boolean;
+}
+
+export function promiseObj<T = void>(): PromiseObj<T> {
+    let resolve!: (value: T | Promise<T>) => void;
+    let reject!: (error: any) => void;
+    let promise = new Promise<T>((_resolve, _reject) => {
+        resolve = _resolve;
+        reject = _reject;
+    });
+    let obj: PromiseObj<T> = {
+        resolve(value: T | Promise<T>) {
+            obj.resolveCalled = true;
+            if (typeof value === "object" && value !== null && value instanceof Promise) {
+                value.then(
+                    value => obj.value = { value },
+                    error => obj.value = { error },
+                );
+            } else {
+                obj.value = { value };
+            }
+            resolve(value);
+        },
+        reject,
+        promise,
+        value: undefined
+    };
+    promise.then(value => obj.value = { value }, error => obj.value = { error });
+    return obj;
+}
+
+
+// Allows an immediate call, then delays the next call until the first call finishes + delay
+//  - Drops all but the latest call, but only resolves the promises return to all
+//      calls once the latest call finishes.
+//  - Esentially the same as saying "don't run this function too often, don't run it in parallel,
+//      and don't let functions runs be too close together".
+export function throttleFunction<Args extends any[]>(
+    delay: number,
+    fnc: (...args: Args) => MaybePromise<void>
+): (...args: Args) => Promise<void> {
+    let nextAllowedCall = 0;
+    let pendingArgs: { args: Args; promiseObj: PromiseObj<void> } | undefined = undefined;
+    function doCall(args: Args, promiseObj: PromiseObj<void>) {
+        nextAllowedCall = Number.POSITIVE_INFINITY;
+        try {
+            let result = fnc(...args);
+            promiseObj.resolve(result);
+            if (result instanceof Promise) {
+                result.finally(() => {
+                    afterCall(Date.now() + delay);
+                });
+            } else {
+                afterCall(Date.now() + delay);
+            }
+        } catch (e: any) {
+            debugger;
+            promiseObj.reject(e);
+            afterCall(Date.now() + delay);
+        }
+    }
+    function afterCall(setNextAllowedCall: number | undefined) {
+
+        // NOTE: Ignore error, we really shouldn't have any here
+        if (setNextAllowedCall) {
+            nextAllowedCall = setNextAllowedCall;
+        } else {
+            if (nextAllowedCall === Number.POSITIVE_INFINITY) return;
+        }
+        if (!pendingArgs) return;
+        if (Date.now() > nextAllowedCall) {
+            let args = pendingArgs;
+            pendingArgs = undefined;
+            // Delay, so we don't turn a series of sequential calls to a series of nested calls
+            //  (which will cause a stack overflow)
+            nextAllowedCall = Number.POSITIVE_INFINITY;
+            setImmediate(() => doCall(args.args, args.promiseObj));
+        } else {
+            setTimeout(() => {
+                if (pendingArgs) {
+                    let args = pendingArgs;
+                    pendingArgs = undefined;
+                    doCall(args.args, args.promiseObj);
+                }
+            }, nextAllowedCall - Date.now());
+        }
+    }
+    return function (...args: Args): Promise<void> {
+        if (pendingArgs) {
+            pendingArgs.args = args;
+            return pendingArgs.promiseObj.promise;
+        }
+        let time = Date.now();
+        if (time > nextAllowedCall) {
+            let promise = promiseObj();
+            doCall(args, promise);
+            return promise.promise;
+        } else {
+            pendingArgs = { args, promiseObj: promiseObj() };
+            afterCall(undefined);
+            return pendingArgs.promiseObj.promise;
+        }
+    };
+}
+
+
+export function nextId() {
+    return Date.now() + "_" + Math.random();
+}
+
+export function arrayFromOrderObject<T>(obj: { [order: number]: T }): T[] {
+    if (Array.isArray(obj)) return obj;
+    return Object.entries(obj).sort((a, b) => +a[0] - +b[0]).map(x => x[1]);
+}
