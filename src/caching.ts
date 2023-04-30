@@ -1,14 +1,18 @@
 import { arrayEqual } from "./misc";
 import { AnyFunction, Args, canHaveChildren } from "./types";
 
-export function lazy<T>(factory: () => T): () => T {
+export function lazy<T>(factory: () => T) {
     let value: { value: T } | undefined = undefined;
-    return () => {
+    function get() {
         if (!value) {
             value = { value: factory() };
         }
         return value.value;
     };
+    get.reset = () => {
+        value = undefined;
+    };
+    return get;
 }
 
 // NOTE: The reason we need to periodically clear, is because sometimes a very small

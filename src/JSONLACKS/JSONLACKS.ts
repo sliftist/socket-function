@@ -8,6 +8,10 @@ import fs from "fs";
 import parser from "./JSONLACKS.generated.js";
 import { recursiveFreeze } from "../misc";
 import { canHaveChildren } from "../types";
+import { delay } from "../batching";
+
+const SERIALIZE_OBJECT_BATCH_COUNT = 1000;
+const PARSE_BYTE_CHUNK_SIZE = 1024 * 1024 * 10;
 
 // Supports json and also:
 //  - Non quoted field names "{ x: 1 }"?
@@ -32,6 +36,11 @@ export interface JSONLACKS_StringifyConfig {
     allowObjectMutation?: boolean;
 }
 
+interface HydrateState {
+    references: Map<string, unknown>,
+    visited: Set<unknown>,
+}
+
 export class JSONLACKS {
     public static readonly LACKS_KEY = "__JSONLACKS__98cfb4a05fa34d828661cae15b8779ce__";
 
@@ -46,14 +55,14 @@ export class JSONLACKS {
     }
     /** Is useful when serializing an array to a file with one object per line */
     @measureFnc
-    public static stringifyFile(obj: unknown[], config?: JSONLACKS_StringifyConfig): Buffer {
+    public static async stringifyFile(obj: unknown[], config?: JSONLACKS_StringifyConfig): Promise<Buffer> {
         let serialized = JSONLACKS.escapeSpecialObjects(obj, config) as unknown[];
-        return measureBlock(function JSONstringifyAndJoin() {
+        return await measureBlock(async function JSONstringifyAndJoin() {
             let buffers: Buffer[] = [];
-            const chunkCount = 1000;
-            for (let i = 0; i < serialized.length; i += chunkCount) {
-                let str = serialized.slice(i, i + chunkCount).map(x => JSON.stringify(x) + "\n").join("");
+            for (let i = 0; i < serialized.length; i += SERIALIZE_OBJECT_BATCH_COUNT) {
+                let str = serialized.slice(i, i + SERIALIZE_OBJECT_BATCH_COUNT).map(x => JSON.stringify(x) + "\n").join("");
                 buffers.push(Buffer.from(str));
+                await delay("immediate");
             }
             // Break up into chunks, as string => Buffer i
             return Buffer.concat(buffers);
@@ -62,7 +71,7 @@ export class JSONLACKS {
     // TIMING: Seems to be about 40X slower than JSON.parse unless extended is set to false,
     //  then it is about 2X slower (although it depends on the size and complexity of the objects!)
     @measureFnc
-    public static parse<T>(text: string, config?: JSONLACKS_ParseConfig): T {
+    public static parse<T>(text: string, config?: JSONLACKS_ParseConfig, hydrateState?: HydrateState): T {
         let obj: unknown;
 
         let extendedParsing = config?.extended ?? JSONLACKS.EXTENDED_PARSER;
@@ -73,22 +82,57 @@ export class JSONLACKS {
             obj = measureBlock(function JSONparse() { return JSON.parse(text); });
         }
 
-        return JSONLACKS.hydrateSpecialObjects(obj) as T;
+        return JSONLACKS.hydrateSpecialObjects(obj, hydrateState) as T;
     }
     @measureFnc
-    public static parseLines<T>(text: string, config?: JSONLACKS_ParseConfig): T {
-        let lines = text
-            .replaceAll("\r", "")
-            .split("\n")
-            .filter(x => x && !x.startsWith("//"))
-            ;
-        let linesJSON = "[";
-        for (let i = 0; i < lines.length; i++) {
-            if (i !== 0) linesJSON += ",";
-            linesJSON += lines[i];
+    public static async parseLines<T>(buffer: Buffer, config?: JSONLACKS_ParseConfig): Promise<T[]> {
+        let output: T[] = [];
+        let pos = 0;
+        let hydrateState: HydrateState = {
+            references: new Map(),
+            visited: new Set(),
+        };
+        function parseChunk() {
+            let start = pos;
+            let lastNewLine = 0;
+            while (pos < buffer.length && (!lastNewLine || (pos - start) < PARSE_BYTE_CHUNK_SIZE)) {
+                let byte = buffer[pos];
+                if (byte === 10) {
+                    lastNewLine = pos;
+                }
+                pos++;
+            }
+            if (pos === buffer.length) {
+                lastNewLine = pos;
+            }
+            pos = lastNewLine + 1;
+
+            let text = buffer.slice(start, lastNewLine).toString("utf8");
+            let lines = text
+                .replaceAll("\r", "")
+                .split("\n")
+                .filter(x => x && !x.startsWith("//"))
+                ;
+            let linesJSON = "[";
+            for (let i = 0; i < lines.length; i++) {
+                if (i !== 0) linesJSON += ",";
+                linesJSON += lines[i];
+            }
+            linesJSON += "]";
+            let parts = JSONLACKS.parse(linesJSON, config, hydrateState) as T[];
+            for (let part of parts) {
+                output.push(part);
+            }
         }
-        linesJSON += "]";
-        return JSONLACKS.parse(linesJSON, config);
+        while (pos < buffer.length) {
+            parseChunk();
+            // Wait, to allow other thread to do work. We wait a long time... because we parse 10MB at once,
+            //  so... this gives us 2s of delay per 1GB of parsing, which should only be a fraction of our parse time
+            if (pos < buffer.length) {
+                await delay(20);
+            }
+        }
+        return output;
     }
 
     @measureFnc
@@ -181,9 +225,9 @@ export class JSONLACKS {
     }
 
     @measureFnc
-    private static hydrateSpecialObjects(obj: unknown): unknown {
-        let references = new Map<string, unknown>();
-        let visited = new Set<unknown>();
+    private static hydrateSpecialObjects(obj: unknown, hydrateState?: HydrateState): unknown {
+        let references = hydrateState?.references || new Map<string, unknown>();
+        let visited = hydrateState?.visited || new Set<unknown>();
         return iterate(obj);
         function iterate(obj: unknown) {
             if (!canHaveChildren(obj)) return obj;
@@ -215,7 +259,8 @@ export class JSONLACKS {
             if (type === "ref") {
                 let id = obj.id as string;
                 if (!JSONLACKS.IGNORE_MISSING_REFERENCES && !references.has(id)) {
-                    // TODO: Add a mode where we can ignore
+                    debugbreak(2);
+                    debugger;
                     throw new Error(`Reference to undefined id "${id}"`);
                 }
                 return references.get(id);
