@@ -294,6 +294,10 @@ export function nextId() {
 }
 
 export function arrayFromOrderObject<T>(obj: { [order: number]: T }): T[] {
-    if (Array.isArray(obj)) return obj;
-    return Object.entries(obj).sort((a, b) => +a[0] - +b[0]).map(x => x[1]);
+    if (Array.isArray(obj)) return obj.slice();
+    return Object.entries(obj).sort((a, b) => +a[0] - +b[0]).map(x => x[1]).filter(x => x !== undefined && x !== null);
+}
+
+export function last<T>(arr: T[]): T | undefined {
+    return arr[arr.length - 1];
 }
