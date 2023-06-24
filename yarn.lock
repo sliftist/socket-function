@@ -839,10 +839,10 @@ queue-microtask@^1.2.2:
   resolved "https://registry.yarnpkg.com/queue-microtask/-/queue-microtask-1.2.3.tgz#4929228bbc724dfac43e0efb058caf7b6cfb6243"
   integrity sha512-NuaNSa6flKT5JaSYQzJok04JzTL1CA6aGhv5rfLW3PgqA+M2ChpZQnAC8h8i4ZFkBS8X5RqkDBHA7r4hej3K9A==
 
-rdtsc-now@^0.4.1:
-  version "0.4.1"
-  resolved "https://registry.yarnpkg.com/rdtsc-now/-/rdtsc-now-0.4.1.tgz#9b8b60efc0aa5f0c344561763ed36ec6f395a5f2"
-  integrity sha512-AnPCw4mlFge/Bb6ig84IQBGPfXvHGt0OO5iC548Mf5A8iUZIJNRXcnv4mBCU4nsSEbTGnr0vW+HYmwJa32Aueg==
+rdtsc-now@^0.4.2:
+  version "0.4.2"
+  resolved "https://registry.yarnpkg.com/rdtsc-now/-/rdtsc-now-0.4.2.tgz#27e82cc00923f1803be0ef433d5cfffeccc87653"
+  integrity sha512-eFMTiCIGf9uC46wvyg0xQUK0QE21NPI+uezVi9nj4vSCs9ROrk1NXizZdIdV5D9w34pHA6ofNKzCaQL4UdEuug==
 
 regexpp@^3.2.0:
   version "3.2.0"

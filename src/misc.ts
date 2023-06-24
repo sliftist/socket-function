@@ -1,6 +1,13 @@
 import * as crypto from "crypto";
 import { canHaveChildren, MaybePromise } from "./types";
 
+export const timeInSecond = 1000;
+export const timeInMinute = timeInSecond * 60;
+export const timeInHour = timeInMinute * 60;
+export const timeInDay = timeInHour * 24;
+export const timeInWeek = timeInDay * 7;
+export const timeInYear = timeInDay * 365;
+
 export type Watchable<T> = (callback: (value: T) => void) => MaybePromise<void>;
 
 export function convertErrorStackToError(error: string): Error {
@@ -172,6 +179,7 @@ export function keyByArray<T, K>(arr: T[], getKey: (value: T) => K): Map<K, T[]>
 }
 
 export function deepCloneJSON<T>(obj: T): T {
+    if (obj === undefined) return obj;
     return JSON.parse(JSON.stringify(obj));
 }
 

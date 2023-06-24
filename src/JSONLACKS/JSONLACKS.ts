@@ -68,6 +68,18 @@ export class JSONLACKS {
             return Buffer.concat(buffers);
         });
     }
+    public static stringifyFileSync(obj: unknown[], config?: JSONLACKS_StringifyConfig): Buffer {
+        let serialized = JSONLACKS.escapeSpecialObjects(obj, config) as unknown[];
+        return measureBlock(function JSONstringifyAndJoin() {
+            let buffers: Buffer[] = [];
+            for (let i = 0; i < serialized.length; i += SERIALIZE_OBJECT_BATCH_COUNT) {
+                let str = serialized.slice(i, i + SERIALIZE_OBJECT_BATCH_COUNT).map(x => JSON.stringify(x) + "\n").join("");
+                buffers.push(Buffer.from(str));
+            }
+            // Break up into chunks, as string => Buffer i
+            return Buffer.concat(buffers);
+        });
+    }
     // TIMING: Seems to be about 40X slower than JSON.parse unless extended is set to false,
     //  then it is about 2X slower (although it depends on the size and complexity of the objects!)
     @measureFnc

@@ -82,10 +82,10 @@ export function cacheLimited<Output, Key>(
     //  calculating, keeping a consistent output can save (a considerable amount of) time in downstream caches.
     maxCount: number,
     getValue: (key: Key) => Output
-): (key: Key) => Output {
+) {
     let startingCalculating = new Set<Key>();
     let values = new Map<Key, Output>();
-    return (input) => {
+    function get(input: Key): Output {
         let key = input;
         if (values.has(key)) {
             return values.get(key) as any;
@@ -109,7 +109,13 @@ export function cacheLimited<Output, Key>(
         let value = getValue(input);
         values.set(key, value);
         return value;
+    }
+    get["forceSet"] = (key: Key, value: Output) => {
+        values.set(key, value);
+        startingCalculating.add(key);
     };
+
+    return get;
 }
 
 export function cacheWeak<Output, Key extends object>(getValue: (key: Key) => Output): (key: Key) => Output {
