@@ -40,6 +40,7 @@ export function cache<Output, Key>(getValue: (key: Key) => Output): {
     clear(key: Key): void;
     forceSet(key: Key, value: Output): void;
     getAllKeys(): Key[];
+    get(key: Key): Output | undefined;
 } {
     let startingCalculating = new Set<Key>();
     let values = new Map<Key, Output>();
@@ -68,6 +69,9 @@ export function cache<Output, Key>(getValue: (key: Key) => Output): {
     };
     cache.getAllKeys = () => {
         return [...values.keys()];
+    };
+    cache.get = (key: Key) => {
+        return values.get(key);
     };
     return cache;
 }
@@ -113,6 +117,10 @@ export function cacheLimited<Output, Key>(
     get["forceSet"] = (key: Key, value: Output) => {
         values.set(key, value);
         startingCalculating.add(key);
+    };
+    get["clear"] = () => {
+        values.clear();
+        startingCalculating.clear();
     };
 
     return get;
@@ -247,7 +255,7 @@ export function cacheArgsEqual<Fnc extends AnyFunction>(
         {
             clear(...args: unknown[]) {
                 cache.clear(args);
-            }
+            },
         }
     );
 }

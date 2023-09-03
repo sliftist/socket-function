@@ -8,39 +8,18 @@ export type OwnTimeObj = {
     time: number;
     ownTime: number;
 };
-type OwnTimeObjInternal = OwnTimeObj & {
+export type OwnTimeObjInternal = OwnTimeObj & {
     lastStartTime: number;
     firstStartTime: number;
-    parent: OwnTimeObjInternal | undefined;
-    child: OwnTimeObjInternal | undefined;
 };
 
-let pendingCallTime: OwnTimeObjInternal | undefined;
-export function getPendingOwnTimeObjs(): (OwnTimeObj & { source: OwnTimeObjInternal })[] | undefined {
-    let time = now();
-    let instances = getPendingOwnTimeInstances();
-    if (!instances) return undefined;
-    if (!pendingCallTime) return undefined;
-    let results = instances.map((instance) => ({
-        name: instance.name,
-        ownTime: instance.ownTime,
-        time: time - instance.firstStartTime,
-        source: instance
-    }));
-    results[0].ownTime += time - pendingCallTime.lastStartTime;
-    return results;
+let openTimes: OwnTimeObjInternal[] = [];
+
+export function getOpenTimesBase(): OwnTimeObjInternal[] {
+    return openTimes;
 }
-export function getPendingOwnTimeInstances(): OwnTimeObjInternal[] | undefined {
-    if (!pendingCallTime) return undefined;
-    let results: OwnTimeObjInternal[] = [];
-    let current: OwnTimeObjInternal | undefined = pendingCallTime;
-    while (current) {
-        results.push(current);
-        current = current.parent;
-    }
-    return results;
-}
-(global as any).pendingOwnCallTime = pendingCallTime;
+
+(global as any).pendingOwnCallTime = openTimes;
 
 // NOTE: This overhead time is actually mostly for aggregate time, but it is needed,
 //  otherwise we consistently underestimate the time spent.
@@ -85,39 +64,25 @@ export function getOwnTime<T>(
         ownTime: 0,
         firstStartTime: time,
         lastStartTime: time,
-        parent: pendingCallTime,
-        child: undefined,
     };
-    if (pendingCallTime) {
-        pendingCallTime.child = obj;
+    let prevOwnTime = openTimes[openTimes.length - 1];
+    if (prevOwnTime) {
+        prevOwnTime.ownTime += time - prevOwnTime.lastStartTime;
     }
-    pendingCallTime = obj;
-    if (obj.parent) {
-        obj.parent.ownTime += obj.lastStartTime - obj.parent.lastStartTime;
-    }
+    openTimes.push(obj);
 
     function finish() {
         let time = now();
         obj.time = time - obj.firstStartTime;
-        if (pendingCallTime === obj) {
-            // Good case, all of our children call ended before us.
-
-            // End our own time calculation
+        if (obj === openTimes[openTimes.length - 1]) {
             obj.ownTime += time - obj.lastStartTime;
-
-            // Our parent is now the last open call
-            pendingCallTime = obj.parent;
-            if (pendingCallTime) {
-                // Resume our parent ownTime counting
-                pendingCallTime.lastStartTime = time;
+            let newOwnTime = openTimes[openTimes.length - 2];
+            if (newOwnTime) {
+                newOwnTime.lastStartTime = time;
             }
         }
-        if (obj.child && obj.parent) {
-            obj.child.parent = obj.parent;
-            obj.parent.child = obj.child;
-        }
-        obj.parent = undefined;
-        obj.child = undefined;
+        let index = openTimes.indexOf(obj);
+        openTimes.splice(index, 1);
 
         obj.time += addMeasureOverheadTime;
         obj.ownTime += addMeasureOverheadTime;

@@ -2,12 +2,14 @@ import debugbreak from "debugbreak";
 import { formatTime, formatNumber } from "../formatting/format";
 import { red, yellow, blue, magenta } from "../formatting/logColors";
 
-import { getOwnTime, getPendingOwnTimeInstances, getPendingOwnTimeObjs, OwnTimeObj } from "./getOwnTime";
+import { getOpenTimesBase, getOwnTime, OwnTimeObj } from "./getOwnTime";
 import { addToStats, addToStatsValue, createStatsValue, getStatsTop, StatsValue } from "./stats";
 import { white } from "../formatting/logColors";
 import { isNode } from "../misc";
 
-/** NOTE: Must be called BEFORE anything else is imported! */
+/** NOTE: Must be called BEFORE anything else is imported!
+ *      NOTE: Measurements on on by default now, so this doesn't really need to be called...
+*/
 export function enableMeasurements() {
     if (functionsSkipped) {
         console.warn(red(`Skipped measure shimming ${functionsSkipped} functions. Fix this by calling enableMeasurements before any other imports.`));
@@ -75,15 +77,25 @@ export function startMeasure(): {
     let profile: MeasureProfile = {
         entries: Object.create(null),
     };
-    let openAtStart = new Set(getPendingOwnTimeInstances());
+    let openAtStart = new Set(getOpenTimesBase());
 
     outstandingProfiles.push(profile);
     return {
         finish() {
-            let pending = getPendingOwnTimeObjs() || [];
+            let pending = getOpenTimesBase();
+            let last = pending[pending.length - 1];
+            let time = Date.now();
             for (let timeObj of pending) {
-                if (openAtStart.has(timeObj.source)) continue;
-                addToProfile(profile, timeObj, true);
+                // Ignore any values that were already open, as they are clearly not
+                //  caused by our code.
+                if (openAtStart.has(timeObj)) continue;
+                timeObj = { ...timeObj };
+
+                if (timeObj === last) {
+                    timeObj.ownTime += time - timeObj.lastStartTime;
+                }
+                timeObj.time = time - timeObj.firstStartTime;
+                addToProfile(profile, timeObj);
             }
             outstandingProfiles.splice(outstandingProfiles.indexOf(profile), 1);
             return profile;
@@ -96,6 +108,8 @@ export interface LogMeasureTableConfig {
     name?: string;
     // Defaults to 0.05
     thresholdInTable?: number;
+    // Details to 50
+    minTimeToLog?: number;
 }
 
 export function logMeasureTable(
@@ -106,6 +120,7 @@ export function logMeasureTable(
     if (thresholdInTable === undefined) {
         thresholdInTable = 0.05;
     }
+    let minTimeToLog = config?.minTimeToLog ?? 50;
 
     function getTime(entry: ProfileEntry) {
         return useTotalTime ? entry.totalTime : entry.ownTime;
@@ -114,6 +129,7 @@ export function logMeasureTable(
     entries.sort((a, b) => getTime(b).sum - getTime(a).sum);
 
     let totalTime = entries.map(x => getTime(x).sum).reduce((a, b) => a + b, 0);
+    if (totalTime < minTimeToLog) return;
 
     console.log();
     let title = yellow(`Profiled ${formatTime(totalTime)} (logged at ${new Date().toISOString()})`);

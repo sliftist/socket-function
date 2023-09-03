@@ -96,7 +96,11 @@ export async function startSocketServer(
             console.error(`Connection attempt error ${e.message}`);
         });
         httpsServer.on("tlsClientError", e => {
-            console.error(`TLS client error ${e.message}`);
+            // NOTE: This happens a lot when we have tabs open that connected to an old
+            //  server (with old certs, that the browser will reject?)
+            if (!SocketFunction.silent) {
+                console.error(`TLS client error ${e.message}`);
+            }
         });
 
         httpsServer.on("request", httpCallHandler);

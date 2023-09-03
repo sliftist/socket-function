@@ -113,15 +113,22 @@ export function batchFunction<Arg, Result = void>(
 }
 
 export function runInSerial<T extends (...args: any[]) => Promise<any>>(fnc: T): T {
-    let updateQueue: (() => void)[] = [];
+    let updateQueue: { promise: Promise<void>; resolve: () => void; }[] = [];
 
     return (async (...args: any[]) => {
+        let promise = {
+            promise: null as any as Promise<void>,
+            resolve: () => { },
+        };
+        promise.promise = new Promise<void>(resolve => {
+            promise.resolve = resolve;
+        });
         const queueWasEmpty = updateQueue.length === 0;
-        if (!queueWasEmpty) {
-            // Wait for the previous promise to resolve
-            await new Promise<void>(resolve => updateQueue.push(resolve));
+        if (queueWasEmpty) {
+            promise.resolve();
         }
-        updateQueue.push(() => { });
+        updateQueue.push(promise);
+        await promise.promise;
 
         try {
             return await fnc(...args);
@@ -129,7 +136,7 @@ export function runInSerial<T extends (...args: any[]) => Promise<any>>(fnc: T):
             // Pop ourself off
             updateQueue.shift();
             // Resolve the next promise
-            updateQueue[0]?.();
+            updateQueue[0]?.resolve();
         }
     }) as T;
 }
