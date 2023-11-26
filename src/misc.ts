@@ -309,3 +309,8 @@ export function arrayFromOrderObject<T>(obj: { [order: number]: T }): T[] {
 export function last<T>(arr: T[]): T | undefined {
     return arr[arr.length - 1];
 }
+
+export type ObjectValues<T> = T[keyof T];
+export function entries<Obj extends { [key: string]: unknown }>(obj: Obj): [keyof Obj, ObjectValues<Obj>][] {
+    return Object.entries(obj) as any;
+}

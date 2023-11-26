@@ -38,6 +38,7 @@ export function cache<Output, Key>(getValue: (key: Key) => Output): {
     (key: Key): Output;
     // NOTE: If you want to clear all, just make a new cache!
     clear(key: Key): void;
+    clearAll(): void;
     forceSet(key: Key, value: Output): void;
     getAllKeys(): Key[];
     get(key: Key): Output | undefined;
@@ -72,6 +73,10 @@ export function cache<Output, Key>(getValue: (key: Key) => Output): {
     };
     cache.get = (key: Key) => {
         return values.get(key);
+    };
+    cache.clearAll = () => {
+        values.clear();
+        startingCalculating.clear();
     };
     return cache;
 }
@@ -117,6 +122,10 @@ export function cacheLimited<Output, Key>(
     get["forceSet"] = (key: Key, value: Output) => {
         values.set(key, value);
         startingCalculating.add(key);
+    };
+    get["clearKey"] = (key: Key) => {
+        values.delete(key);
+        startingCalculating.delete(key);
     };
     get["clear"] = () => {
         values.clear();
@@ -194,6 +203,7 @@ export function cacheArrayEqual<Input extends unknown[] | undefined, Output>(
 ): {
     (array: Input): Output;
     clear(array: Input): void;
+    clearAll(): void;
 } {
     let state: {
         cache: {
@@ -235,7 +245,10 @@ export function cacheArrayEqual<Input extends unknown[] | undefined, Output>(
                         state.cache.splice(i, 1);
                     }
                 }
-            }
+            },
+            clearAll() {
+                state.cache = [];
+            },
         }
     );
 }
@@ -263,13 +276,23 @@ export function cacheArgsEqual<Fnc extends AnyFunction>(
 export function cacheJSONArgsEqual<Fnc extends AnyFunction>(
     fnc: Fnc,
     limit = 10
-): Fnc {
+) {
     let cache = cacheLimited(limit, (argsJSON: string) => {
         return fnc(...JSON.parse(argsJSON));
     });
-    return ((...args: unknown[]) => {
-        return cache(JSON.stringify(args));
-    }) as Fnc;
+    return Object.assign(
+        ((...args: unknown[]) => {
+            return cache(JSON.stringify(args));
+        }) as Fnc,
+        {
+            clear(...args: unknown[]) {
+                cache.clearKey(JSON.stringify(args));
+            },
+            clearAll() {
+                cache.clear();
+            }
+        }
+    );
 }
 
 export function cacheShallowConfigArgEqual<Fnc extends AnyFunction>(
@@ -277,6 +300,7 @@ export function cacheShallowConfigArgEqual<Fnc extends AnyFunction>(
     limit = 10
 ): Fnc & {
     clear(...args: Args<Fnc>): void;
+    clearAll(): void;
 } {
     let cache = cacheArrayEqual((kvpsFlat: unknown[]) => {
         output.missCount++;
@@ -308,6 +332,9 @@ export function cacheShallowConfigArgEqual<Fnc extends AnyFunction>(
         {
             clear(configArg: object) {
                 cache.clear(getKVPs(configArg));
+            },
+            clearAll() {
+                cache.clearAll();
             },
             callCount: 0,
             missCount: 0,

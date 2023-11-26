@@ -27,7 +27,9 @@
             // https://nodejs.org/api/util.html#util_util_inherits_constructor_superconstructor
             inherits(constructor, superConstructor) {
                 Object.setPrototypeOf(constructor.prototype, superConstructor.prototype);
-            }
+            },
+            TextDecoder: TextDecoder,
+            TextEncoder: TextEncoder,
         },
         buffer: { Buffer },
         stream: {
