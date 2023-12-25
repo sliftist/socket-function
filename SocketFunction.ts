@@ -10,6 +10,12 @@ import { setDefaultHTTPCall } from "./src/callHTTPHandler";
 import debugbreak from "debugbreak";
 import { lazy } from "./src/caching";
 import { delay } from "./src/batching";
+import { blue } from "./src/formatting/logColors";
+import { JSONLACKS } from "./src/JSONLACKS/JSONLACKS";
+import cborx from "cbor-x";
+import { setFlag } from "./require/compileFlags";
+setFlag(require, "cbor-x", "allowclient", true);
+let cborxInstance = new cborx.Encoder({ structuredClone: true });
 
 module.allowclient = true;
 
@@ -22,21 +28,22 @@ type ExtractShape<ClassType, Shape> = {
         : "Function is in shape, but not in class"
     );
 };
-// https://stackoverflow.com/a/69756175/1117119
-type PickByType<T, Value> = {
-    [P in keyof T as T[P] extends Value | undefined ? P : never]: T[P]
-};
 
 export class SocketFunction {
     public static logMessages = false;
 
     public static MAX_MESSAGE_SIZE = 1024 * 1024 * 32;
-    public static compression: undefined | {
-        type: "gzip";
-    };
 
     public static httpETagCache = false;
-    public static silent = true;
+    public static silent = false;
+
+    // In retrospect... dynamically changing the wire serializer is a BAD idea. If any calls happen
+    //  before it is changed, things just break. Also, it needs to be changed on both sides,
+    //  or else things break. Also, it is very hard to detect when the issue is different serializers
+    public static readonly WIRE_SERIALIZER = {
+        serialize: (obj: unknown): MaybePromise<Buffer[]> => [cborxInstance.encode(obj)],
+        deserialize: (buffers: Buffer[]): MaybePromise<unknown> => cborxInstance.decode(buffers[0]),
+    };
 
     public static WIRE_WARN_TIME = 100;
 
@@ -54,18 +61,24 @@ export class SocketFunction {
     //  (ex, using a hook in a controller where the hook also calls the controller).
     public static register<
         ClassInstance extends object,
-        Shape extends SocketExposedShape<SocketExposedInterface>,
+        Shape extends SocketExposedShape<{
+            [key in keyof ClassInstance]: (...args: any[]) => Promise<unknown>;
+        }>,
     >(
         classGuid: string,
         instance: ClassInstance,
         shapeFnc: () => Shape,
         defaultHooksFnc?: () => SocketExposedShape[""] & {
             onMount?: () => MaybePromise<void>;
+        },
+        config?: {
+            /** @noAutoExpose If true SocketFunction.expose(Controller) must be called explicitly. */
+            noAutoExpose?: boolean;
         }
     ): SocketRegistered<ExtractShape<ClassInstance, Shape>> {
         let getDefaultHooks = defaultHooksFnc && lazy(defaultHooksFnc);
         const getShape = lazy(() => {
-            let shape = shapeFnc();
+            let shape = shapeFnc() as SocketExposedShape;
             let defaultHooks = getDefaultHooks?.();
 
             for (let value of Object.values(shape)) {
@@ -96,7 +109,7 @@ export class SocketFunction {
                     throw new Error(`Function ${functionName} is not in shape`);
                 }
 
-                let hookResult = await runClientHooks(call, shapeObj as SocketExposedShape[""], callFactory.connectionId);
+                let hookResult = await runClientHooks(call, shapeObj as Exclude<SocketExposedShape[""], undefined>, callFactory.connectionId);
 
                 if ("overrideResult" in hookResult) {
                     return hookResult.overrideResult;
@@ -128,7 +141,11 @@ export class SocketFunction {
             }
         });
 
-        return output as any;
+        let result = output as any as SocketRegistered;
+        if (!config?.noAutoExpose) {
+            this.expose(result);
+        }
+        return result;
     }
 
     public static onNextDisconnect(nodeId: string, callback: () => void) {
@@ -185,8 +202,9 @@ export class SocketFunction {
      *      to add additional imports to ensure the register call runs.
      */
     public static expose(socketRegistered: SocketRegistered) {
+        console.log(blue(`Exposing Controller ${socketRegistered._classGuid}`));
         exposeClass(socketRegistered);
-        SocketFunction.exposedClasses.add(socketRegistered._classGuid);
+        this.exposedClasses.add(socketRegistered._classGuid);
 
         if (this.hasMounted) {
             let mountCallbacks = SocketFunction.onMountCallbacks.get(socketRegistered._classGuid);
@@ -199,6 +217,7 @@ export class SocketFunction {
     }
 
     public static mountedNodeId: string = "";
+    public static isMounted() { return !!this.mountedNodeId; }
     public static mountedIP: string = "";
     private static hasMounted = false;
     private static onMountCallback: () => void = () => { };

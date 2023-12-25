@@ -52,6 +52,7 @@ let addMeasureOverheadTime = 0;
 
 // TIMING: About 60ns, of which 40ns is just now() calls.
 //  If async is closer to 300ns.
+// NOTE: Handles promises correctly
 export function getOwnTime<T>(
     name: string,
     code: () => T,

@@ -17,6 +17,10 @@ export function getNodeId(domain: string, port: number): string {
     return `${domain}:${port}`;
 }
 
+export function getNodeIdFromLocation() {
+    return getNodeId(location.hostname, location.port ? parseInt(location.port) : 443);
+}
+
 /** A nodeId not available for reconnecting. */
 export function getClientNodeId(address: string): string {
     return `client:${address}:${Date.now()}:${Math.random()}`;

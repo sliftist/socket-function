@@ -29,7 +29,7 @@ export async function performLocalCall(
     }
 
     if (!exposedClasses.has(call.classGuid)) {
-        throw new Error(`Class ${call.classGuid} not exposed`);
+        throw new Error(`Class ${call.classGuid} not exposed, exposed classes: ${Array.from(exposedClasses).join(", ")}`);
     }
 
     let controller = classDef.controller;
@@ -95,7 +95,7 @@ export function unregisterGlobalClientHook(hook: SocketFunctionClientHook) {
 
 export const runClientHooks = measureWrap(async function runClientHooks(
     callType: FullCallType,
-    hooks: SocketExposedShape[""],
+    hooks: Exclude<SocketExposedShape[""], undefined>,
     connectionId: { nodeId: string },
 ): Promise<ClientHookContext> {
     let context: ClientHookContext = { call: callType, connectionId };
@@ -122,7 +122,7 @@ export const runClientHooks = measureWrap(async function runClientHooks(
 export const runServerHooks = measureWrap(async function runServerHooks(
     callType: FullCallType,
     caller: CallerContext,
-    hooks: SocketExposedShape[""],
+    hooks: Exclude<SocketExposedShape[""], undefined>,
 ): Promise<HookContext> {
     let hookContext: HookContext = { call: callType };
     for (let hook of globalHooks.concat(hooks.hooks || [])) {

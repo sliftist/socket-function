@@ -13,23 +13,13 @@ import { delay } from "../batching";
 const SERIALIZE_OBJECT_BATCH_COUNT = 1000;
 const PARSE_BYTE_CHUNK_SIZE = 1024 * 1024 * 10;
 
-// Supports json and also:
-//  - Non quoted field names "{ x: 1 }"?
-//  - Trailing commas
-//      NOTE: Comma only syntax is not supported, ex, "[,,]", which is an array of length 2 in javascript
-//  - Comments on input, but not on output
-//  - References
-//  - Buffers (just Buffers, not typed arrays)
-// The stringify function always creates valid json, as the syntax for references and buffers
-//  will just be special property names and values.
-// NOTE: We don't support Date serialization. Never store Dates, store "number".
-
 export interface JSONLACKS_ParseConfig {
     // Defaults to true. Enables parsing of:
     //  - Trailing commas
     //  - Non-quoted field names (ex, "{ x: 1 }")
     //  - Comments (strips them, but doesn't throw)
     extended?: boolean;
+    discardMissingReferences?: boolean;
 }
 export interface JSONLACKS_StringifyConfig {
     // If specified, we are allowed to mutate the provided object. Speeds up serialization.
@@ -41,11 +31,21 @@ interface HydrateState {
     visited: Set<unknown>,
 }
 
+// Supports json and also:
+//  - Non quoted field names "{ x: 1 }"?
+//  - Trailing commas
+//      NOTE: Comma only syntax is not supported, ex, "[,,]", which is an array of length 2 in javascript
+//  - Comments on input, but not on output
+//  - References
+//  - Buffers (just Buffers, not typed arrays)
+// The stringify function always creates valid json, as the syntax for references and buffers
+//  will just be special property names and values.
+// NOTE: We don't support Date serialization. Never store Dates, store "number".
 export class JSONLACKS {
     public static readonly LACKS_KEY = "__JSONLACKS__98cfb4a05fa34d828661cae15b8779ce__";
 
     /** If set to true parses non-quoted field names, comments, trailing commas, etc */
-    public static EXTENDED_PARSER = true;
+    public static EXTENDED_PARSER = false;
     public static IGNORE_MISSING_REFERENCES = false;
 
     @measureFnc
@@ -94,7 +94,7 @@ export class JSONLACKS {
             obj = measureBlock(function JSONparse() { return JSON.parse(text); });
         }
 
-        return JSONLACKS.hydrateSpecialObjects(obj, hydrateState) as T;
+        return JSONLACKS.hydrateSpecialObjects(obj, hydrateState, config) as T;
     }
     @measureFnc
     public static async parseLines<T>(buffer: Buffer, config?: JSONLACKS_ParseConfig): Promise<T[]> {
@@ -131,9 +131,32 @@ export class JSONLACKS {
                 linesJSON += lines[i];
             }
             linesJSON += "]";
-            let parts = JSONLACKS.parse(linesJSON, config, hydrateState) as T[];
-            for (let part of parts) {
-                output.push(part);
+            if (config?.discardMissingReferences) {
+                try {
+                    let parts = JSONLACKS.parse(linesJSON, config, hydrateState) as T[];
+                    for (let part of parts) {
+                        output.push(part);
+                    }
+                } catch (e: any) {
+                    if (!e.message.includes("Reference to undefined id")) {
+                        throw e;
+                    }
+                    for (let line of lines) {
+                        try {
+                            let part = JSONLACKS.parse(line, config, hydrateState) as T;
+                            output.push(part);
+                        } catch (e: any) {
+                            if (!e.message.includes("Reference to undefined id")) {
+                                throw e;
+                            }
+                        }
+                    }
+                }
+            } else {
+                let parts = JSONLACKS.parse(linesJSON, config, hydrateState) as T[];
+                for (let part of parts) {
+                    output.push(part);
+                }
             }
         }
         while (pos < buffer.length) {
@@ -237,7 +260,7 @@ export class JSONLACKS {
     }
 
     @measureFnc
-    private static hydrateSpecialObjects(obj: unknown, hydrateState?: HydrateState): unknown {
+    private static hydrateSpecialObjects(obj: unknown, hydrateState?: HydrateState, config?: JSONLACKS_ParseConfig): unknown {
         let references = hydrateState?.references || new Map<string, unknown>();
         let visited = hydrateState?.visited || new Set<unknown>();
         return iterate(obj);
@@ -271,8 +294,10 @@ export class JSONLACKS {
             if (type === "ref") {
                 let id = obj.id as string;
                 if (!JSONLACKS.IGNORE_MISSING_REFERENCES && !references.has(id)) {
-                    debugbreak(2);
-                    debugger;
+                    if (!config?.discardMissingReferences) {
+                        debugbreak(2);
+                        debugger;
+                    }
                     throw new Error(`Reference to undefined id "${id}"`);
                 }
                 return references.get(id);

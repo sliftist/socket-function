@@ -12,6 +12,9 @@ export function lazy<T>(factory: () => T) {
     get.reset = () => {
         value = undefined;
     };
+    get.set = (newValue: T) => {
+        value = { value: newValue };
+    };
     return get;
 }
 

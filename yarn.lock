@@ -2,6 +2,36 @@
 # yarn lockfile v1
 
 
+"@cbor-extract/cbor-extract-darwin-arm64@2.1.1":
+  version "2.1.1"
+  resolved "https://registry.yarnpkg.com/@cbor-extract/cbor-extract-darwin-arm64/-/cbor-extract-darwin-arm64-2.1.1.tgz#5721f6dd3feae0b96d23122853ce977e0671b7a6"
+  integrity sha512-blVBy5MXz6m36Vx0DfLd7PChOQKEs8lK2bD1WJn/vVgG4FXZiZmZb2GECHFvVPA5T7OnODd9xZiL3nMCv6QUhA==
+
+"@cbor-extract/cbor-extract-darwin-x64@2.1.1":
+  version "2.1.1"
+  resolved "https://registry.yarnpkg.com/@cbor-extract/cbor-extract-darwin-x64/-/cbor-extract-darwin-x64-2.1.1.tgz#c25e7d0133950d87d101d7b3afafea8d50d83f5f"
+  integrity sha512-h6KFOzqk8jXTvkOftyRIWGrd7sKQzQv2jVdTL9nKSf3D2drCvQB/LHUxAOpPXo3pv2clDtKs3xnHalpEh3rDsw==
+
+"@cbor-extract/cbor-extract-linux-arm64@2.1.1":
+  version "2.1.1"
+  resolved "https://registry.yarnpkg.com/@cbor-extract/cbor-extract-linux-arm64/-/cbor-extract-linux-arm64-2.1.1.tgz#48f78e7d8f0fcc84ed074b6bfa6d15dd83187c63"
+  integrity sha512-SxAaRcYf8S0QHaMc7gvRSiTSr7nUYMqbUdErBEu+HYA4Q6UNydx1VwFE68hGcp1qvxcy9yT5U7gA+a5XikfwSQ==
+
+"@cbor-extract/cbor-extract-linux-arm@2.1.1":
+  version "2.1.1"
+  resolved "https://registry.yarnpkg.com/@cbor-extract/cbor-extract-linux-arm/-/cbor-extract-linux-arm-2.1.1.tgz#7507d346389cb682e44fab8fae9534edd52e2e41"
+  integrity sha512-ds0uikdcIGUjPyraV4oJqyVE5gl/qYBpa/Wnh6l6xLE2lj/hwnjT2XcZCChdXwW/YFZ1LUHs6waoYN8PmK0nKQ==
+
+"@cbor-extract/cbor-extract-linux-x64@2.1.1":
+  version "2.1.1"
+  resolved "https://registry.yarnpkg.com/@cbor-extract/cbor-extract-linux-x64/-/cbor-extract-linux-x64-2.1.1.tgz#b7c1d2be61c58ec18d58afbad52411ded63cd4cd"
+  integrity sha512-GVK+8fNIE9lJQHAlhOROYiI0Yd4bAZ4u++C2ZjlkS3YmO6hi+FUxe6Dqm+OKWTcMpL/l71N6CQAmaRcb4zyJuA==
+
+"@cbor-extract/cbor-extract-win32-x64@2.1.1":
+  version "2.1.1"
+  resolved "https://registry.yarnpkg.com/@cbor-extract/cbor-extract-win32-x64/-/cbor-extract-win32-x64-2.1.1.tgz#21b11a1a3f18c3e7d62fd5f87438b7ed2c64c1f7"
+  integrity sha512-2Niq1C41dCRIDeD8LddiH+mxGlO7HJ612Ll3D/E73ZWBmycued+8ghTr/Ho3CMOWPUEr08XtyBMVXAjqF+TcKw==
+
 "@eslint/eslintrc@^1.4.1":
   version "1.4.1"
   resolved "https://registry.yarnpkg.com/@eslint/eslintrc/-/eslintrc-1.4.1.tgz#af58772019a2d271b7e2d4c23ff4ddcba3ccfb3e"
@@ -250,6 +280,27 @@ callsites@^3.0.0:
   version "3.1.0"
   resolved "https://registry.yarnpkg.com/callsites/-/callsites-3.1.0.tgz#b3630abd8943432f54b3f0519238e33cd7df2f73"
   integrity sha512-P8BjAsXvZS+VIDUI11hHCQEv74YT67YUi5JJFNWIqL235sBmjX4+qx9Muvls5ivyNENctx46xQLQ3aTuE7ssaQ==
+
+cbor-extract@^2.1.1:
+  version "2.1.1"
+  resolved "https://registry.yarnpkg.com/cbor-extract/-/cbor-extract-2.1.1.tgz#f154b31529fdb6b7c70fb3ca448f44eda96a1b42"
+  integrity sha512-1UX977+L+zOJHsp0mWFG13GLwO6ucKgSmSW6JTl8B9GUvACvHeIVpFqhU92299Z6PfD09aTXDell5p+lp1rUFA==
+  dependencies:
+    node-gyp-build-optional-packages "5.0.3"
+  optionalDependencies:
+    "@cbor-extract/cbor-extract-darwin-arm64" "2.1.1"
+    "@cbor-extract/cbor-extract-darwin-x64" "2.1.1"
+    "@cbor-extract/cbor-extract-linux-arm" "2.1.1"
+    "@cbor-extract/cbor-extract-linux-arm64" "2.1.1"
+    "@cbor-extract/cbor-extract-linux-x64" "2.1.1"
+    "@cbor-extract/cbor-extract-win32-x64" "2.1.1"
+
+cbor-x@^1.5.6:
+  version "1.5.6"
+  resolved "https://registry.yarnpkg.com/cbor-x/-/cbor-x-1.5.6.tgz#cbc5a8267bcd89a559d32339fe7ec442bc3b3862"
+  integrity sha512-+TXdnDNdr8JH5GQRoAhjdT/5s5N+b71s2Nz8DpDRyuWx0uzMj8JTR3AqqMTBO/1HtUBHZpmK1enD2ViXFx0Nug==
+  optionalDependencies:
+    cbor-extract "^2.1.1"
 
 chalk@^4.0.0:
   version "4.1.2"
@@ -740,6 +791,11 @@ natural-compare@^1.4.0:
   version "1.3.2-0"
   resolved "https://github.com/sliftist/forge#e1adaa1340c145292c30061035a404a09119c693"
 
+node-gyp-build-optional-packages@5.0.3:
+  version "5.0.3"
+  resolved "https://registry.yarnpkg.com/node-gyp-build-optional-packages/-/node-gyp-build-optional-packages-5.0.3.tgz#92a89d400352c44ad3975010368072b41ad66c17"
+  integrity sha512-k75jcVzk5wnnc/FMxsf4udAoTEUv2jY3ycfdSd3yWu6Cnd1oee6/CfZJApyscA4FJOmdoixWwiwOyf16RzD5JA==
+
 once@^1.3.0:
   version "1.4.0"
   resolved "https://registry.yarnpkg.com/once/-/once-1.4.0.tgz#583b1aa775961d4b113ac17d9c50baef9dd76bd1"
@@ -975,10 +1031,10 @@ typedev@^0.1.1:
     debugbreak "^0.6.3"
     eslint "^8.18.0"
 
-typenode@^4.9.4-g:
-  version "4.9.4-g"
-  resolved "https://registry.yarnpkg.com/typenode/-/typenode-4.9.4-g.tgz#521a11b4f04dac94a7ed0b8d0c187770ae90bab7"
-  integrity sha512-kzLwmzPoA9vdzFldX/Izho37lf2Ym9DQKThxsYzO1apbA7HYb9BCec7J9W+xNSvrg5vupHSpySqHEyGe5pPNxg==
+typenode@^4.9.4-j:
+  version "4.9.4-j"
+  resolved "https://registry.yarnpkg.com/typenode/-/typenode-4.9.4-j.tgz#b4752f960965a91af9845eb1494ec9fd2cf61a0d"
+  integrity sha512-CIzxCTFuGfwB+BHi7JujyyXUAnqFGJhkwkT7bnxXLcX55PzsuDhQ8t0Gz5T/FsmBAWTu6vrDQCiF85GxLiWT+A==
   dependencies:
     "@types/pegjs" "^0.10.3"
     source-map-support "https://github.com/7rulnik/node-source-map-support"

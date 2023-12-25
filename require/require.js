@@ -35,6 +35,7 @@
         stream: {
             // HACK: Needed to get SAX JS to work correctly.
             Stream: function () { },
+            Transform: function () { },
         },
         timers: {
             // TODO: Add all members of timers

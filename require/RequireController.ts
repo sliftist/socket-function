@@ -223,7 +223,7 @@ class RequireControllerBase {
             //require(rootPath);
             let clientModule = require.cache[resolvedPath];
             if (!clientModule) {
-                clientModule = createNotFoundModule(`Module ${pathRequest} (resolved to ${JSON.stringify(resolvedPath)}) was not included serverside. Resolve root ${JSON.stringify(this.rootResolvePath)} (set by call to setRequireBootRequire), resolve search paths: ${JSON.stringify(searchPaths)})}`);
+                clientModule = createNotFoundModule(`Module ${pathRequest} (resolved to ${JSON.stringify(resolvedPath)}) was not included serverside. Resolved from root dir ${JSON.stringify(this.rootResolvePath)} (set by call to setRequireBootRequire), resolve search paths: ${JSON.stringify(searchPaths)})}`);
             }
             if (!clientModule.allowclient) {
                 clientModule = createNotFoundModule(`Module ${pathRequest} (resolved to ${resolvedPath}) is not allowed clientside (set module.allowclient in it, or call setFlag when it is imported).`);
@@ -249,5 +249,9 @@ export const RequireController = SocketFunction.register(
         requireHTML: {},
         bufferJS: {},
         requireJS: {},
-    })
+    }),
+    undefined,
+    {
+        noAutoExpose: true
+    }
 );

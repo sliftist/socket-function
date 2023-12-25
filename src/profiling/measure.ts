@@ -7,6 +7,7 @@ import { addToStats, addToStatsValue, createStatsValue, getStatsTop, StatsValue 
 import { white } from "../formatting/logColors";
 import { isNode } from "../misc";
 
+let measurementsDisabled = false;
 /** NOTE: Must be called BEFORE anything else is imported!
  *      NOTE: Measurements on on by default now, so this doesn't really need to be called...
 */
@@ -19,6 +20,7 @@ export function enableMeasurements() {
 /** NOTE: Must be called BEFORE anything else is imported! */
 export function disableMeasurements() {
     measurementsEnabled = false;
+    measurementsDisabled = true;
 }
 
 let functionsSkipped = 0;
@@ -30,6 +32,7 @@ const AsyncFunction = (async () => { }).constructor;
 // TIMING: 1-5us. I have seen timing values greatly vary, but it does seem to be quite high, despite
 //  microbenchmarks saying it is slow. Perhaps it is because getOwnTime breaks the cpu pipeline,
 //  which causes slowness for code around us, but not if we are running in isolation?
+// NOTE: Handles promises correctly
 export function measureFnc(target: any, propertyKey: string, descriptor: PropertyDescriptor) {
     let name = propertyKey;
     if (target.name) {
@@ -51,6 +54,7 @@ export function nameFunction<T extends Function>(name: string, fnc: T) {
     Object.defineProperty(fnc, "name", { value: name });
     return fnc;
 }
+// NOTE: Handles promises correctly
 export function measureWrap<T extends (...args: any[]) => any>(fnc: T, name?: string): T {
     if (!measurementsEnabled) {
         functionsSkipped++;
@@ -71,7 +75,7 @@ export function measureBlock<T extends (...args: any[]) => any>(fnc: T, name?: s
 export function startMeasure(): {
     finish: () => MeasureProfile;
 } {
-    if (!measurementsEnabled) {
+    if (!measurementsEnabled && !measurementsDisabled) {
         console.warn(red(`To capture measurements enableMeasurements() must be called before any other imports in your entry point`));
     }
     let profile: MeasureProfile = {
@@ -204,7 +208,7 @@ export async function measureCode<T>(code: () => Promise<T>, config?: LogMeasure
     try {
         return await measureBlock(code, code.name || "untracked");
     } finally {
-        finishProfile(measure, config);
+        finishProfile(measure, config || { name: code.name, minTimeToLog: 0 });
     }
 }
 export function measureCodeSync<T>(code: () => T, config?: LogMeasureTableConfig): T {

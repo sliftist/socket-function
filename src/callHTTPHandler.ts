@@ -36,7 +36,7 @@ export function getNodeIdsFromRequest(request: http.IncomingMessage) {
     //  THAT WAY HTTP can have consistent nodeIds, instead of making them randomly every time!
     //  (This isn't needed or possible for websockets, but they stay open, so calling functions
     //      after they open to set the nodeId is possible, and preferred).
-    let remoteAddress = request.socket.remoteAddress;
+    let remoteAddress = request.socket.remoteAddress?.split(":").pop();
     if (!remoteAddress) {
         throw new Error(`Missing remoteAddress`);
     }
@@ -147,15 +147,6 @@ export async function httpCallHandler(request: http.IncomingMessage, response: h
         }
 
         let headers = (resultBuffer as HTTPResultType)[resultHeaders];
-        if (SocketFunction.compression?.type === "gzip" && !headers?.["Content-Encoding"]) {
-            if (request.headers["accept-encoding"]?.includes("gzip")) {
-                resultBuffer = await new Promise<Buffer>((resolve, reject) =>
-                    gzip(resultBuffer, (err, result) => err ? reject(err) : resolve(result))
-                );
-                response.setHeader("Content-Encoding", "gzip");
-            }
-        }
-
 
         // NOTE: Our ETag caching is only to reduce data sent on the wire, we evaluate the calls
         //  every time (so it is strictly a wire cache for HTTP, not a computation cache)

@@ -9,17 +9,16 @@ import * as tls from "tls";
 import { getClientNodeId, getNodeIdLocation, registerNodeClient } from "./nodeCache";
 import debugbreak from "debugbreak";
 import { lazy } from "./caching";
-import { JSONLACKS } from "./JSONLACKS/JSONLACKS";
 import { red, yellow } from "./formatting/logColors";
 import { isSplitableArray, markArrayAsSplitable } from "./fixLargeNetworkCalls";
-import { delay } from "./batching";
+import { delay, runInSerial } from "./batching";
+import { formatNumber, formatTime } from "./formatting/format";
 
 const MIN_RETRY_DELAY = 1000;
 
 type InternalCallType = FullCallType & {
     seqNum: number;
     isReturn: false;
-    compress: boolean;
 }
 
 type InternalReturnType = {
@@ -76,7 +75,7 @@ export async function createCallFactory(
     const canReconnect = !!getNodeIdLocation(nodeId);
 
     let pendingCalls: Map<number, {
-        data: Buffer;
+        data: Buffer[];
         call: InternalCallType;
         callback: (resultJSON: InternalReturnType) => void;
     }> = new Map();
@@ -123,16 +122,16 @@ export async function createCallFactory(
                 classGuid: call.classGuid,
                 functionName: call.functionName,
                 seqNum,
-                compress: !!SocketFunction.compression,
             };
             let time = Date.now();
-            let data = Buffer.from(JSONLACKS.stringify(fullCall));
+            let data = await SocketFunction.WIRE_SERIALIZER.serialize(fullCall);
             time = Date.now() - time;
+            let size = data.map(x => x.length).reduce((a, b) => a + b, 0);
             if (time > SocketFunction.WIRE_WARN_TIME) {
-                console.log(red(`Slow serialize, took ${time}ms to serialize ${data.byteLength} bytes. For ${call.classGuid}.${call.functionName}`));
+                console.log(red(`Slow serialize, took ${formatTime(time)} to serialize ${formatNumber(size)} bytes. For ${call.classGuid}.${call.functionName}`));
             }
 
-            if (data.byteLength > SocketFunction.MAX_MESSAGE_SIZE * 1.5) {
+            if (size > SocketFunction.MAX_MESSAGE_SIZE * 1.5) {
                 let splitArgIndex = call.args.findIndex(isSplitableArray);
                 if (splitArgIndex >= 0) {
                     console.log(yellow(`Splitting large call due to large args: ${call.classGuid}.${call.functionName}`));
@@ -157,7 +156,7 @@ export async function createCallFactory(
                     return "CALLS_SPLIT_DUE_TO_LARGE_ARGS";
                 }
 
-                throw new Error(`Call too large to send (${call.classGuid}.${call.functionName}, size: ${data.byteLength} > ${SocketFunction.MAX_MESSAGE_SIZE}). If you need to handle very large static data use some external service, such as Backblaze B2 or AWS S3. Or consider fragmenting data at an application level, because sending large data will cause large lag spikes for other clients using this server. Or, if absolutely required, set SocketFunction.MAX_MESSAGE_SIZE to a higher value.`);
+                throw new Error(`Call too large to send (${call.classGuid}.${call.functionName}, size: ${formatNumber(size)} > ${formatNumber(SocketFunction.MAX_MESSAGE_SIZE)}). If you need to handle very large static data use some external service, such as Backblaze B2 or AWS S3. Or consider fragmenting data at an application level, because sending large data will cause large lag spikes for other clients using this server. Or, if absolutely required, set SocketFunction.MAX_MESSAGE_SIZE to a higher value.`);
             }
 
             let resultPromise = new Promise((resolve, reject) => {
@@ -251,7 +250,8 @@ export async function createCallFactory(
         }
     }
 
-    async function send(data: Buffer) {
+    const BASE_LENGTH_OFFSET = 324_432_461_592_612;
+    async function send(data: Buffer[]) {
         if (!webSocketPromise) {
             if (canReconnect) {
                 webSocketPromise = tryToReconnect();
@@ -260,7 +260,10 @@ export async function createCallFactory(
             }
         }
         let webSocket = await webSocketPromise;
-        webSocket.send(data);
+        webSocket.send((data.length + BASE_LENGTH_OFFSET).toString());
+        for (let d of data) {
+            webSocket.send(d);
+        }
     }
     async function tryToReconnect(): Promise<SenderInterface> {
         // Don't try to reconnect too often!
@@ -276,7 +279,8 @@ export async function createCallFactory(
         return newWebSocket;
     }
 
-
+    let pendingCall: { buffers: Buffer[]; targetCount: number; } | undefined;
+    let clientsideSerial = runInSerial(async <T>(val: Promise<T>) => val);
     async function onMessage(message: ws.RawData | ws.MessageEvent | string) {
         try {
             if (typeof message === "object" && "data" in message) {
@@ -284,29 +288,48 @@ export async function createCallFactory(
             }
             if (!isNode()) {
                 if (message instanceof Blob) {
-                    message = Buffer.from(await message.arrayBuffer());
+                    // We need to force the results to be in serial, otherwise strings leapfrog
+                    //  ahead of buffers, which breaks things.
+                    message = Buffer.from(await clientsideSerial(message.arrayBuffer()));
+                } else {
+                    await clientsideSerial(Promise.resolve());
                 }
             }
-            if (message instanceof Buffer || typeof message === "string") {
-
-                let resultSize = message.length;
-
-                if (message instanceof Buffer && message[0] === 0) {
-                    // First byte of 0 means it is decompressed (as JSON can't have a first byte of 0).
-                    (message as any) = message.slice(1);
-
-                    // TODO: Add typings for DecompressionStream
-                    let DecompressionStream = (window as any).DecompressionStream;
-                    // https://stackoverflow.com/a/68829631/1117119
-                    let stream = new DecompressionStream("gzip");
-                    let blob = new Blob([message]);
-                    let decompressedStream = (await (blob.stream() as any).pipeThrough(stream));
-                    let arrayBuffer = await new Response(decompressedStream).arrayBuffer();
-                    (message as any) = Buffer.from(arrayBuffer);
+            if (typeof message === "string") {
+                let size = parseInt(message);
+                if (isNaN(size)) {
+                    throw new Error(`Invalid message size ${message}`);
+                }
+                if (size < BASE_LENGTH_OFFSET) {
+                    throw new Error(`Invalid message size ${message}`);
+                }
+                size -= BASE_LENGTH_OFFSET;
+                if (size > 1000 * 1000) {
+                    throw new Error(`Invalid message size ${size}`);
+                }
+                pendingCall = {
+                    buffers: [],
+                    targetCount: size,
+                };
+                return;
+            }
+            if (message instanceof Buffer) {
+                if (!pendingCall) {
+                    throw new Error(`Received data without size`);
+                }
+                pendingCall.buffers.push(message);
+                let currentBuffers: Buffer[];
+                if (pendingCall.buffers.length !== pendingCall.targetCount) {
+                    return;
                 }
 
+                currentBuffers = pendingCall.buffers;
+                pendingCall = undefined;
+
+                let resultSize = currentBuffers.map(x => x.length).reduce((a, b) => a + b, 0);
+
                 let time = Date.now();
-                let call = JSONLACKS.parse(message.toString(), { extended: false }) as InternalCallType | InternalReturnType;
+                let call = await SocketFunction.WIRE_SERIALIZER.deserialize(currentBuffers) as InternalCallType | InternalReturnType;
                 time = Date.now() - time;
 
                 if (call.isReturn) {
@@ -346,27 +369,18 @@ export async function createCallFactory(
                         };
                     }
 
-                    let result: Buffer;
-                    if (isNode() && call.compress && SocketFunction.compression?.type === "gzip") {
-                        response.compressed = true;
-                        result = Buffer.from(JSONLACKS.stringify(response));
-                        result = await new Promise<Buffer>((resolve, reject) =>
-                            gzip(result, (err, result) => err ? reject(err) : resolve(result))
-                        );
-                        result = Buffer.concat([new Uint8Array([0]), result]);
-                    } else {
-                        result = Buffer.from(JSONLACKS.stringify(response));
-                    }
-                    if (result.byteLength > SocketFunction.MAX_MESSAGE_SIZE * 1.5) {
+                    let result: Buffer[] = await SocketFunction.WIRE_SERIALIZER.serialize(response);
+                    let totalResultSize = result.map(x => x.length).reduce((a, b) => a + b, 0);
+                    if (totalResultSize > SocketFunction.MAX_MESSAGE_SIZE * 1.5) {
                         response = {
                             isReturn: true,
                             result: undefined,
                             seqNum: call.seqNum,
-                            error: new Error(`Response too large to send (${call.classGuid}.${call.functionName}, size: ${result.byteLength} > ${SocketFunction.MAX_MESSAGE_SIZE}). If you need to handle very large static data use some external service, such as Backblaze B2 or AWS S3. Or consider fragmenting data at an application level, because sending large data will cause large lag spikes for other clients using this server. Or, if absolutely required, set SocketFunction.MAX_MESSAGE_SIZE to a higher value.`).stack,
+                            error: new Error(`Response too large to send (${call.classGuid}.${call.functionName}, size: ${formatNumber(totalResultSize)} > ${formatNumber(SocketFunction.MAX_MESSAGE_SIZE)}). If you need to handle very large static data use some external service, such as Backblaze B2 or AWS S3. Or consider fragmenting data at an application level, because sending large data will cause large lag spikes for other clients using this server. Or, if absolutely required, set SocketFunction.MAX_MESSAGE_SIZE to a higher value.`).stack,
                             resultSize: resultSize,
                             compressed: false,
                         };
-                        result = Buffer.from(JSONLACKS.stringify(response));
+                        result = await SocketFunction.WIRE_SERIALIZER.serialize(response);
                     }
                     await send(result);
                 }
@@ -379,8 +393,6 @@ export async function createCallFactory(
             if (e.stack.startsWith("Error: Cannot send data to") && e.stack.includes("as the connection has closed")) {
                 // This is fine, just ignore it
             } else {
-                debugbreak(2);
-                debugger;
                 console.error(e.stack);
             }
         }

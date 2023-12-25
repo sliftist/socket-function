@@ -22,8 +22,8 @@ export type SocketExposedInterfaceClass = {
     new(): unknown;
     prototype: unknown;
 };
-export interface SocketExposedShape<ExposedType extends SocketExposedInterface = SocketExposedInterface> {
-    [functionName: string]: {
+export type SocketExposedShape<ExposedType extends SocketExposedInterface = SocketExposedInterface> = {
+    [functionName in keyof ExposedType]?: {
         /** Indicates with the same input, we give the same output, forever,
          *      independent of code changes. This only works for data storage.
          */
@@ -31,7 +31,7 @@ export interface SocketExposedShape<ExposedType extends SocketExposedInterface =
         hooks?: SocketFunctionHook<ExposedType>[];
         clientHooks?: SocketFunctionClientHook<ExposedType>[];
     };
-}
+};
 
 export interface CallType {
     classGuid: string;
