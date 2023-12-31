@@ -2,6 +2,7 @@ import { CallFactory, createCallFactory } from "./CallFactory";
 import { MaybePromise } from "./types";
 import { lazy } from "./caching";
 import { SocketFunction } from "../SocketFunction";
+import { isNode } from "./misc";
 
 // TODO: Add CallInstanceFactory.isClosed, so nodeCache can clean up old entries.
 //  This is only needed for memory management, and not for correctness. Entries never
@@ -18,6 +19,7 @@ export function getNodeId(domain: string, port: number): string {
 }
 
 export function getNodeIdFromLocation() {
+    if (isNode()) throw new Error(`Cannot get nodeId from location, as we are running in NodeJS`);
     return getNodeId(location.hostname, location.port ? parseInt(location.port) : 443);
 }
 

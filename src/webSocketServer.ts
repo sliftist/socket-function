@@ -239,9 +239,7 @@ export async function startSocketServer(
 
     port = (realServer.address() as net.AddressInfo).port;
     let nodeId = getNodeId(getCommonName(config.cert), port);
-    if (!SocketFunction.silent) {
-        console.log(green(`Started Listening on ${nodeId}`));
-    }
+    console.log(green(`Started Listening on ${nodeId}`));
 
     return nodeId;
 }

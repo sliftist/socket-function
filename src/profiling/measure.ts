@@ -6,6 +6,7 @@ import { getOpenTimesBase, getOwnTime, OwnTimeObj } from "./getOwnTime";
 import { addToStats, addToStatsValue, createStatsValue, getStatsTop, StatsValue } from "./stats";
 import { white } from "../formatting/logColors";
 import { isNode } from "../misc";
+import { formatStats } from "./statsFormat";
 
 let measurementsDisabled = false;
 /** NOTE: Must be called BEFORE anything else is imported!
@@ -158,27 +159,8 @@ export function logMeasureTable(
             return String(text).padStart(count, " ");
         }
         let fractionText = percent(getTime(entry).sum / totalTime);
-        let perText = formatTime(getTime(entry).sum / getTime(entry).count);
-        let countText = formatNumber(getTime(entry).count);
-        let sumText = formatTime(getTime(entry).sum);
 
-        let equation = `${p(6, sumText)} =  ${p(6, countText)} * ${p(6, perText)}`;
-
-        let ownTimeTop = getStatsTop(getTime(entry));
-        if (ownTimeTop.topHeavy) {
-            let topText = formatTime(ownTimeTop.value / ownTimeTop.count);
-            let topCountText = formatNumber(ownTimeTop.count);
-            let bottomText = formatTime((getTime(entry).sum - ownTimeTop.value) / getTime(entry).count, ownTimeTop.value);
-            let bottomCountText = formatNumber(getTime(entry).count - ownTimeTop.count);
-            let topPart = `${p(6, topText)} per * ${topCountText}`;
-            let bottomPart = `${bottomText} * ${bottomCountText}`;
-            if (isNode()) {
-                topPart = red(topPart);
-            } else {
-                bottomPart = white(bottomPart);
-            }
-            equation = `${p(6, sumText)} = ${p(6, topPart)}   +  ${bottomPart}`;
-        }
+        let equation = formatStats(getTime(entry));
 
         let text = `${p(6, fractionText)} ( ${equation} )`;
         let overhead = measureOverhead * getTime(entry).count;

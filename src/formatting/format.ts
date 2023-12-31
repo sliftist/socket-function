@@ -134,7 +134,12 @@ export function formatNumber(count: number | undefined, maxAbsoluteValue?: numbe
     // NOTE: We don't switch units as soon as we possible can, because...
     //  3.594 vs 3.584 is harder to quickly distinguish compared to 3594 and 3584,
     //  the decimal simply makes it harder to read, and larger.
-    const extraFactor = 10;
+    // NOTE: This number should prevent us from ever using 5 digits, so that we never need commas
+    //  For example, if the factor is 10 then, 9999.5 is kept with a divisor of 1, and then rounds up to
+    //  "10,000". So we want any value which rounds up at 5 digits to be put in the next group (and having
+    //  extra values put in the next group is fine, as we won't show the decimal value anyways, so it only
+    //  means 9999 wraps around to 10K a bit faster).
+    const extraFactor = 9.99949999;
     let divisor = 1;
     let suffix = "";
     let currencyDecimalsNeeded = false;

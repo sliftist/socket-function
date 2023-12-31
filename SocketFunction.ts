@@ -10,7 +10,7 @@ import { setDefaultHTTPCall } from "./src/callHTTPHandler";
 import debugbreak from "debugbreak";
 import { lazy } from "./src/caching";
 import { delay } from "./src/batching";
-import { blue } from "./src/formatting/logColors";
+import { blue, magenta } from "./src/formatting/logColors";
 import { JSONLACKS } from "./src/JSONLACKS/JSONLACKS";
 import cborx from "cbor-x";
 import { setFlag } from "./require/compileFlags";
@@ -35,7 +35,7 @@ export class SocketFunction {
     public static MAX_MESSAGE_SIZE = 1024 * 1024 * 32;
 
     public static httpETagCache = false;
-    public static silent = false;
+    public static silent = true;
 
     // In retrospect... dynamically changing the wire serializer is a BAD idea. If any calls happen
     //  before it is changed, things just break. Also, it needs to be changed on both sides,

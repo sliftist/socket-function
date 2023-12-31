@@ -124,7 +124,13 @@ export async function createCallFactory(
                 seqNum,
             };
             let time = Date.now();
-            let data = await SocketFunction.WIRE_SERIALIZER.serialize(fullCall);
+            let data: Buffer[];
+            let dataMaybePromise = SocketFunction.WIRE_SERIALIZER.serialize(fullCall);
+            if (dataMaybePromise instanceof Promise) {
+                data = await dataMaybePromise;
+            } else {
+                data = dataMaybePromise;
+            }
             time = Date.now() - time;
             let size = data.map(x => x.length).reduce((a, b) => a + b, 0);
             if (time > SocketFunction.WIRE_WARN_TIME) {
@@ -335,7 +341,7 @@ export async function createCallFactory(
                 if (call.isReturn) {
                     let callbackObj = pendingCalls.get(call.seqNum);
                     if (time > SocketFunction.WIRE_WARN_TIME) {
-                        console.log(red(`Slow parse, took ${time}ms to parse ${message.length} bytes, for receieving result of call to ${callbackObj?.call.classGuid}.${callbackObj?.call.functionName}`));
+                        console.log(red(`Slow parse, took ${time}ms to parse ${resultSize} bytes, for receieving result of call to ${callbackObj?.call.classGuid}.${callbackObj?.call.functionName}`));
                     }
                     if (!callbackObj) {
                         console.log(`Got return for unknown call ${call.seqNum}`);
@@ -345,7 +351,7 @@ export async function createCallFactory(
                     callbackObj.callback(call);
                 } else {
                     if (time > SocketFunction.WIRE_WARN_TIME) {
-                        console.log(red(`Slow parse, took ${time}ms to parse ${message.length} bytes, for call to ${call.classGuid}.${call.functionName}`));
+                        console.log(red(`Slow parse, took ${time}ms to parse ${resultSize} bytes, for call to ${call.classGuid}.${call.functionName}`));
                     }
 
                     let response: InternalReturnType;
