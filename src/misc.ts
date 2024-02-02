@@ -314,3 +314,52 @@ export type ObjectValues<T> = T[keyof T];
 export function entries<Obj extends { [key: string]: unknown }>(obj: Obj): [keyof Obj, ObjectValues<Obj>][] {
     return Object.entries(obj) as any;
 }
+
+export function sort<T>(arr: T[], sortKey: (obj: T) => unknown) {
+    if (arr.length <= 1) return arr;
+    arr.sort((a, b) => compare(sortKey(a), sortKey(b)));
+    return arr;
+}
+
+// NOTE: If there are duplicates, returns the first match.
+export function binarySearchIndex(listCount: number, compare: (lhsIndex: number) => number): number {
+    if (listCount === 0) {
+        return ~0;
+    }
+    let min = 0;
+    let max = listCount - 1;
+    while (min < max) {
+        let fingerIndex = Math.floor((max + min) / 2);
+        let comparisonValue = compare(fingerIndex);
+        if (comparisonValue < 0) {
+            min = fingerIndex + 1;
+        } else {
+            max = fingerIndex;
+        }
+    }
+    let comparison = compare(min);
+    if (comparison === 0) return min;
+    if (comparison > 0) return ~min;
+    return ~(min + 1);
+}
+
+export function compare(lhs: unknown, rhs: unknown): number {
+    if (typeof lhs !== typeof rhs) {
+        return compare(typeof lhs, typeof rhs);
+    }
+    if (lhs === rhs) return 0;
+    if (lhs as any < (rhs as any)) return -1;
+    return 1;
+}
+
+export function insertIntoSortedList<T>(list: T[], map: (val: T) => string | number, element: T) {
+    let searchValue = map(element);
+    let index = binarySearchIndex(list.length, i => compare(map(list[i]), searchValue));
+    if (index < 0) index = ~index;
+    list.splice(index, 0, element);
+}
+export function removeFromSortedList<T>(list: T[], map: (val: T) => string | number, searchValue: string | number) {
+    let index = binarySearchIndex(list.length, i => compare(map(list[i]), searchValue));
+    if (index < 0) return;
+    list.splice(index, 1);
+}

@@ -1,5 +1,6 @@
 import { isNode } from "./misc";
 import { measureWrap } from "./profiling/measure";
+import { MaybePromise } from "./types";
 
 /*
     "numbers" use setTimeout
@@ -33,6 +34,14 @@ export function delay(delayTime: DelayType): Promise<void> {
         }
         return new Promise<void>(resolve => setTimeout(resolve, delayTime));
     }
+}
+
+// NOTE: This is an easy way to turn off batching, without having to strip the extra batch handling code
+export function batchFunctionNone<Arg, Result = void>(
+    config: unknown,
+    fnc: (arg: Arg[]) => (Promise<Result> | Result)
+): (arg: Arg) => Promise<Result> {
+    return async arg => fnc([arg]);
 }
 
 export function batchFunction<Arg, Result = void>(

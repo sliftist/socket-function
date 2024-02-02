@@ -12,6 +12,7 @@ import { lazy } from "./src/caching";
 import { delay } from "./src/batching";
 import { blue, magenta } from "./src/formatting/logColors";
 import { JSONLACKS } from "./src/JSONLACKS/JSONLACKS";
+import "./SetProcessVariables";
 import cborx from "cbor-x";
 import { setFlag } from "./require/compileFlags";
 setFlag(require, "cbor-x", "allowclient", true);

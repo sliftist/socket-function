@@ -50,6 +50,8 @@ export function getNodeIdsFromRequest(request: http.IncomingMessage) {
 
 export async function httpCallHandler(request: http.IncomingMessage, response: http.ServerResponse) {
     try {
+        // Always set x-frame-options, to prevent iframe embedding click hijacking
+        response.setHeader("X-Frame-Options", "SAMEORIGIN");
 
         let urlBase = request.url;
         if (!urlBase) {

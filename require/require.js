@@ -9,6 +9,9 @@
                 // Mirror the tnode.js setting
                 NODE_ENV: "production"
             },
+            versions: {
+
+            },
         },
         setImmediate(callback) {
             setTimeout(callback, 0);

@@ -50,9 +50,16 @@ export function getNodeIdLocation(nodeId: string): { address: string, port: numb
 }
 
 export function getNodeIdDomain(nodeId: string): string {
+    let result = getNodeIdDomainMaybeUndefined(nodeId);
+    if (result === undefined) {
+        throw new Error(`Cannot get domain from nodeId, which is only usable as a client. NodeId: ${JSON.stringify(nodeId)}`);
+    }
+    return result;
+}
+export function getNodeIdDomainMaybeUndefined(nodeId: string): string | undefined {
     let location = getNodeIdLocation(nodeId);
     if (!location) {
-        throw new Error(`Cannot get domain from nodeId, which is only usable as a client. NodeId: ${JSON.stringify(nodeId)}`);
+        return undefined;
     }
     return new URL(location.address).hostname.split(".").slice(-2).join(".");
 }
