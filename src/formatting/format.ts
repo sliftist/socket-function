@@ -164,3 +164,45 @@ export function formatNumber(count: number | undefined, maxAbsoluteValue?: numbe
 
     return formatMaxDecimals(count, maxDecimals, maxAbsoluteValue, currencyDecimalsNeeded ? 2 : undefined) + suffix;
 }
+
+export function formatBinaryNumber(count: number | undefined, maxAbsoluteValue?: number, noDecimal?: boolean, specialCurrency?: boolean): string {
+    if (typeof count !== "number") return "0";
+    if (count < 0) {
+        return "-" + formatNumber(-count, maxAbsoluteValue, noDecimal, specialCurrency);
+    }
+
+    maxAbsoluteValue = maxAbsoluteValue ?? Math.abs(count);
+
+    // NOTE: We don't switch units as soon as we possible can, because...
+    //  3.594 vs 3.584 is harder to quickly distinguish compared to 3594 and 3584,
+    //  the decimal simply makes it harder to read, and larger.
+    // NOTE: This number should prevent us from ever using 5 digits, so that we never need commas
+    //  For example, if the factor is 10 then, 9999.5 is kept with a divisor of 1, and then rounds up to
+    //  "10,000". So we want any value which rounds up at 5 digits to be put in the next group (and having
+    //  extra values put in the next group is fine, as we won't show the decimal value anyways, so it only
+    //  means 9999 wraps around to 10K a bit faster).
+    const extraFactor = 9.99949999;
+    let divisor = 1;
+    let suffix = "";
+    let currencyDecimalsNeeded = false;
+    if (maxAbsoluteValue < 1024 * extraFactor) {
+        if (specialCurrency) {
+            currencyDecimalsNeeded = true;
+        }
+    } else if (maxAbsoluteValue < 1024 * 1024 * extraFactor) {
+        suffix = "K";
+        divisor = 1024;
+    } else if (maxAbsoluteValue < 1024 * 1024 * 1024 * extraFactor) {
+        suffix = "M";
+        divisor = 1024 * 1024;
+    } else {
+        suffix = "G";
+        divisor = 1024 * 1024 * 1024;
+    }
+    count /= divisor;
+    maxAbsoluteValue /= divisor;
+
+    let maxDecimals = noDecimal ? 0 : 3;
+
+    return formatMaxDecimals(count, maxDecimals, maxAbsoluteValue, currencyDecimalsNeeded ? 2 : undefined) + suffix;
+}

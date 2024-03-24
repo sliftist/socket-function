@@ -115,6 +115,8 @@ export interface LogMeasureTableConfig {
     thresholdInTable?: number;
     // Details to 50
     minTimeToLog?: number;
+    // Defaults to 2
+    mergeDepth?: number;
 }
 
 export function logMeasureTable(
@@ -135,6 +137,25 @@ export function logMeasureTable(
 
     let totalTime = entries.map(x => getTime(x).sum).reduce((a, b) => a + b, 0);
     if (totalTime < minTimeToLog) return;
+
+    let mergeDepth = config?.mergeDepth ?? 2;
+    {
+        let merged = new Map<string, ProfileEntry>();
+        for (let entry of entries) {
+            let parts = entry.name.split("|");
+            let key = parts.slice(0, mergeDepth).join("|");
+            let existing = merged.get(key);
+            if (!existing) {
+                existing = { name: key, ownTime: createStatsValue(), totalTime: createStatsValue(), stillOpenCount: 0 };
+                merged.set(key, existing);
+            }
+            addToStats(existing.ownTime, entry.ownTime);
+            addToStats(existing.totalTime, entry.totalTime);
+            existing.stillOpenCount += entry.stillOpenCount;
+        }
+        entries = Array.from(merged.values());
+        entries.sort((a, b) => getTime(b).sum - getTime(a).sum);
+    }
 
     console.log();
     let title = yellow(`Profiled ${formatTime(totalTime)} (logged at ${new Date().toISOString()})`);

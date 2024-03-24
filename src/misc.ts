@@ -42,7 +42,7 @@ export async function sha256BufferPromise(buffer: Buffer): Promise<Buffer> {
 }
 
 
-export function arrayEqual(a: unknown[], b: unknown[]) {
+export function arrayEqual(a: { [key: number]: unknown; length: number }, b: { [key: number]: unknown; length: number },) {
     if (a.length !== b.length) return false;
     for (let i = 0; i < a.length; i++) {
         if (a[i] !== b[i]) return false;

@@ -61,7 +61,7 @@ export function batchFunction<Arg, Result = void>(
     fnc = measureWrap(fnc, config.name);
 
     let prevPromise: Promise<Result> | undefined;
-    let batched: {
+    let batching: {
         args: Arg[];
         promise: Promise<Result>;
     } | undefined;
@@ -76,7 +76,8 @@ export function batchFunction<Arg, Result = void>(
     }
     let countSinceBreak = 0;
     let lastCall = 0;
-    return async arg => {
+
+    return arg => {
         let now = Date.now();
         if (delayRamp) {
             let savedCount = (now - lastCall) / delayTime;
@@ -94,30 +95,25 @@ export function batchFunction<Arg, Result = void>(
         }
         lastCall = now;
 
-        if (!batched) {
-            await prevPromise;
-        }
-        if (batched) {
-            batched.args.push(arg);
-            return await batched.promise;
+        if (batching) {
+            batching.args.push(arg);
+            return batching.promise;
         }
 
+        let curPrevPromise = prevPromise;
         let args: Arg[] = [arg];
         let promise = Promise.resolve().then(async () => {
+            await curPrevPromise;
             await delay(curDelay);
-            // After we call the function, we can no longer accept args
-            batched = undefined;
+            // Reset batching, as we once we start the function we can't accept args. `prevPromise` will block
+            //  the next batch from starting before we finish.
+            batching = undefined;
             return await fnc(args);
         });
-        batched = {
-            args,
-            promise,
-        };
-        // We need to prevent new calls from starting when the previous call can no longer accept
-        //  args, BUT, before it has finished.
-        prevPromise = batched.promise;
+        batching = { args, promise, };
+        prevPromise = batching.promise;
 
-        return await promise;
+        return promise;
     };
 }
 

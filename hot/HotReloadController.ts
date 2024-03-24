@@ -41,6 +41,14 @@ declare global {
     }
 }
 
+let isHotReloadingValue = false;
+export function isHotReloading() {
+    return isHotReloadingValue;
+}
+export function setExternalHotReloading(value: boolean) {
+    isHotReloadingValue = value;
+}
+
 const hotReloadModule = cache((module: NodeJS.Module) => {
     if (!module.updateContents) return;
     fs.watchFile(module.filename, { persistent: false, interval: 1000 }, (curr, prev) => {
@@ -55,12 +63,15 @@ const hotReloadModule = cache((module: NodeJS.Module) => {
                 || module.moduleContents?.includes("\r\nmodule.hotreload = true;" + "\r\n")
             ) {
                 console.log(`Reloading ${module.id}`);
+                isHotReloadingValue = true;
                 try {
                     module.loaded = false;
                     module.load(module.id);
                 } catch (e) {
                     console.error(red(`Error hot reloading ${module.id}`));
                     console.error(e);
+                } finally {
+                    isHotReloadingValue = false;
                 }
             }
         }
