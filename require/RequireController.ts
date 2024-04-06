@@ -64,6 +64,8 @@ const requireSeqNumProcessId = "requireSeqNumProcessId_" + Date.now() + "_" + Ma
 const htmlFile = isNodeTrue() && fs.readFileSync(__dirname + "/require.html").toString();
 const jsFile = isNodeTrue() && fs.readFileSync(__dirname + "/require.js").toString();
 const bufferShim = isNodeTrue() && fs.readFileSync(__dirname + "/buffer.js").toString();
+const BEFORE_ENTRY_TEMPLATE = "<!-- BEFORE_ENTRY_TEMPLATE -->";
+const ENTRY_TEMPLATE = "<!-- ENTRY_TEMPLATE -->";
 
 const resolvedHTMLFile = isNodeTrue() && (
     htmlFile
@@ -71,13 +73,30 @@ const resolvedHTMLFile = isNodeTrue() && (
         .replace(`<script src="./require.js"></script>`, `<script>${jsFile}</script>`)
 );
 
+let beforeEntryText: string[] = [];
+function injectHTMLBeforeStartup(text: string) {
+    beforeEntryText.push(text);
+}
+
+type GetModulesResult = ReturnType<RequireControllerBase["getModules"]> extends Promise<infer T> ? T : never;
+type GetModulesArgs = Parameters<RequireControllerBase["getModules"]>;
+let mapGetModules: {
+    remap(result: GetModulesResult, args: GetModulesArgs): Promise<GetModulesResult>
+}[] = [];
+function addMapGetModules(remap: typeof mapGetModules[number]["remap"]) {
+    mapGetModules.push({ remap });
+}
+
 class RequireControllerBase {
     public rootResolvePath = "";
 
     public async requireHTML(bootRequirePath?: string) {
         let result = resolvedHTMLFile;
+        if (beforeEntryText.length > 0) {
+            result = result.replace(BEFORE_ENTRY_TEMPLATE, beforeEntryText.join("\n"));
+        }
         if (bootRequirePath) {
-            result = result.replace(`<!-- ENTRY_TEMPLATE -->`, `<script>require(${JSON.stringify(bootRequirePath)});</script>`);
+            result = result.replace(ENTRY_TEMPLATE, `<script>require(${JSON.stringify(bootRequirePath)});</script>`);
         }
         return setHTTPResultHeaders(Buffer.from(result), { "Content-Type": "text/html" });
     }
@@ -101,6 +120,7 @@ class RequireControllerBase {
                 e?: number;
             }[];
         },
+        config?: {}
     ): Promise<{
         requestsResolvedPaths: string[];
         modules: {
@@ -232,8 +252,19 @@ class RequireControllerBase {
             addModule(clientModule, true);
         }
 
-        return { requestsResolvedPaths, modules, requireSeqNumProcessId };
+        let result: GetModulesResult = { requestsResolvedPaths, modules, requireSeqNumProcessId };
+        for (let remap of mapGetModules) {
+            result = await remap.remap(result, [pathRequests, alreadyHave, config]);
+        }
+        return result;
     }
+}
+
+type ClientRemapCallback = (args: GetModulesArgs) => Promise<GetModulesArgs>;
+declare global {
+    /** Must be set clientside BEFORE requests are made (so you likely want to use RequireController.addMapGetModules
+     *      to inject code that will use this) */
+    var remapImportRequestsClientside: undefined | ClientRemapCallback[];
 }
 
 let baseController = new RequireControllerBase();
@@ -252,6 +283,10 @@ export const RequireController = SocketFunction.register(
     }),
     undefined,
     {
-        noAutoExpose: true
+        noAutoExpose: true,
+        statics: {
+            injectHTMLBeforeStartup,
+            addMapGetModules,
+        }
     }
 );

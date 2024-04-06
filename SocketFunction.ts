@@ -65,6 +65,7 @@ export class SocketFunction {
         Shape extends SocketExposedShape<{
             [key in keyof ClassInstance]: (...args: any[]) => Promise<unknown>;
         }>,
+        Statics
     >(
         classGuid: string,
         instance: ClassInstance,
@@ -75,8 +76,9 @@ export class SocketFunction {
         config?: {
             /** @noAutoExpose If true SocketFunction.expose(Controller) must be called explicitly. */
             noAutoExpose?: boolean;
+            statics?: Statics;
         }
-    ): SocketRegistered<ExtractShape<ClassInstance, Shape>> {
+    ): SocketRegistered<ExtractShape<ClassInstance, Shape>> & Statics {
         let getDefaultHooks = defaultHooksFnc && lazy(defaultHooksFnc);
         const getShape = lazy(() => {
             let shape = shapeFnc() as SocketExposedShape;
@@ -146,7 +148,7 @@ export class SocketFunction {
         if (!config?.noAutoExpose) {
             this.expose(result);
         }
-        return result;
+        return Object.assign(result, config?.statics);
     }
 
     public static onNextDisconnect(nodeId: string, callback: () => void) {

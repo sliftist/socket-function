@@ -166,6 +166,12 @@
             args.push(true);
         }
         let requestUrl = location.origin + location.pathname + `?classGuid=RequireController-e2f811f3-14b8-4759-b0d6-73f14516cf1d&functionName=getModules`;
+        let remapImportRequestsClientside = globalThis.remapImportRequestsClientside;
+        if (remapImportRequestsClientside) {
+            for (let fnc of remapImportRequestsClientside) {
+                args = await fnc(args);
+            }
+        }
         let rawText = await requestText(requestUrl, { args });
         let resultObj;
         try {
