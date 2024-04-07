@@ -416,6 +416,7 @@
             let time = Date.now();
             currentModuleEvaluationStack.push(module.filename);
             try {
+                module.isPreloading = true;
                 moduleFnc.call(
                     {
                         // NOTE: Adding __importStar to the module causes typescript to use our implementation,
@@ -440,6 +441,7 @@
                 //  As in, adding about 500ms to our load time, which is annoying when debugging.
                 //console.debug(`Evaluated module ${module.filename} ${Math.ceil(source.length / 1024)}KB`);
             } finally {
+                module.isPreloading = false;
                 currentModuleEvaluationStack.pop();
             }
 
