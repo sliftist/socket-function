@@ -39,7 +39,7 @@ export class SocketFunction {
 
     public static MAX_MESSAGE_SIZE = 1024 * 1024 * 32;
 
-    public static httpETagCache = false;
+    public static HTTP_ETAG_CACHE = false;
     public static silent = true;
 
     public static HTTP_COMPRESS = false;
