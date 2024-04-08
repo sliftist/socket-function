@@ -1,10 +1,9 @@
 import { CallerContext, CallerContextBase, CallType, FullCallType } from "../SocketFunctionTypes";
 import * as ws from "ws";
-import { performLocalCall } from "./callManager";
+import { performLocalCall, shouldCompressCall } from "./callManager";
 import { convertErrorStackToError, formatNumberSuffixed, isNode, list } from "./misc";
 import { createWebsocketFactory, getTLSSocket } from "./websocketFactory";
 import { SocketFunction } from "../SocketFunction";
-import { gzip } from "zlib";
 import * as tls from "tls";
 import { getClientNodeId, getNodeIdLocation, registerNodeClient } from "./nodeCache";
 import debugbreak from "debugbreak";
@@ -13,12 +12,16 @@ import { red, yellow } from "./formatting/logColors";
 import { isSplitableArray, markArrayAsSplitable } from "./fixLargeNetworkCalls";
 import { delay, runInSerial } from "./batching";
 import { formatNumber, formatTime } from "./formatting/format";
+import pako from "pako";
+import { setFlag } from "../require/compileFlags";
+setFlag(require, "pako", "allowclient", true);
 
 const MIN_RETRY_DELAY = 1000;
 
 type InternalCallType = FullCallType & {
     seqNum: number;
     isReturn: false;
+    isArgsCompressed?: boolean;
 }
 
 type InternalReturnType = {
@@ -27,7 +30,7 @@ type InternalReturnType = {
     error?: string;
     seqNum: number;
     resultSize: number;
-    compressed: boolean;
+    isResultCompressed?: boolean;
 };
 
 
@@ -123,6 +126,11 @@ export async function createCallFactory(
                 functionName: call.functionName,
                 seqNum,
             };
+            let originalArgs = call.args;
+            if (shouldCompressCall(fullCall)) {
+                fullCall.args = await compressObj(fullCall.args) as any;
+                fullCall.isArgsCompressed = true;
+            }
             let time = Date.now();
             let data: Buffer[];
             let dataMaybePromise = SocketFunction.WIRE_SERIALIZER.serialize(fullCall);
@@ -138,11 +146,11 @@ export async function createCallFactory(
             }
 
             if (size > SocketFunction.MAX_MESSAGE_SIZE * 1.5) {
-                let splitArgIndex = call.args.findIndex(isSplitableArray);
+                let splitArgIndex = originalArgs.findIndex(isSplitableArray);
                 if (splitArgIndex >= 0) {
                     console.log(yellow(`Splitting large call due to large args: ${call.classGuid}.${call.functionName}`));
                     let SPLIT_GROUPS = 10;
-                    let splitArg = call.args[splitArgIndex] as unknown[];
+                    let splitArg = originalArgs[splitArgIndex] as unknown[];
                     let subCalls = list(SPLIT_GROUPS).map(index => {
                         let start = Math.floor(index / SPLIT_GROUPS * splitArg.length);
                         let end = Math.floor((index + 1) / SPLIT_GROUPS * splitArg.length);
@@ -167,9 +175,6 @@ export async function createCallFactory(
 
             let resultPromise = new Promise((resolve, reject) => {
                 let callback = (result: InternalReturnType) => {
-                    if (SocketFunction.logMessages) {
-                        console.log(`SIZE\t${(formatNumberSuffixed(result.resultSize) + "B").padEnd(4, " ")}\t${call.classGuid}.${call.functionName} at ${Date.now()}`);
-                    }
                     pendingCalls.delete(seqNum);
                     if (result.error) {
                         reject(convertErrorStackToError(result.error));
@@ -180,6 +185,20 @@ export async function createCallFactory(
                 pendingCalls.set(seqNum, { callback, data, call: fullCall });
             });
 
+            {
+                let resultSize = data.map(x => x.length).reduce((a, b) => a + b, 0);
+                for (let callback of SocketFunction.trackMessageSizes.upload) {
+                    callback(resultSize);
+                }
+                if (SocketFunction.logMessages) {
+                    let fncHack = "";
+                    if (call.functionName === "addCall") {
+                        let arg = originalArgs[0] as any;
+                        fncHack = `.${arg.DomainName}.${arg.ModuleId}.${arg.FunctionId}`;
+                    }
+                    console.log(`SIZE\t${(formatNumberSuffixed(resultSize) + "B").padEnd(4, " ")}\t${call.classGuid}.${call.functionName}${fncHack} at ${Date.now()}`);
+                }
+            }
             await send(data);
 
             return await resultPromise;
@@ -210,7 +229,6 @@ export async function createCallFactory(
                     error: error,
                     seqNum: call.call.seqNum,
                     resultSize: 0,
-                    compressed: false,
                 });
             }
 
@@ -337,6 +355,9 @@ export async function createCallFactory(
                 let time = Date.now();
                 let call = await SocketFunction.WIRE_SERIALIZER.deserialize(currentBuffers) as InternalCallType | InternalReturnType;
                 time = Date.now() - time;
+                for (let callback of SocketFunction.trackMessageSizes.download) {
+                    callback(resultSize);
+                }
 
                 if (call.isReturn) {
                     let callbackObj = pendingCalls.get(call.seqNum);
@@ -347,9 +368,24 @@ export async function createCallFactory(
                         console.log(`Got return for unknown call ${call.seqNum}`);
                         return;
                     }
+                    if (SocketFunction.logMessages) {
+                        let call = callbackObj.call;
+                        console.log(`SIZE\t${(formatNumberSuffixed(resultSize) + "B").padEnd(4, " ")}\t${call.classGuid}.${call.functionName} at ${Date.now()}`);
+                    }
+                    if (call.isResultCompressed) {
+                        call.result = await decompressObj(call.result as Buffer);
+                        call.isResultCompressed = false;
+                    }
                     call.resultSize = resultSize;
                     callbackObj.callback(call);
                 } else {
+                    if (call.isArgsCompressed) {
+                        call.args = await decompressObj(call.args as any as Buffer) as any;
+                        call.isArgsCompressed = false;
+                    }
+                    if (SocketFunction.logMessages) {
+                        console.log(`SIZE\t${(formatNumberSuffixed(resultSize) + "B").padEnd(4, " ")}\t${call.classGuid}.${call.functionName} at ${Date.now()}`);
+                    }
                     if (time > SocketFunction.WIRE_WARN_TIME) {
                         console.log(red(`Slow parse, took ${time}ms to parse ${resultSize} bytes, for call to ${call.classGuid}.${call.functionName}`));
                     }
@@ -362,8 +398,11 @@ export async function createCallFactory(
                             result,
                             seqNum: call.seqNum,
                             resultSize: resultSize,
-                            compressed: false,
                         };
+                        if (shouldCompressCall(call)) {
+                            response.result = await compressObj(response.result) as any;
+                            response.isResultCompressed = true;
+                        }
                     } catch (e: any) {
                         response = {
                             isReturn: true,
@@ -371,7 +410,6 @@ export async function createCallFactory(
                             seqNum: call.seqNum,
                             error: e.stack,
                             resultSize: resultSize,
-                            compressed: false,
                         };
                     }
 
@@ -384,7 +422,6 @@ export async function createCallFactory(
                             seqNum: call.seqNum,
                             error: new Error(`Response too large to send (${call.classGuid}.${call.functionName}, size: ${formatNumber(totalResultSize)} > ${formatNumber(SocketFunction.MAX_MESSAGE_SIZE)}). If you need to handle very large static data use some external service, such as Backblaze B2 or AWS S3. Or consider fragmenting data at an application level, because sending large data will cause large lag spikes for other clients using this server. Or, if absolutely required, set SocketFunction.MAX_MESSAGE_SIZE to a higher value.`).stack,
                             resultSize: resultSize,
-                            compressed: false,
                         };
                         result = await SocketFunction.WIRE_SERIALIZER.serialize(response);
                     }
@@ -394,15 +431,47 @@ export async function createCallFactory(
             }
             throw new Error(`Unhandled data type ${typeof message}`);
         } catch (e: any) {
+            let message = e.stack || e.message || e;
             // NOTE: I'm looking for all types of errors here (specifically, .send errors), in case
             //  there are errors I should be handling.
-            if (e.stack.startsWith("Error: Cannot send data to") && e.stack.includes("as the connection has closed")) {
+            if (message.startsWith("Error: Cannot send data to") && message.includes("as the connection has closed")) {
                 // This is fine, just ignore it
             } else {
+                debugbreak(2);
+                debugger;
                 console.error(e.stack);
             }
         }
     }
 
     return callFactory;
+}
+
+
+async function compressObj(obj: unknown): Promise<Buffer> {
+    let buffers = await SocketFunction.WIRE_SERIALIZER.serialize(obj);
+    let lengthBuffer = Buffer.from((new Float64Array(buffers.map(x => x.length))).buffer);
+    let buffer = Buffer.concat([lengthBuffer, ...buffers]);
+    return Buffer.from(pako.gzip(buffer));
+}
+async function decompressObj(obj: Buffer): Promise<unknown> {
+    try {
+        let buffer = Buffer.from(pako.ungzip(obj));
+        let lengthBuffer = buffer.slice(0, 8);
+        let lengths = new Float64Array(lengthBuffer.buffer, lengthBuffer.byteOffset, lengthBuffer.byteLength / 8);
+        let buffers: Buffer[] = [];
+        let offset = 8;
+        for (let length of lengths) {
+            buffers.push(buffer.slice(offset, offset + length));
+            offset += length;
+        }
+
+        return await SocketFunction.WIRE_SERIALIZER.deserialize(buffers);
+    } catch (e) {
+        // We were encountering issues with the checksum failing when unzipping. Presumably if the data
+        //      is bad deserialize will also fail. I can't repro it anymore though...
+        debugbreak(2);
+        debugger;
+        throw e;
+    }
 }

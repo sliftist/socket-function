@@ -1,6 +1,6 @@
 /// <reference path="./require/RequireController.ts" />
 
-import { SocketExposedInterface, SocketFunctionHook, SocketFunctionClientHook, SocketExposedShape, SocketRegistered, CallerContext, FullCallType } from "./SocketFunctionTypes";
+import { SocketExposedInterface, SocketFunctionHook, SocketFunctionClientHook, SocketExposedShape, SocketRegistered, CallerContext, FullCallType, CallType } from "./SocketFunctionTypes";
 import { exposeClass, registerClass, registerGlobalClientHook, registerGlobalHook, runClientHooks } from "./src/callManager";
 import { SocketServerConfig, startSocketServer } from "./src/webSocketServer";
 import { getCallFactory, getCreateCallFactory, getNodeId, getNodeIdLocation } from "./src/nodeCache";
@@ -32,11 +32,17 @@ type ExtractShape<ClassType, Shape> = {
 
 export class SocketFunction {
     public static logMessages = false;
+    public static trackMessageSizes = {
+        upload: [] as ((size: number) => void)[],
+        download: [] as ((size: number) => void)[],
+    };
 
     public static MAX_MESSAGE_SIZE = 1024 * 1024 * 32;
 
     public static httpETagCache = false;
     public static silent = true;
+
+    public static HTTP_COMPRESS = false;
 
     // In retrospect... dynamically changing the wire serializer is a BAD idea. If any calls happen
     //  before it is changed, things just break. Also, it needs to be changed on both sides,

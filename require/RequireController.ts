@@ -2,8 +2,13 @@
 import debugbreak from "debugbreak";
 import fs from "fs";
 import { SocketFunction } from "../SocketFunction";
-import { setHTTPResultHeaders } from "../src/callHTTPHandler";
-import { isNodeTrue } from "../src/misc";
+import { getCurrentHTTPRequest, setHTTPResultHeaders } from "../src/callHTTPHandler";
+import { formatNumberSuffixed, isNodeTrue, sha256Hash, sha256HashPromise } from "../src/misc";
+import zlib from "zlib";
+import { cacheLimited } from "../src/caching";
+import { formatNumber } from "../src/formatting/format";
+
+const COMPRESS_CACHE_SIZE = 1024 * 1024 * 128;
 
 module.allowclient = true;
 
@@ -55,6 +60,9 @@ export interface SerializedModule {
     source?: string;
 
     seqNum: number;
+
+    size?: number;
+    version?: number;
 }
 
 let nextModuleSeqNum = 1;
@@ -128,6 +136,8 @@ class RequireControllerBase {
         };
         requireSeqNumProcessId: string;
     }> {
+        let httpRequest = getCurrentHTTPRequest();
+
         let seqNums: { [seqNum: number]: 1 } = {};
         if (alreadyHave?.requireSeqNumProcessId === requireSeqNumProcessId) {
             for (let { s, e } of alreadyHave.seqNumRanges) {
@@ -168,6 +178,8 @@ class RequireControllerBase {
                 serveronly: module.serveronly,
                 requests: Object.create(null),
                 seqNum: module.requireControllerSeqNum,
+                size: module.size,
+                version: module.version,
             };
             let moduleObj = modules[module.filename];
             if (moduleObj.allowclient) {
@@ -256,8 +268,50 @@ class RequireControllerBase {
         for (let remap of mapGetModules) {
             result = await remap.remap(result, [pathRequests, alreadyHave, config]);
         }
+
+        // NOTE: Handling compression ourself allows us to efficiently cache (otherwise caching would require
+        //      hashing the output, which takes almost as long as compression!)
+        if (httpRequest && SocketFunction.HTTP_COMPRESS && httpRequest.headers["accept-encoding"]?.includes("gzip")) {
+            let simplifiedResult = {
+                ...result,
+                modules: Object.entries(result.modules).map(x => [x[0], {
+                    filename: x[1].filename,
+                    version: x[1].version,
+                }]),
+            };
+            let key = sha256Hash(JSON.stringify(simplifiedResult));
+            let buffer = await compressCached(key, () => Buffer.from(JSON.stringify(result)));
+            setHTTPResultHeaders(buffer, { "Content-Type": "application/json", "Content-Encoding": "gzip" });
+            return buffer as any;
+        }
+
         return result;
     }
+}
+
+let compressCacheSize = 0;
+let compressCache = new Map<string, Buffer>();
+async function compressCached(bufferKey: string, buffer: () => Buffer): Promise<Buffer> {
+    let cached = compressCache.get(bufferKey);
+    if (!cached) {
+        cached = await new Promise<Buffer>((resolve, reject) => {
+            zlib.gzip(buffer(), {}, (err, result) => {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve(result);
+                }
+            });
+        });
+        compressCacheSize += cached.length;
+        // TODO: Make the cache LRU eviction, instead of just resetting it
+        if (compressCacheSize > COMPRESS_CACHE_SIZE) {
+            compressCache.clear();
+            compressCacheSize = cached.length;
+        }
+        compressCache.set(bufferKey, cached);
+    }
+    return cached;
 }
 
 type ClientRemapCallback = (args: GetModulesArgs) => Promise<GetModulesArgs>;

@@ -4,6 +4,7 @@ import { CallerContext, CallType, FullCallType } from "../SocketFunctionTypes";
 import { isDataImmutable, performLocalCall } from "./callManager";
 import { SocketFunction } from "../SocketFunction";
 import { gzip } from "zlib";
+import zlib from "zlib";
 import { formatNumberSuffixed, sha256Hash } from "./misc";
 import { getClientNodeId, getNodeId } from "./nodeCache";
 
@@ -48,6 +49,11 @@ export function getNodeIdsFromRequest(request: http.IncomingMessage) {
     return { nodeId, localNodeId };
 }
 
+let requests = new Map<CallerContext, http.IncomingMessage>();
+export function getCurrentHTTPRequest(): http.IncomingMessage | undefined {
+    return requests.get(SocketFunction.getCaller());
+}
+
 export async function httpCallHandler(request: http.IncomingMessage, response: http.ServerResponse) {
     try {
         // Always set x-frame-options, to prevent iframe embedding click hijacking
@@ -65,7 +71,9 @@ export async function httpCallHandler(request: http.IncomingMessage, response: h
         let protocol = "https";
         let url = protocol + "://" + request.headers.host + request.url;
 
-        console.log(`HTTP request (${request.method}) ${url}`);
+        if (SocketFunction.logMessages) {
+            console.log(`HTTP request (${request.method}) ${url}`);
+        }
         let urlObj = new URL(url);
 
         let payload = await new Promise<Buffer>((resolve, reject) => {
@@ -136,10 +144,16 @@ export async function httpCallHandler(request: http.IncomingMessage, response: h
             }
         }
 
-        let result = await performLocalCall({
-            caller,
-            call
-        });
+        requests.set(caller, request);
+        let result: unknown;
+        try {
+            result = await performLocalCall({
+                caller,
+                call
+            });
+        } finally {
+            requests.delete(caller);
+        }
 
         let resultBuffer: Buffer;
         if (typeof result === "object" && result && result instanceof Buffer) {
@@ -173,8 +187,26 @@ export async function httpCallHandler(request: http.IncomingMessage, response: h
                 return;
             }
         }
+        if (SocketFunction.HTTP_COMPRESS && request.headers["accept-encoding"]?.includes("gzip") && !headers?.["Content-Encoding"]) {
+            // NOTE: This is a BIT slow. To speed it up, functions can use an internal cache, according to their function,
+            //  and return a Buffer (which they can as any cast to make the returned type allowed, as returned Buffers will
+            //  just be treated like a buffer of JSON data).
+            //  - The caller should use getCurrentHTTPRequest first though, to check if gzip is allowed
+            response.setHeader("Content-Encoding", "gzip");
+            resultBuffer = await new Promise<Buffer>((resolve, reject) => {
+                zlib.gzip(resultBuffer, {}, (err, result) => {
+                    if (err) {
+                        reject(err);
+                    } else {
+                        resolve(result);
+                    }
+                });
+            });
+        }
         response.write(resultBuffer);
-        console.log(`HTTP response  ${formatNumberSuffixed(resultBuffer.length)}B  (${request.method}) ${url}`);
+        if (SocketFunction.logMessages) {
+            console.log(`HTTP response  ${formatNumberSuffixed(resultBuffer.length)}B  (${request.method}) ${url}`);
+        }
 
     } catch (e: any) {
         console.log(`HTTP error  (${request.method}) ${e.stack}`);

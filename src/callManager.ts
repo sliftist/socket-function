@@ -15,6 +15,10 @@ let exposedClasses = new Set<string>();
 let globalHooks: SocketFunctionHook[] = [];
 let globalClientHooks: SocketFunctionClientHook[] = [];
 
+export function shouldCompressCall(call: CallType) {
+    return !!classes[call.classGuid]?.shape[call.functionName]?.compress;
+}
+
 export async function performLocalCall(
     config: {
         call: FullCallType;

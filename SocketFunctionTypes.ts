@@ -24,6 +24,7 @@ export type SocketExposedInterfaceClass = {
 };
 export type SocketExposedShape<ExposedType extends SocketExposedInterface = SocketExposedInterface> = {
     [functionName in keyof ExposedType]?: {
+        compress?: boolean;
         /** Indicates with the same input, we give the same output, forever,
          *      independent of code changes. This only works for data storage.
          */

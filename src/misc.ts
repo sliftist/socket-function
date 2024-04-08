@@ -1,5 +1,6 @@
 import * as crypto from "crypto";
 import { canHaveChildren, MaybePromise } from "./types";
+import { formatNumber } from "./formatting/format";
 
 export const timeInSecond = 1000;
 export const timeInMinute = timeInSecond * 60;
@@ -58,32 +59,7 @@ export function isNodeTrue() {
 }
 
 export function formatNumberSuffixed(count: number): string {
-    if (typeof count !== "number") return "0";
-    if (count < 0) {
-        return "-" + formatNumberSuffixed(-count);
-    }
-
-    let absValue = Math.abs(count);
-
-    const extraFactor = 10;
-    let divisor = 1;
-    let suffix = "";
-    if (absValue < 1000 * extraFactor) {
-
-    } else if (absValue < 1000 * 1000 * extraFactor) {
-        suffix = "K";
-        divisor = 1000;
-    } else if (absValue < 1000 * 1000 * 1000 * extraFactor) {
-        suffix = "M";
-        divisor = 1000 * 1000;
-    } else {
-        suffix = "B";
-        divisor = 1000 * 1000 * 1000;
-    }
-    count /= divisor;
-    absValue /= divisor;
-
-    return Math.round(count).toString() + suffix;
+    return formatNumber(count);
 }
 
 export function list(count: number) {

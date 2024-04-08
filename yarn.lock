@@ -109,6 +109,11 @@
   resolved "https://registry.yarnpkg.com/@types/node/-/node-18.7.16.tgz#0eb3cce1e37c79619943d2fd903919fc30850601"
   integrity sha512-EQHhixfu+mkqHMZl1R2Ovuvn47PUw18azMJOTwSZr9/fhzHNGXAJ0ma0dayRVchprpCj0Kc1K1xKoWaATWF1qg==
 
+"@types/pako@^2.0.3":
+  version "2.0.3"
+  resolved "https://registry.yarnpkg.com/@types/pako/-/pako-2.0.3.tgz#b6993334f3af27c158f3fe0dfeeba987c578afb1"
+  integrity sha512-bq0hMV9opAcrmE0Byyo0fY3Ew4tgOevJmQ9grUhpXQhYfyLJ1Kqg3P33JT5fdbT2AjeAjR51zqqVjAL/HMkx7Q==
+
 "@types/pegjs@^0.10.3":
   version "0.10.3"
   resolved "https://registry.yarnpkg.com/@types/pegjs/-/pegjs-0.10.3.tgz#9e254036c6bf2254cd98caec447a1d79b6607bff"
@@ -838,6 +843,11 @@ p-locate@^5.0.0:
   dependencies:
     p-limit "^3.0.2"
 
+pako@^2.1.0:
+  version "2.1.0"
+  resolved "https://registry.yarnpkg.com/pako/-/pako-2.1.0.tgz#266cc37f98c7d883545d11335c00fbd4062c9a86"
+  integrity sha512-w+eufiZ1WuJYgPXbV/PO3NCMEc3xqylkKHzp8bxp1uW4qaSNQUkwmLLEc3kKsfz8lpV1F8Ht3U1Cm+9Srog2ug==
+
 parent-module@^1.0.0:
   version "1.0.1"
   resolved "https://registry.yarnpkg.com/parent-module/-/parent-module-1.0.1.tgz#691d2709e78c79fae3a156622452d00762caaaa2"
@@ -1031,10 +1041,10 @@ typedev@^0.1.1:
     debugbreak "^0.6.3"
     eslint "^8.18.0"
 
-typenode@^5.3.8:
-  version "5.3.8"
-  resolved "https://registry.yarnpkg.com/typenode/-/typenode-5.3.8.tgz#793491494e09d419c3b71e95bb307c6dd67ed1f3"
-  integrity sha512-yCm9dZfFVfcf+Nb+abIEt7FoPWLSx9ifOZa9a/j9HiU0/TjZuxWb2WqdixYewFN0t8JO4P1SHaz3ItKvSEJ+RQ==
+typenode@^5.3.10:
+  version "5.3.10"
+  resolved "https://registry.yarnpkg.com/typenode/-/typenode-5.3.10.tgz#feb9d44ae839c4ec24ba43356caeeb6f6baac566"
+  integrity sha512-x0dof36yJjj42Vuif0tfKpxSf8qbIXOZRSek34ECWjCIFvV6FLLg2joNycMkKgj6jYtrDkV7xaC5kaXyJ6Cazg==
   dependencies:
     "@types/pegjs" "^0.10.3"
     source-map-support "https://github.com/7rulnik/node-source-map-support"
