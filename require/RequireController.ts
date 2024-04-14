@@ -277,6 +277,7 @@ class RequireControllerBase {
                 modules: Object.entries(result.modules).map(x => [x[0], {
                     filename: x[1].filename,
                     version: x[1].version,
+                    sourceLength: x[1].source?.length,
                 }]),
             };
             let key = sha256Hash(JSON.stringify(simplifiedResult));
