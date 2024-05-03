@@ -29,7 +29,6 @@ type InternalReturnType = {
     result: unknown;
     error?: string;
     seqNum: number;
-    resultSize: number;
     isResultCompressed?: boolean;
 };
 
@@ -228,7 +227,6 @@ export async function createCallFactory(
                     result: undefined,
                     error: error,
                     seqNum: call.call.seqNum,
-                    resultSize: 0,
                 });
             }
 
@@ -275,7 +273,16 @@ export async function createCallFactory(
     }
 
     const BASE_LENGTH_OFFSET = 324_432_461_592_612;
-    async function send(data: Buffer[]) {
+    type MessageHeader = {
+        type: "serialized";
+        bufferCount: number;
+    } | {
+        type: "Buffer[]" | "Buffer";
+        bufferCount: number;
+        bufferLengths?: number[];
+        metadata: Omit<InternalReturnType, "result">;
+    };
+    async function sendRaw(data: (string | Buffer)[]) {
         if (!webSocketPromise) {
             if (canReconnect) {
                 webSocketPromise = tryToReconnect();
@@ -284,10 +291,43 @@ export async function createCallFactory(
             }
         }
         let webSocket = await webSocketPromise;
-        webSocket.send((data.length + BASE_LENGTH_OFFSET).toString());
         for (let d of data) {
             webSocket.send(d);
         }
+    }
+    async function send(data: Buffer[]) {
+        sendRaw([
+            (data.length + BASE_LENGTH_OFFSET).toString(),
+            ...data,
+        ]);
+    }
+    async function sendWithHeader(data: Buffer[], header: MessageHeader) {
+        if (data.some(x => x.length > SocketFunction.MAX_MESSAGE_SIZE * 1.5)) {
+            if (header.type === "Buffer" || header.type === "Buffer[]") {
+                header.bufferLengths = data.map(x => x.length);
+                let fitBuffers: Buffer[] = [];
+                for (let buf of data) {
+                    if (buf.length > SocketFunction.MAX_MESSAGE_SIZE) {
+                        let offset = 0;
+                        while (offset < buf.length) {
+                            fitBuffers.push(buf.slice(offset, offset + SocketFunction.MAX_MESSAGE_SIZE));
+                            offset += SocketFunction.MAX_MESSAGE_SIZE;
+                        }
+                    } else {
+                        fitBuffers.push(buf);
+                    }
+                }
+                data = fitBuffers;
+            } else {
+                throw new Error(`Cannot send large amounts of data unless we are returning Buffer or Buffer[]`);
+            }
+        }
+        // if (totalResultSize > SocketFunction.MAX_MESSAGE_SIZE * 1.5) {
+        // Split up Buffer[] if they are too large
+        sendRaw([
+            JSON.stringify(header),
+            ...data,
+        ]);
     }
     async function tryToReconnect(): Promise<SenderInterface> {
         // Don't try to reconnect too often!
@@ -303,7 +343,9 @@ export async function createCallFactory(
         return newWebSocket;
     }
 
-    let pendingCall: { buffers: Buffer[]; targetCount: number; } | undefined;
+    let pendingCall: MessageHeader & {
+        buffers: Buffer[];
+    } | undefined;
     let clientsideSerial = runInSerial(async <T>(val: Promise<T>) => val);
     async function onMessage(message: ws.RawData | ws.MessageEvent | string) {
         try {
@@ -320,21 +362,30 @@ export async function createCallFactory(
                 }
             }
             if (typeof message === "string") {
-                let size = parseInt(message);
-                if (isNaN(size)) {
-                    throw new Error(`Invalid message size ${message}`);
+                if (message.startsWith("{")) {
+                    let obj = JSON.parse(message);
+                    pendingCall = {
+                        ...obj,
+                        buffers: [],
+                    };
+                } else {
+                    let count = parseInt(message);
+                    if (isNaN(count)) {
+                        throw new Error(`Invalid message count ${message}`);
+                    }
+                    if (count < BASE_LENGTH_OFFSET) {
+                        throw new Error(`Invalid message count ${message}`);
+                    }
+                    count -= BASE_LENGTH_OFFSET;
+                    if (count > 1000 * 1000) {
+                        throw new Error(`Invalid message count ${count}`);
+                    }
+                    pendingCall = {
+                        buffers: [],
+                        bufferCount: count,
+                        type: "serialized",
+                    };
                 }
-                if (size < BASE_LENGTH_OFFSET) {
-                    throw new Error(`Invalid message size ${message}`);
-                }
-                size -= BASE_LENGTH_OFFSET;
-                if (size > 1000 * 1000) {
-                    throw new Error(`Invalid message size ${size}`);
-                }
-                pendingCall = {
-                    buffers: [],
-                    targetCount: size,
-                };
                 return;
             }
             if (message instanceof Buffer) {
@@ -343,17 +394,63 @@ export async function createCallFactory(
                 }
                 pendingCall.buffers.push(message);
                 let currentBuffers: Buffer[];
-                if (pendingCall.buffers.length !== pendingCall.targetCount) {
+                if (pendingCall.buffers.length !== pendingCall.bufferCount) {
                     return;
                 }
 
-                currentBuffers = pendingCall.buffers;
+                let currentCall = pendingCall;
                 pendingCall = undefined;
-
-                let resultSize = currentBuffers.map(x => x.length).reduce((a, b) => a + b, 0);
-
+                currentBuffers = currentCall.buffers;
+                let call: InternalCallType | InternalReturnType;
+                let resultSize: number;
                 let time = Date.now();
-                let call = await SocketFunction.WIRE_SERIALIZER.deserialize(currentBuffers) as InternalCallType | InternalReturnType;
+                if (currentCall.type === "Buffer" || currentCall.type === "Buffer[]") {
+                    let result: Buffer | Buffer[] = currentBuffers;
+                    if (currentCall.bufferLengths) {
+                        let pendingBuffers = currentBuffers;
+                        function takeBuffer(len: number) {
+                            let lenLeft = len;
+                            let buffers: Buffer[] = [];
+                            while (lenLeft > 0) {
+                                let buf = currentBuffers.pop();
+                                if (!buf) {
+                                    throw new Error(`Not enough buffers received.`);
+                                }
+                                if (buf.length > lenLeft) {
+                                    buffers.push(buf.slice(0, lenLeft));
+                                    currentBuffers.unshift(buf.slice(lenLeft));
+                                    break;
+                                } else {
+                                    buffers.push(buf);
+                                    lenLeft -= buf.length;
+                                }
+                            }
+                            if (buffers.length === 1) {
+                                return buffers[0];
+                            }
+                            return Buffer.concat(buffers);
+                        }
+                        result = currentCall.bufferLengths.map(takeBuffer);
+                        if (pendingBuffers.length > 0) {
+                            throw new Error(`Received too many buffers.`);
+                        }
+                    }
+                    resultSize = result.map(x => x.length).reduce((a, b) => a + b, 0);
+                    if (currentCall.type === "Buffer") {
+                        if (result.length === 1) {
+                            result = result[0];
+                        } else {
+                            result = Buffer.concat(result);
+                        }
+                    }
+                    call = {
+                        ...currentCall.metadata,
+                        result,
+                    };
+                } else {
+                    resultSize = currentBuffers.map(x => x.length).reduce((a, b) => a + b, 0);
+                    call = await SocketFunction.WIRE_SERIALIZER.deserialize(currentBuffers) as InternalCallType | InternalReturnType;
+                }
                 time = Date.now() - time;
                 for (let callback of SocketFunction.trackMessageSizes.download) {
                     callback(resultSize);
@@ -365,7 +462,7 @@ export async function createCallFactory(
                         console.log(red(`Slow parse, took ${time}ms to parse ${resultSize} bytes, for receieving result of call to ${callbackObj?.call.classGuid}.${callbackObj?.call.functionName}`));
                     }
                     if (!callbackObj) {
-                        console.log(`Got return for unknown call ${call.seqNum}`);
+                        console.log(`Got return for unknown call ${call.seqNum} (created at time ${new Date(call.seqNum)})`);
                         return;
                     }
                     if (SocketFunction.logMessages) {
@@ -376,7 +473,6 @@ export async function createCallFactory(
                         call.result = await decompressObj(call.result as Buffer);
                         call.isResultCompressed = false;
                     }
-                    call.resultSize = resultSize;
                     callbackObj.callback(call);
                 } else {
                     if (call.isArgsCompressed) {
@@ -397,7 +493,6 @@ export async function createCallFactory(
                             isReturn: true,
                             result,
                             seqNum: call.seqNum,
-                            resultSize: resultSize,
                         };
                         if (shouldCompressCall(call)) {
                             response.result = await compressObj(response.result) as any;
@@ -409,23 +504,29 @@ export async function createCallFactory(
                             result: undefined,
                             seqNum: call.seqNum,
                             error: e.stack,
-                            resultSize: resultSize,
                         };
                     }
 
-                    let result: Buffer[] = await SocketFunction.WIRE_SERIALIZER.serialize(response);
-                    let totalResultSize = result.map(x => x.length).reduce((a, b) => a + b, 0);
-                    if (totalResultSize > SocketFunction.MAX_MESSAGE_SIZE * 1.5) {
-                        response = {
-                            isReturn: true,
-                            result: undefined,
-                            seqNum: call.seqNum,
-                            error: new Error(`Response too large to send (${call.classGuid}.${call.functionName}, size: ${formatNumber(totalResultSize)} > ${formatNumber(SocketFunction.MAX_MESSAGE_SIZE)}). If you need to handle very large static data use some external service, such as Backblaze B2 or AWS S3. Or consider fragmenting data at an application level, because sending large data will cause large lag spikes for other clients using this server. Or, if absolutely required, set SocketFunction.MAX_MESSAGE_SIZE to a higher value.`).stack,
-                            resultSize: resultSize,
-                        };
-                        result = await SocketFunction.WIRE_SERIALIZER.serialize(response);
+                    if (response.result instanceof Buffer) {
+                        let { result, ...remaining } = response;
+                        await sendWithHeader([result], { type: "Buffer", bufferCount: 1, metadata: remaining });
+                    } else if (Array.isArray(response.result) && response.result.every(x => x instanceof Buffer)) {
+                        let { result, ...remaining } = response;
+                        await sendWithHeader(result, { type: "Buffer[]", bufferCount: result.length, metadata: remaining });
+                    } else {
+                        let result: Buffer[] = await SocketFunction.WIRE_SERIALIZER.serialize(response);
+                        let totalResultSize = result.map(x => x.length).reduce((a, b) => a + b, 0);
+                        if (totalResultSize > SocketFunction.MAX_MESSAGE_SIZE * 1.5) {
+                            response = {
+                                isReturn: true,
+                                result: undefined,
+                                seqNum: call.seqNum,
+                                error: new Error(`Response too large to send (${call.classGuid}.${call.functionName}, size: ${formatNumber(totalResultSize)} > ${formatNumber(SocketFunction.MAX_MESSAGE_SIZE)}). If you need to handle very large static data use some external service, such as Backblaze B2 or AWS S3. Or consider fragmenting data at an application level, because sending large data will cause large lag spikes for other clients using this server. Or, if absolutely required, set SocketFunction.MAX_MESSAGE_SIZE to a higher value.`).stack,
+                            };
+                            result = await SocketFunction.WIRE_SERIALIZER.serialize(response);
+                        }
+                        await send(result);
                     }
-                    await send(result);
                 }
                 return;
             }
