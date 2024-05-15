@@ -195,7 +195,7 @@ export async function createCallFactory(
                         let arg = originalArgs[0] as any;
                         fncHack = `.${arg.DomainName}.${arg.ModuleId}.${arg.FunctionId}`;
                     }
-                    console.log(`SIZE\t${(formatNumberSuffixed(resultSize) + "B").padEnd(4, " ")}\t${call.classGuid}.${call.functionName}${fncHack} at ${Date.now()}`);
+                    console.log(`SIZE\t${(formatNumberSuffixed(resultSize) + "B").padEnd(4, " ")}\tREMOTE CALL\t${call.classGuid}.${call.functionName}${fncHack} at ${Date.now()}`);
                 }
             }
             await send(data);
@@ -418,7 +418,7 @@ export async function createCallFactory(
             }
             if (SocketFunction.logMessages) {
                 let call = callbackObj.call;
-                console.log(`SIZE\t${(formatNumberSuffixed(resultSize) + "B").padEnd(4, " ")}\t${call.classGuid}.${call.functionName} at ${Date.now()}`);
+                console.log(`SIZE\t${(formatNumberSuffixed(resultSize) + "B").padEnd(4, " ")}\tRETURN\t${call.classGuid}.${call.functionName} at ${Date.now()}`);
             }
             if (call.isResultCompressed) {
                 call.result = await decompressObj(call.result as Buffer);
@@ -431,7 +431,7 @@ export async function createCallFactory(
                 call.isArgsCompressed = false;
             }
             if (SocketFunction.logMessages) {
-                console.log(`SIZE\t${(formatNumberSuffixed(resultSize) + "B").padEnd(4, " ")}\t${call.classGuid}.${call.functionName} at ${Date.now()}`);
+                console.log(`SIZE\t${(formatNumberSuffixed(resultSize) + "B").padEnd(4, " ")}\tEVALUATE\t${call.classGuid}.${call.functionName} at ${Date.now()}`);
             }
             if (time > SocketFunction.WIRE_WARN_TIME) {
                 console.log(red(`Slow parse, took ${time}ms to parse ${resultSize} bytes, for call to ${call.classGuid}.${call.functionName}`));

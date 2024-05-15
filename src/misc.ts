@@ -218,7 +218,7 @@ export function throttleFunction<Args extends any[]>(
             if (result instanceof Promise) {
                 result.finally(() => {
                     afterCall(Date.now() + delay);
-                });
+                }).catch(e => console.error(e));
             } else {
                 afterCall(Date.now() + delay);
             }
