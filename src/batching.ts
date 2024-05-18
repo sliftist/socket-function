@@ -29,6 +29,8 @@ export function delay(delayTime: DelayType): Promise<void> {
         // NOTE: setTimeout can't wait this short of a time, so just setImmediate. This should be hard to distinguish
         //  anyways, as setImmediate (at least in nodejs), should happen after io, so... it should just work
         //  (the only difference is there will be less unnecessary delay).
+        // NOTE: THIS DOES break certain cases where io is depending on true delay, and by only waiting a microtick
+        //  we don't give it a chance. But... we should just handle those cases explicitly, via an explicit "afterio".
         if (delayTime < 10) {
             return delay("immediate");
         }
@@ -68,7 +70,7 @@ export function batchFunction<Arg, Result = void>(
     let curDelay = config.delay;
     let delayRamp = 0;
     if (config.throttleWindow && typeof curDelay === "number") {
-        delayRamp = curDelay / config.throttleWindow;
+        delayRamp = curDelay / (config.throttleWindow / curDelay);
     }
     let delayTime = 0;
     if (typeof curDelay === "number") {
@@ -80,6 +82,10 @@ export function batchFunction<Arg, Result = void>(
     return arg => {
         let now = Date.now();
         if (delayRamp) {
+            // The time since the last call (started) is how much budget we will have received to
+            //  run values. If it is === delayTime, then we subtract 1, as we are right on track.
+            //  If it is > delayTime, then we are running below the rate, so it is fine.
+            //  If it is < delayTime, we are running too fast, and have to slow down.
             let savedCount = (now - lastCall) / delayTime;
             if (savedCount >= 1) {
                 countSinceBreak -= savedCount;
