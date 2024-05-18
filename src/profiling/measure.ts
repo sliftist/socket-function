@@ -6,7 +6,7 @@ import { getOpenTimesBase, getOwnTime, OwnTimeObj } from "./getOwnTime";
 import { addToStats, addToStatsValue, createStatsValue, getStatsTop, StatsValue } from "./stats";
 import { white } from "../formatting/logColors";
 import { isNode } from "../misc";
-import { formatStats } from "./statsFormat";
+import { formatStats, percent } from "./statsFormat";
 
 let measurementsDisabled = false;
 /** NOTE: Must be called BEFORE anything else is imported!
@@ -73,13 +73,21 @@ export function measureBlock<T extends (...args: any[]) => any>(fnc: T, name?: s
     return measureWrap(fnc, name)();
 }
 
+let extraInfoGetters: (() => string | undefined)[] = [];
+export function registerMeasureInfo(getInfo: () => string | undefined) {
+    extraInfoGetters.push(getInfo);
+}
+
 export function startMeasure(): {
     finish: () => MeasureProfile;
 } {
     if (!measurementsEnabled && !measurementsDisabled) {
         console.warn(red(`To capture measurements enableMeasurements() must be called before any other imports in your entry point`));
     }
+    let now = Date.now();
     let profile: MeasureProfile = {
+        startTime: now,
+        endTime: now,
         entries: Object.create(null),
     };
     let openAtStart = new Set(getOpenTimesBase());
@@ -103,6 +111,7 @@ export function startMeasure(): {
                 addToProfile(profile, timeObj);
             }
             outstandingProfiles.splice(outstandingProfiles.indexOf(profile), 1);
+            profile.endTime = Date.now();
             return profile;
         }
     };
@@ -111,6 +120,7 @@ export function startMeasure(): {
 export interface LogMeasureTableConfig {
     useTotalTime?: boolean;
     name?: string;
+    setTitle?: boolean;
     // Defaults to 0.05
     thresholdInTable?: number;
     // Details to 50
@@ -157,8 +167,18 @@ export function logMeasureTable(
         entries.sort((a, b) => getTime(b).sum - getTime(a).sum);
     }
 
+    let timeRunFor = profile.endTime - profile.startTime;
+    let fraction = totalTime / timeRunFor;
+
     console.log();
-    let title = yellow(`Profiled ${formatTime(totalTime)} (logged at ${new Date().toISOString()})`);
+    let extraInfos = extraInfoGetters.map(x => x());
+
+    if (config?.setTitle && isNode()) {
+        let title = `${percent(fraction)} CPU`;
+        title += extraInfos.map(x => x ? ` // ${x}` : "").join("");
+        process.stdout.write(`\x1b]0;${title}\x07`);
+    }
+    let title = yellow(`Profiled ${formatTime(totalTime)} (${percent(fraction)} CPU)${extraInfos.map(x => x ? ` (${x})` : "")} (logged at ${new Date().toISOString()}, profile for ${formatTime(timeRunFor)})`);
     if (name) {
         title = `(${blue(name)}) ${title}`;
     }
@@ -229,12 +249,17 @@ function finishProfile(measure: { finish(): MeasureProfile }, config?: LogMeasur
 
 
 export interface MeasureProfile {
+    startTime: number;
+    endTime: number;
     entries: {
         [name: string]: ProfileEntry;
     };
 }
 export function createMeasureProfile(): MeasureProfile {
+    let now = Date.now();
     return {
+        startTime: now,
+        endTime: now,
         entries: Object.create(null),
     };
 }

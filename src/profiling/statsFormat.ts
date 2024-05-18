@@ -10,6 +10,7 @@ export function percent(value: number) {
 export function formatStats(stats: StatsValue, config?: {
     noColor?: boolean;
     noSum?: boolean;
+    noSpaces?: boolean;
 }) {
     function p(count: number, text: string | number) {
         return String(text).padStart(count, " ");
@@ -36,6 +37,9 @@ export function formatStats(stats: StatsValue, config?: {
             }
         }
         equation = (!config?.noSum && `${p(6, sumText)} = ` || "") + `${p(6, topPart)}   +  ${bottomPart}`;
+    }
+    if (config?.noSpaces) {
+        equation = equation.replace(/\s+/g, " ").trim();
     }
     return equation;
 }

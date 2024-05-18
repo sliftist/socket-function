@@ -1,3 +1,5 @@
+// See statsFormat.ts:formatStats for a nice way to format a stats value
+
 export interface StatsValue {
     count: number;
     sum: number;
