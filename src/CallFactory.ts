@@ -16,7 +16,10 @@ import pako from "pako";
 import { setFlag } from "../require/compileFlags";
 setFlag(require, "pako", "allowclient", true);
 
-const MIN_RETRY_DELAY = 1000;
+// NOTE: If it is too low, and too many servers disconnect, we can easily spend 100% of our time
+//  trying to reconnect.
+//  (Or... maybe the delay is just waiting, and we aren't actually overloading the server?)
+const MIN_RETRY_DELAY = 5000;
 
 type InternalCallType = FullCallType & {
     seqNum: number;

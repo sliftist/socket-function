@@ -91,7 +91,11 @@ export class JSONLACKS {
         if (extendedParsing) {
             obj = measureBlock(function JSONextendedParse() { return parser.parse(text); });
         } else {
-            obj = measureBlock(function JSONparse() { return JSON.parse(text); });
+            try {
+                obj = measureBlock(function JSONparse() { return JSON.parse(text); });
+            } catch {
+                obj = measureBlock(function JSONextendedParse() { return parser.parse(text); });
+            }
         }
 
         return JSONLACKS.hydrateSpecialObjects(obj, hydrateState, config) as T;
