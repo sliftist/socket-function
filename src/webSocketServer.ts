@@ -210,21 +210,21 @@ export async function startSocketServer(
     }
 
     let port = config.port;
+    async function isPortInUse(port: number): Promise<boolean> {
+        return new Promise<boolean>((resolve, reject) => {
+            let server = net.createServer();
+            server.listen(port, host)
+                .on("listening", function () {
+                    server.close();
+                    resolve(false);
+                }).on("close", function () {
+                    resolve(true);
+                }).on("error", function (e) {
+                    resolve(true);
+                });
+        });
+    }
     if (config.useAvailablePortIfPortInUse && port) {
-        async function isPortInUse(port: number): Promise<boolean> {
-            return new Promise<boolean>((resolve, reject) => {
-                let server = net.createServer();
-                server.listen(port, host)
-                    .on("listening", function () {
-                        server.close();
-                        resolve(false);
-                    }).on("close", function () {
-                        resolve(true);
-                    }).on("error", function (e) {
-                        resolve(true);
-                    });
-            });
-        }
         if (await isPortInUse(port)) {
             port = 0;
         }
