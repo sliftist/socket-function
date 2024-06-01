@@ -63,7 +63,7 @@ const hotReloadModule = cache((module: NodeJS.Module) => {
     let interval = 1000;
     let fast = false;
     if (module.hotreload || module.hotreloadBrowser) {
-        interval = 50;
+        interval = 10;
         fast = true;
     }
     fs.watchFile(module.filename, { persistent: false, interval }, (curr, prev) => {

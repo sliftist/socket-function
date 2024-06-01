@@ -107,8 +107,17 @@ class RequireControllerBase {
             result = result.replace(BEFORE_ENTRY_TEMPLATE, beforeEntryText.join("\n"));
         }
         if (requireCalls) {
-            result = result.replace(ENTRY_TEMPLATE, `<script>\n${requireCalls.map(x => `require(${JSON.stringify(x)});`).join(" \n")
-                }</script>`);
+            async function requireAll(calls: string[]) {
+                for (let call of calls) {
+                    try {
+                        await require(call);
+                    } catch (e) {
+                        // Detach the error so we can continue
+                        setTimeout(() => { throw e; });
+                    }
+                }
+            }
+            result = result.replace(ENTRY_TEMPLATE, `<script>\n(${requireAll.toString()})(${JSON.stringify(requireCalls)});\n</script>`);
         }
         return setHTTPResultHeaders(Buffer.from(result), { "Content-Type": "text/html" });
     }
