@@ -36,6 +36,7 @@ declare global {
     interface Window {
         clientsideBootTime: number;
     }
+    var suppressUnexpectedModuleWarning: boolean;
 }
 
 export interface SerializedModule {
@@ -108,6 +109,9 @@ class RequireControllerBase {
         }
         if (requireCalls) {
             async function requireAll(calls: string[]) {
+                // NOTE: awaiting isn't just for better and consistent load order, it also greatly improves load efficiency,
+                //  as parallel calls can't know what files will be loaded, so there is a lot of duplicate loading. Loading
+                //  1 at a time allows require to efficiently require only files that previous imports haven't loaded.
                 for (let call of calls) {
                     try {
                         await require(call);

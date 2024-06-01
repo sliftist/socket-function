@@ -233,6 +233,7 @@
             // TODO: Maybe do a request, making this async, if it isn't found?
             return serializedModule.requests[request];
         };
+        let moduleFolder = module.filename.replace(/\\/g, "/").split("/").slice(0, -1).join("/") + "/";
         return require;
         function require(request, asyncIsFine) {
             if (asyncIsFineOuter) {
@@ -250,11 +251,17 @@
                 resolvedPath = request;
             } else {
                 if (!(request in serializedModule.requests)) {
-                    if (!asyncIsFine) {
+                    if (!asyncIsFine && !globalThis.suppressUnexpectedModuleWarning) {
                         console.warn(`Accessed unexpected module %c${request}%c in %c${module.id}%c\n\tTreating it as an async require.\n\tAll modules require synchronously clientside must be required serverside at a module level.`,
                             "color: red", "color: unset",
                             "color: red", "color: unset",
                         );
+                    }
+                    // NOTE: We should still namespace it to the current folder (if it is a relative path),
+                    //  otherwise relative async imports won't work!
+                    //  (This path isn't hit often, as we usually preload, but... sometimes we won't).
+                    if (request.startsWith(".")) {
+                        request = moduleFolder + request;
                     }
                     return rootRequire(request);
                 }
