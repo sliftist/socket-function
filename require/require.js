@@ -1,6 +1,8 @@
 (function () {
     //# sourceURL=require.js
 
+    let startTime = Date.now();
+
     // Globals
     Object.assign(window, {
         process: {
@@ -144,7 +146,7 @@
         }
     }
     async function rootRequireMultiple(requests) {
-        console.log(`%cimport(${requests.join(", ")})`, "color: orange");
+        console.log(`%cimport(${requests.join(", ")}) at ${Date.now() - startTime}ms`, "color: orange");
 
         let time = Date.now();
 
@@ -216,7 +218,7 @@
         let moduleCount = Object.values(modules).filter(x => x.source).length;
         let requireModuleCount = Object.values(modules).filter(x => !x.source).length;
         let dependenciesOnlyText = requireModuleCount ? ` (+${requireModuleCount} dependencies only)` : "";
-        console.log(`%cimport(${requests.join(", ")}) download ${time}ms, ${Math.ceil(rawText.length / 1024)}KB, ${moduleCount} modules${dependenciesOnlyText}`, "color: green");
+        console.log(`%cimport(${requests.join(", ")}) finished download ${time}ms, ${Math.ceil(rawText.length / 1024)}KB, ${moduleCount} modules${dependenciesOnlyText} at ${Date.now() - startTime}ms`, "color: green");
 
         time = Date.now();
 
@@ -234,7 +236,7 @@
             return requestsResolvedPaths.map(x => getModule(x));
         } finally {
             time = Date.now() - time;
-            console.log(`%cimport(${requests.join(", ")}) evaluate ${time}ms (${moduleCount} modules)`, "color: blue");
+            console.log(`%cimport(${requests.join(", ")}) finished evaluate ${time}ms (${moduleCount} modules) at ${Date.now() - startTime}ms`, "color: blue");
         }
     }
 

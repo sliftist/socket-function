@@ -42,6 +42,7 @@ declare global {
             hotreload?: boolean;
             /** Only hotreloads the file in the browser. */
             hotreloadBrowser?: boolean;
+            noserverhotreload?: boolean;
         }
     }
 }
@@ -70,7 +71,7 @@ const hotReloadModule = cache((module: NodeJS.Module) => {
         if (curr.mtime.getTime() === prev.mtime.getTime()) return;
         console.log(`Hot reloading due to change: ${module.filename}`);
         module.updateContents?.();
-        if (isNode()) {
+        if (isNode() && !module.noserverhotreload) {
             if (
                 module.hotreload
                 // A fairly big hack (as this could just be in a string, or something similar), but... it also VERY useful

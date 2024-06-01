@@ -40,7 +40,7 @@ declare global {
     interface Window {
         clientsideBootTime: number;
     }
-    var suppressUnexpectedModuleWarning: boolean;
+    var suppressUnexpectedModuleWarning: number | undefined;
 }
 
 export interface SerializedModule {
