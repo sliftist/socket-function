@@ -16,6 +16,7 @@ import { delay, runInfinitePoll } from "./batching";
 import { magenta } from "./formatting/logColors";
 import { yellow } from "./formatting/logColors";
 import { green } from "./formatting/logColors";
+import { formatTime } from "./formatting/format";
 
 export type SocketServerConfig = (
     https.ServerOptions & {
@@ -239,7 +240,7 @@ export async function startSocketServer(
 
     port = (realServer.address() as net.AddressInfo).port;
     let nodeId = getNodeId(getCommonName(config.cert), port);
-    console.log(green(`Started Listening on ${nodeId}`));
+    console.log(green(`Started Listening on ${nodeId} after ${formatTime(process.uptime() * 1000)}`));
 
     return nodeId;
 }

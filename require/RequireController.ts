@@ -98,13 +98,17 @@ function addMapGetModules(remap: typeof mapGetModules[number]["remap"]) {
 class RequireControllerBase {
     public rootResolvePath = "";
 
-    public async requireHTML(bootRequirePath?: string) {
+    public async requireHTML(config?: {
+        requireCalls?: string[];
+    }) {
+        let { requireCalls } = config || {};
         let result = resolvedHTMLFile;
         if (beforeEntryText.length > 0) {
             result = result.replace(BEFORE_ENTRY_TEMPLATE, beforeEntryText.join("\n"));
         }
-        if (bootRequirePath) {
-            result = result.replace(ENTRY_TEMPLATE, `<script>require(${JSON.stringify(bootRequirePath)});</script>`);
+        if (requireCalls) {
+            result = result.replace(ENTRY_TEMPLATE, `<script>\n${requireCalls.map(x => `require(${JSON.stringify(x)});`).join(" \n")
+                }</script>`);
         }
         return setHTTPResultHeaders(Buffer.from(result), { "Content-Type": "text/html" });
     }

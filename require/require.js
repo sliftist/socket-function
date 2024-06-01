@@ -245,22 +245,27 @@
                 return builtInModuleExports[request];
             }
 
-            if (!(request in serializedModule.requests)) {
-                if (!asyncIsFine) {
-                    console.warn(`Accessed unexpected module %c${request}%c in %c${module.id}%c\n\tTreating it as an async require.\n\tAll modules require synchronously clientside must be required serverside at a module level.`,
-                        "color: red", "color: unset",
-                        "color: red", "color: unset",
-                    );
+            let resolvedPath;
+            if (request in moduleCache) {
+                resolvedPath = request;
+            } else {
+                if (!(request in serializedModule.requests)) {
+                    if (!asyncIsFine) {
+                        console.warn(`Accessed unexpected module %c${request}%c in %c${module.id}%c\n\tTreating it as an async require.\n\tAll modules require synchronously clientside must be required serverside at a module level.`,
+                            "color: red", "color: unset",
+                            "color: red", "color: unset",
+                        );
+                    }
+                    return rootRequire(request);
                 }
-                return rootRequire(request);
-            }
 
-            // Built in modules that we haven't been implemented
-            if (serializedModule.requests[request] === "") {
-                return {};
-            }
+                // Built in modules that we haven't been implemented
+                if (serializedModule.requests[request] === "") {
+                    return {};
+                }
 
-            let resolvedPath = serializedModule.requests[request];
+                resolvedPath = serializedModule.requests[request];
+            }
             if (resolvedPath !== "NOTALLOWEDCLIENTSIDE" && !serializedModules[resolvedPath]) {
                 if (!asyncIsFine) {
                     console.warn(`Accessed unexpected module %c${request}%c in %c${module.id}%c\n\tTreating it as an async require.\n\tAll modules require synchronously clientside must be required serverside at a module level.`,
@@ -381,11 +386,10 @@
                     delete alreadyHave.seqNums[serializedModule.seqNum];
                 }
                 // NOTE: There is almost never recovery from module downloading errors, so just don't catch them
-                void Promise.resolve().then(() => rootRequire(resolvedId, true)).then(() => {
+                return Promise.resolve().then(() => rootRequire(resolvedId, true)).then(async () => {
                     module.loaded = true;
-                    load();
+                    await load();
                 });
-                return;
             }
 
             module.requires = serializedModule.requests;

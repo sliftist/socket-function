@@ -257,7 +257,12 @@ export class SocketFunction {
         return this.mountedNodeId;
     }
 
-    /** Sets the default call when an http request is made, but no classGuid is set. */
+    /** Sets the default call when an http request is made, but no classGuid is set.
+     *      NOTE: All other calls should be endpoint calls, even if those endpoints return a static file with an HTML content type.
+     *          - However, to load new content, you should probably just use `require("./example.ts")`, which works on any files
+     *              clientside that have also been required serverside (and whitelisted with module.allowclient = true,
+     *              or with an `allowclient.flag` file in the directory or parent directory).
+    */
     public static setDefaultHTTPCall<
         Registered extends SocketRegistered,
         FunctionName extends keyof Registered["nodes"][""] & string,
