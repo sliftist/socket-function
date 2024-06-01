@@ -49,6 +49,17 @@
     };
     global.builtInModuleExports = builtInModuleExports;
 
+    let lastTime = 0;
+    function nextTime() {
+        let time = Date.now();
+        if (time <= lastTime) {
+            // NOTE: We SHOULD really add epsilon, but... this is a lot easier, and is close enough,
+            //  as times will never have too large of a magnitude.
+            time = lastTime + 0.01;
+        }
+        lastTime = time;
+        return time;
+    }
 
     /** @type {{
         [resolvePath: string]: {
@@ -428,6 +439,8 @@
             currentModuleEvaluationStack.push(module.filename);
             try {
                 module.isPreloading = true;
+                module.evalStartTime = nextTime();
+                module.evalEndTime = undefined;
                 moduleFnc.call(
                     {
                         // NOTE: Adding __importStar to the module causes typescript to use our implementation,
@@ -447,6 +460,7 @@
                     dirname,
                     importDynamic
                 );
+                module.evalEndTime = nextTime();
                 time = Date.now() - time;
                 // NOTE: This log statment is disabled as I believe it causes lag (when devtools is open).
                 //  As in, adding about 500ms to our load time, which is annoying when debugging.

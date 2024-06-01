@@ -31,6 +31,10 @@ declare global {
             //  And... maybe it is useful in other cases?
             /** Used internally by RequireController */
             requireControllerSeqNum?: number;
+
+            // Times are both unique (two modules evaluated at the same Date.now() will have different values).
+            evalStartTime?: number;
+            evalEndTime?: number;
         }
     }
     interface Window {

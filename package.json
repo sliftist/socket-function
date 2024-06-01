@@ -13,7 +13,7 @@
 		"node-forge": "https://github.com/sliftist/forge#name",
 		"pako": "^2.1.0",
 		"preact": "^10.10.6",
-		"typenode": "^5.3.11",
+		"typenode": "^5.3.12",
 		"ws": "^8.8.0"
 	},
 	"optionalDependencies": {
