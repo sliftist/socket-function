@@ -19,8 +19,7 @@ export function getNodeId(domain: string, port: number): string {
 }
 
 export function getNodeIdFromLocation() {
-    if (isNode()) throw new Error(`Cannot get nodeId from location, as we are running in NodeJS`);
-    return getNodeId(location.hostname, location.port ? parseInt(location.port) : 443);
+    return SocketFunction.browserNodeId();
 }
 
 /** A nodeId not available for reconnecting. */

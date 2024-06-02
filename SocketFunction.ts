@@ -15,6 +15,12 @@ import { JSONLACKS } from "./src/JSONLACKS/JSONLACKS";
 import "./SetProcessVariables";
 import cborx from "cbor-x";
 import { setFlag } from "./require/compileFlags";
+import { shimDateNow, waitForFirstTimeSync } from "./time/trueTimeShim";
+import { isNode } from "./src/misc";
+
+/** Always shim Date.now(), because we usually DO want an accurate time... */
+shimDateNow();
+
 setFlag(require, "cbor-x", "allowclient", true);
 let cborxInstance = new cborx.Encoder({ structuredClone: true });
 
@@ -241,6 +247,8 @@ export class SocketFunction {
             this.mountedIP = config.ip;
         }
 
+        await waitForFirstTimeSync();
+
         // Wait for any additionals functions to expose themselves
         await delay("immediate");
 
@@ -282,8 +290,11 @@ export class SocketFunction {
         return getNodeId(location.address, location.port);
     }
 
-    public static locationNode() {
-        return SocketFunction.connect({ address: location.hostname, port: +location.port });
+    public static browserNodeId() {
+        if (!isNode()) {
+            throw new Error("Cannot get browser nodeId on server");
+        }
+        return SocketFunction.connect({ address: location.hostname, port: +location.port || 443 });
     }
 
     public static addGlobalHook(hook: SocketFunctionHook<SocketExposedInterface>) {

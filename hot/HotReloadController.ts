@@ -14,11 +14,10 @@ import { magenta, red } from "../src/formatting/logColors";
  *      - Triggers a reload server, for modules marked with `module.hotreload`
  */
 export function watchFilesAndTriggerHotReloading(noAutomaticBrowserWatch = false) {
-
     SocketFunction.expose(HotReloadController);
     if (!isNode()) {
         if (!noAutomaticBrowserWatch) {
-            HotReloadController.nodes[SocketFunction.locationNode()]
+            HotReloadController.nodes[SocketFunction.browserNodeId()]
                 .watchFiles()
                 .catch(e => console.error("watchFiles error", e))
                 ;
@@ -165,5 +164,11 @@ export const HotReloadController = SocketFunction.register(
     () => ({
         watchFiles: {},
         fileUpdated: {}
-    })
+    }),
+    () => ({
+
+    }),
+    {
+        noAutoExpose: true,
+    }
 );
