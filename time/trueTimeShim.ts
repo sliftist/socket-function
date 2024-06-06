@@ -144,9 +144,14 @@ setInterval(() => {
     if (baseGetTime() < nextUpdateTime) return;
     nextUpdateTime = baseGetTime() + UPDATE_INTERVAL;
     updateTimeOffset().catch((e) => {
-        console.error("Error updating time offset:", e);
+        console.warn("Error updating time offset:", e);
     });
 }, UPDATE_SUB_INTERVAL);
+setImmediate(() => {
+    updateTimeOffset().catch((e) => {
+        console.error("Error updating initial offset:", e);
+    });
+});
 
 
 class TimeControllerBase {

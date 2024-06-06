@@ -206,3 +206,19 @@ export function formatBinaryNumber(count: number | undefined, maxAbsoluteValue?:
 
     return formatMaxDecimals(count, maxDecimals, maxAbsoluteValue, currencyDecimalsNeeded ? 2 : undefined) + suffix;
 }
+
+/** YYYY/MM/DD HH:MM:SS PM/AM */
+export function formatDateTime(time: number) {
+    function p(s: number) {
+        return s.toString().padStart(2, "0");
+    }
+    let date = new Date(time);
+    let hours = date.getHours();
+    let minutes = date.getMinutes();
+    let seconds = date.getSeconds();
+    let ampm = hours >= 12 ? "PM" : "AM";
+    hours = hours % 12;
+    hours = hours ? hours : 12; // the hour '0' should be '12'
+    let strTime = p(hours) + ":" + p(minutes) + ":" + p(seconds) + " " + ampm;
+    return date.getFullYear() + "/" + p(date.getMonth() + 1) + "/" + p(date.getDate()) + " " + strTime;
+}

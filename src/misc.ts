@@ -228,7 +228,7 @@ export function throttleFunction<Args extends any[]>(
             afterCall(Date.now() + delay);
         }
     }
-    function afterCall(setNextAllowedCall: number | undefined) {
+    function afterCall(setNextAllowedCall: number | undefined, time = Date.now()) {
 
         // NOTE: Ignore error, we really shouldn't have any here
         if (setNextAllowedCall) {
@@ -237,7 +237,7 @@ export function throttleFunction<Args extends any[]>(
             if (nextAllowedCall === Number.POSITIVE_INFINITY) return;
         }
         if (!pendingArgs) return;
-        if (Date.now() > nextAllowedCall) {
+        if (time > nextAllowedCall) {
             let args = pendingArgs;
             pendingArgs = undefined;
             // Delay, so we don't turn a series of sequential calls to a series of nested calls
@@ -251,7 +251,7 @@ export function throttleFunction<Args extends any[]>(
                     pendingArgs = undefined;
                     doCall(args.args, args.promiseObj);
                 }
-            }, nextAllowedCall - Date.now());
+            }, nextAllowedCall - time);
         }
     }
     return function (...args: Args): Promise<void> {
@@ -266,7 +266,7 @@ export function throttleFunction<Args extends any[]>(
             return promise.promise;
         } else {
             pendingArgs = { args, promiseObj: promiseObj() };
-            afterCall(undefined);
+            afterCall(undefined, time);
             return pendingArgs.promiseObj.promise;
         }
     };
