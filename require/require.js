@@ -74,6 +74,7 @@
                 // request => resolvedPath
                 [request: string]: string;
             };
+            asyncRequests: { [request: string]: true };
             // NOTE: IF !allowclient && !serveronly, it might just mean we didn't add allowclient
             //  to the module yet. BUT, if serveronly, then we know for sure we don't want it client.
             //  So the messages and behavior will be different.
@@ -255,6 +256,9 @@
             if (typeof asyncIsFine !== "boolean") {
                 asyncIsFine = false;
             }
+            if (request in serializedModule.asyncRequests) {
+                asyncIsFine = true;
+            }
             if (request in builtInModuleExports) {
                 return builtInModuleExports[request];
             }
@@ -292,8 +296,8 @@
                         "color: red", "color: unset",
                         "color: red", "color: unset",
                     );
+                    debugger;
                 }
-                debugger;
                 return rootRequire(resolvedPath);
             }
 
@@ -427,7 +431,10 @@
 
             // Import children, as the children may be allowed clientside, and may have side-effects!
             if (!source) {
-                let requests = Object.keys(serializedModule.requests).filter(x => x !== "NOTALLOWEDCLIENTSIDE");
+                let requests = Object.keys(serializedModule.requests)
+                    .filter(x => x !== "NOTALLOWEDCLIENTSIDE")
+                    .filter(x => !(x in serializedModule.asyncRequests))
+                    ;
                 source = requests.map(id => `require(${JSON.stringify(id)});\n`).join("");
             }
 

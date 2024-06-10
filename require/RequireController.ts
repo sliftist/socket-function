@@ -53,6 +53,7 @@ export interface SerializedModule {
         // request => resolvedPath
         [request: string]: string;
     };
+    asyncRequests: { [request: string]: true };
     // NOTE: IF !allowclient && !serveronly, it might just mean we didn't add allowclient
     //  to the module yet. BUT, if serveronly, then we know for sure we don't want it client.
     //  So the messages and behavior will be different.
@@ -201,6 +202,7 @@ class RequireControllerBase {
                 seqNum: module.requireControllerSeqNum,
                 size: module.size,
                 version: module.version,
+                asyncRequests: module.asyncRequires,
             };
             let moduleObj = modules[module.filename];
             if (moduleObj.allowclient) {
@@ -271,6 +273,7 @@ class RequireControllerBase {
                     path: "",
                     paths: [],
                     requires: {},
+                    asyncRequires: {},
                     allowclient: true,
                     moduleContents: `console.warn(${JSON.stringify(error)})`,
                 };
