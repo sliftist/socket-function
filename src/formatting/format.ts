@@ -222,3 +222,12 @@ export function formatDateTime(time: number) {
     let strTime = p(hours) + ":" + p(minutes) + ":" + p(seconds) + " " + ampm;
     return date.getFullYear() + "/" + p(date.getMonth() + 1) + "/" + p(date.getDate()) + " " + strTime;
 }
+
+/** YYYY/MM/DD */
+export function formatDate(time: number) {
+    function p(s: number) {
+        return s.toString().padStart(2, "0");
+    }
+    let date = new Date(time);
+    return date.getFullYear() + "/" + p(date.getMonth() + 1) + "/" + p(date.getDate());
+}
