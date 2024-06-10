@@ -218,11 +218,16 @@ class RequireControllerBase {
             //      - And now it increases the size by much less, as we ignore any subtree which are entirely
             //          not allowed on the client.
             for (let request in module.requires) {
+
                 let requireResolvedPath = module.requires[request];
                 let requiredModule = require.cache[requireResolvedPath];
 
                 if (requiredModule) {
-                    addModule(requiredModule);
+                    // Only include synchronous modules. BUT, DO include the requests, so when/if the request is made
+                    //  it can be resolved correctly.
+                    if (!module.asyncRequires[request]) {
+                        addModule(requiredModule);
+                    }
                     moduleObj.requests[request] = requiredModule.filename;
                 } else {
                     moduleObj.requests[request] = "";
