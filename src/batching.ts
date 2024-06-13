@@ -11,7 +11,14 @@ import { MaybePromise } from "./types";
         - The ensures a prompt return, without resorting to setTimeout in the browser (which will cause
             the callback to be delayed a frame).
 */
-export type DelayType = number | "afterio" | "immediate" | "afterpromises";
+export type DelayType = (
+    number | "afterio" | "immediate" | "afterpromises"
+    // Waits for paint, usable in a loop. The first wait doesn't wait until the next
+    //  wait, but the second wait will.
+    | "paintLoop"
+    // Waits until after paint, by waiting twice.
+    | "afterPaint"
+)
 export function delay(delayTime: DelayType): Promise<void> {
     if (delayTime === "afterio") {
         return new Promise<void>(resolve => setImmediate(resolve));
@@ -25,6 +32,17 @@ export function delay(delayTime: DelayType): Promise<void> {
         } else {
             return delay("afterpromises");
         }
+    } else if (delayTime === "paintLoop") {
+        return (async () => {
+            await new Promise(resolve => requestAnimationFrame(resolve));
+        })();
+    } else if (delayTime === "afterPaint") {
+        return (async () => {
+            await new Promise(resolve => requestAnimationFrame(resolve));
+            // Before first paint
+            await new Promise(resolve => requestAnimationFrame(resolve));
+            // After first paint
+        })();
     } else {
         // NOTE: setTimeout can't wait this short of a time, so just setImmediate. This should be hard to distinguish
         //  anyways, as setImmediate (at least in nodejs), should happen after io, so... it should just work

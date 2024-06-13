@@ -127,17 +127,18 @@ export interface LogMeasureTableConfig {
     minTimeToLog?: number;
     // Defaults to 2
     mergeDepth?: number;
+    // Defaults to 10
+    maxTableEntries?: number;
 }
 
 export function logMeasureTable(
     profile: MeasureProfile,
     config?: LogMeasureTableConfig
 ) {
-    let { useTotalTime, name, thresholdInTable } = config || {};
-    if (thresholdInTable === undefined) {
-        thresholdInTable = 0.05;
-    }
+    let { useTotalTime, name } = config || {};
+    const thresholdInTable = config?.thresholdInTable ?? 0.05;
     let minTimeToLog = config?.minTimeToLog ?? 50;
+    const maxTableEntries = config?.maxTableEntries ?? 10;
 
     function getTime(entry: ProfileEntry) {
         return useTotalTime ? entry.totalTime : entry.ownTime;
@@ -188,11 +189,30 @@ export function logMeasureTable(
         return `${(value * 100).toFixed(2)}%`;
     }
 
-    entries = entries.slice(0, 10);
+    let remaining = entries.slice(maxTableEntries);
+    entries = entries.slice(0, maxTableEntries);
+    entries = entries.filter(entry => {
+        const include = getTime(entry).sum / totalTime >= thresholdInTable;
+        if (!include) {
+            remaining.push(entry);
+        }
+        return include;
+    });
+    entries.push({
+        name: "Other",
+        ownTime: createStatsValue(),
+        totalTime: createStatsValue(),
+        stillOpenCount: 0,
+    });
+    let remainingEntry = entries[entries.length - 1];
+    for (let entry of remaining) {
+        addToStats(remainingEntry.ownTime, entry.ownTime);
+        addToStats(remainingEntry.totalTime, entry.totalTime);
+        remainingEntry.stillOpenCount += entry.stillOpenCount;
+    }
     let maxNameLength = Math.max(...entries.map(x => x.name.length));
 
-    for (let entry of entries.slice(0, 10)) {
-        if (getTime(entry).sum / totalTime < thresholdInTable) break;
+    for (let entry of entries) {
         let output = "";
         output += `${blue(entry.name)}`;
         output += Array(maxNameLength + 4 - entry.name.length).fill(" ").join("");
