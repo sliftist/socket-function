@@ -231,3 +231,9 @@ export function formatDate(time: number) {
     let date = new Date(time);
     return date.getFullYear() + "/" + p(date.getMonth() + 1) + "/" + p(date.getDate());
 }
+
+export function formatPercent(value: number) {
+    if (Number.isNaN(value)) return "0%";
+    // 1 decimal point, so we have 5 characters (just like formatNumber returns 5 characters)
+    return Math.round(value * 1000) / 10 + "%";
+}
