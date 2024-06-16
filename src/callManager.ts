@@ -1,6 +1,6 @@
-import { CallerContext, CallType, ClientHookContext, FullCallType, HookContext, SocketExposedInterface, SocketExposedInterfaceClass, SocketExposedShape, SocketFunctionClientHook, SocketFunctionHook, SocketRegistered } from "../SocketFunctionTypes";
+import { CallerContext, CallType, ClientHookContext, FullCallType, FunctionFlags, HookContext, SocketExposedInterface, SocketExposedInterfaceClass, SocketExposedShape, SocketFunctionClientHook, SocketFunctionHook, SocketRegistered } from "../SocketFunctionTypes";
 import { _setSocketContext } from "../SocketFunction";
-import { isNode } from "./misc";
+import { entries, isNode } from "./misc";
 import debugbreak from "debugbreak";
 import { measureWrap } from "./profiling/measure";
 
@@ -15,6 +15,9 @@ let exposedClasses = new Set<string>();
 let globalHooks: SocketFunctionHook[] = [];
 let globalClientHooks: SocketFunctionClientHook[] = [];
 
+export function getCallFlags(call: CallType): FunctionFlags | undefined {
+    return classes[call.classGuid]?.shape[call.functionName];
+}
 export function shouldCompressCall(call: CallType) {
     return !!classes[call.classGuid]?.shape[call.functionName]?.compress;
 }
@@ -63,11 +66,26 @@ export function isDataImmutable(call: CallType) {
     return !!classes[call.classGuid]?.shape[call.functionName]?.dataImmutable;
 }
 
-export function registerClass(classGuid: string, controller: SocketExposedInterface, shape: SocketExposedShape) {
+export function registerClass(classGuid: string, controller: SocketExposedInterface, shape: SocketExposedShape, config?: {
+    noFunctionMeasure?: boolean;
+}) {
     if (classes[classGuid]) {
         throw new Error(`Class ${classGuid} already registered`);
     }
 
+    if (!config?.noFunctionMeasure) {
+        let keys = new Set([
+            ...Object.keys(controller),
+            ...Object.getOwnPropertyNames(controller.__proto__ || {}),
+        ]);
+        let niceClassName = controller.constructor.name || classGuid;
+        for (let functionName of keys) {
+            if (functionName === "constructor") continue;
+            let fnc = controller[functionName];
+            if (typeof fnc !== "function") continue;
+            controller[functionName] = measureWrap(fnc, `${niceClassName}().${functionName}`);
+        }
+    }
     classes[classGuid] = {
         controller,
         shape,

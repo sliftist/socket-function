@@ -22,13 +22,19 @@ export type SocketExposedInterfaceClass = {
     new(): unknown;
     prototype: unknown;
 };
+export type FunctionFlags = {
+    compress?: boolean;
+
+    /** Indicates with the same input, we give the same output, forever,
+     *      independent of code changes. This only works for data storage.
+     */
+    dataImmutable?: boolean;
+
+    /** Allows overriding SocketFunction.MAX_MESSAGE_SIZE for responses from this function. */
+    responseLimit?: number;
+};
 export type SocketExposedShape<ExposedType extends SocketExposedInterface = SocketExposedInterface> = {
-    [functionName in keyof ExposedType]?: {
-        compress?: boolean;
-        /** Indicates with the same input, we give the same output, forever,
-         *      independent of code changes. This only works for data storage.
-         */
-        dataImmutable?: boolean;
+    [functionName in keyof ExposedType]?: FunctionFlags & {
         hooks?: SocketFunctionHook<ExposedType>[];
         clientHooks?: SocketFunctionClientHook<ExposedType>[];
     };

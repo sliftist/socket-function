@@ -122,6 +122,7 @@ export function formatMaxDecimals(num: number, targetDigits: number, maxAbsolute
 
 /** Actually formats any number, including decimals, by using K, M and B suffixes to get smaller values
  *      TODO: Support uK, uM and uB suffixes for very small numbers?
+ *      <= 6 characters (<= 5 if positive)
  */
 export function formatNumber(count: number | undefined, maxAbsoluteValue?: number, noDecimal?: boolean, specialCurrency?: boolean): string {
     if (typeof count !== "number") return "0";
@@ -232,6 +233,7 @@ export function formatDate(time: number) {
     return date.getFullYear() + "/" + p(date.getMonth() + 1) + "/" + p(date.getDate());
 }
 
+/** <= 6 characters (<= 5 if positive) */
 export function formatPercent(value: number) {
     if (Number.isNaN(value)) return "0%";
     // 1 decimal point, so we have 5 characters (just like formatNumber returns 5 characters)

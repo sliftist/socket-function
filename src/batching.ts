@@ -33,16 +33,23 @@ export function delay(delayTime: DelayType): Promise<void> {
             return delay("afterpromises");
         }
     } else if (delayTime === "paintLoop") {
+        if (isNode()) {
+            return delay("immediate");
+        }
         return (async () => {
             await new Promise(resolve => requestAnimationFrame(resolve));
         })();
     } else if (delayTime === "afterPaint") {
-        return (async () => {
-            await new Promise(resolve => requestAnimationFrame(resolve));
-            // Before first paint
-            await new Promise(resolve => requestAnimationFrame(resolve));
-            // After first paint
-        })();
+        if (isNode()) {
+            return delay("immediate");
+        } else {
+            return (async () => {
+                await new Promise(resolve => requestAnimationFrame(resolve));
+                // Before first paint
+                await new Promise(resolve => requestAnimationFrame(resolve));
+                // After first paint
+            })();
+        }
     } else {
         // NOTE: setTimeout can't wait this short of a time, so just setImmediate. This should be hard to distinguish
         //  anyways, as setImmediate (at least in nodejs), should happen after io, so... it should just work

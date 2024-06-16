@@ -18,6 +18,7 @@ export function getNodeId(domain: string, port: number): string {
     return `${domain}:${port}`;
 }
 
+/** @deprecated, call getBrowserUrlNode instead, which does important additional checks. */
 export function getNodeIdFromLocation() {
     return SocketFunction.browserNodeId();
 }

@@ -61,7 +61,7 @@ export function measureWrap<T extends (...args: any[]) => any>(fnc: T, name?: st
         functionsSkipped++;
         return fnc;
     }
-    let usedName = name || fnc.name;
+    let usedName = name || fnc.name || fnc.toString().slice(0, 100).replaceAll(/\s/g, " ");
     return nameFunction(usedName, (function (this: any, ...args: unknown[]): unknown {
         if (outstandingProfiles.length === 0) {
             return fnc.apply(this, args);

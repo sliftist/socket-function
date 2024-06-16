@@ -1,6 +1,6 @@
 import { CallerContext, CallerContextBase, CallType, FullCallType } from "../SocketFunctionTypes";
 import * as ws from "ws";
-import { performLocalCall, shouldCompressCall } from "./callManager";
+import { getCallFlags, performLocalCall, shouldCompressCall } from "./callManager";
 import { convertErrorStackToError, formatNumberSuffixed, isNode, list } from "./misc";
 import { createWebsocketFactory, getTLSSocket } from "./websocketFactory";
 import { SocketFunction } from "../SocketFunction";
@@ -12,8 +12,10 @@ import { red, yellow } from "./formatting/logColors";
 import { isSplitableArray, markArrayAsSplitable } from "./fixLargeNetworkCalls";
 import { delay, runInSerial } from "./batching";
 import { formatNumber, formatTime } from "./formatting/format";
+import zlib from "zlib";
 import pako from "pako";
 import { setFlag } from "../require/compileFlags";
+import { measureFnc, measureWrap } from "./profiling/measure";
 setFlag(require, "pako", "allowclient", true);
 
 // NOTE: If it is too low, and too many servers disconnect, we can easily spend 100% of our time
@@ -321,6 +323,7 @@ export async function createCallFactory(
                     }
                 }
                 data = fitBuffers;
+                header.bufferCount = fitBuffers.length;
             } else {
                 throw new Error(`Cannot send large amounts of data unless we are returning Buffer or Buffer[]`);
             }
@@ -366,7 +369,7 @@ export async function createCallFactory(
                     let lenLeft = len;
                     let buffers: Buffer[] = [];
                     while (lenLeft > 0) {
-                        let buf = currentBuffers.pop();
+                        let buf = currentBuffers.shift();
                         if (!buf) {
                             throw new Error(`Not enough buffers received.`);
                         }
@@ -413,7 +416,7 @@ export async function createCallFactory(
         if (call.isReturn) {
             let callbackObj = pendingCalls.get(call.seqNum);
             if (time > SocketFunction.WIRE_WARN_TIME) {
-                console.log(red(`Slow parse, took ${time}ms to parse ${resultSize} bytes, for receieving result of call to ${callbackObj?.call.classGuid}.${callbackObj?.call.functionName}`));
+                console.log(red(`Slow parse, took ${time}ms to parse ${resultSize} bytes, for receiving result of call to ${callbackObj?.call.classGuid}.${callbackObj?.call.functionName}`));
             }
             if (!callbackObj) {
                 console.log(`Got return for unknown call ${call.seqNum} (created at time ${new Date(call.seqNum)})`);
@@ -468,14 +471,15 @@ export async function createCallFactory(
                 let { result, ...remaining } = response;
                 await sendWithHeader(result, { type: "Buffer[]", bufferCount: result.length, metadata: remaining });
             } else {
+                const LIMIT = getCallFlags(call)?.responseLimit || SocketFunction.MAX_MESSAGE_SIZE * 1.5;
                 let result: Buffer[] = await SocketFunction.WIRE_SERIALIZER.serialize(response);
                 let totalResultSize = result.map(x => x.length).reduce((a, b) => a + b, 0);
-                if (totalResultSize > SocketFunction.MAX_MESSAGE_SIZE * 1.5) {
+                if (totalResultSize > LIMIT) {
                     response = {
                         isReturn: true,
                         result: undefined,
                         seqNum: call.seqNum,
-                        error: new Error(`Response too large to send (${call.classGuid}.${call.functionName}, size: ${formatNumber(totalResultSize)} > ${formatNumber(SocketFunction.MAX_MESSAGE_SIZE)}). If you need to handle very large static data use some external service, such as Backblaze B2 or AWS S3. Or consider fragmenting data at an application level, because sending large data will cause large lag spikes for other clients using this server. Or, if absolutely required, set SocketFunction.MAX_MESSAGE_SIZE to a higher value.`).stack,
+                        error: new Error(`Response too large to send. Return Buffer[] to exceed the limits, or set responseLimit when registering the collection. ${call.classGuid}.${call.functionName}, size: ${formatNumber(totalResultSize)} > ${formatNumber(SocketFunction.MAX_MESSAGE_SIZE)}. If you need to handle very large static data use some external service, such as Backblaze B2 or AWS S3. Or, if absolutely required, set SocketFunction.MAX_MESSAGE_SIZE to a higher value.`).stack,
                     };
                     result = await SocketFunction.WIRE_SERIALIZER.serialize(response);
                 }
@@ -490,14 +494,18 @@ export async function createCallFactory(
             if (typeof message === "object" && "data" in message) {
                 message = message.data;
             }
+            // Extra clienside parsing is required
             if (!isNode()) {
-                if (message instanceof Blob) {
-                    // We need to force the results to be in serial, otherwise strings leapfrog
-                    //  ahead of buffers, which breaks things.
-                    message = Buffer.from(await clientsideSerial(message.arrayBuffer()));
-                } else {
-                    await clientsideSerial(Promise.resolve());
-                }
+                // Immediately start the arrayBuffer conversion. This should be fast, but...
+                //  maybe we will add more here, and so doing it in parallel might be useful.
+                let fixMessageBlob = (async () => {
+                    if (message instanceof Blob) {
+                        message = Buffer.from(await message.arrayBuffer());
+                    }
+                })();
+                // We need to force the results to be in serial, otherwise strings leapfrog
+                //  ahead of buffers, which breaks things.
+                await clientsideSerial(fixMessageBlob);
             }
             if (typeof message === "string") {
                 if (message.startsWith("{")) {
@@ -543,11 +551,13 @@ export async function createCallFactory(
             }
             throw new Error(`Unhandled data type ${typeof message}`);
         } catch (e: any) {
-            let message = e.stack || e.message || e;
+            let err = e.stack || e.message || e;
             // NOTE: I'm looking for all types of errors here (specifically, .send errors), in case
             //  there are errors I should be handling.
-            if (message.startsWith("Error: Cannot send data to") && message.includes("as the connection has closed")) {
+            if (err.startsWith("Error: Cannot send data to") && err.includes("as the connection has closed")) {
                 // This is fine, just ignore it
+            } else if (err.includes("The requested file could not be read, typically due to permission problems that have occurred after a reference to a file was acquired.")) {
+                console.error(`WebSocket data was dropped by the browser due to exceeding the Blob limit. Either you are about to run out of memory, or you hit the much lower Incognito Blob limit. This will likely break the application. To reset the memory you must close all tabs of this site. This is a bug/feature in chrome.`);
             } else {
                 debugbreak(2);
                 debugger;
@@ -559,16 +569,64 @@ export async function createCallFactory(
     return callFactory;
 }
 
+async function doStream(stream: GenericTransformStream, buffer: Buffer): Promise<Buffer> {
+    let reader = stream.readable.getReader();
+    let writer = stream.writable.getWriter();
+    let writePromise = writer.write(buffer);
+    let closePromise = writer.close();
 
-async function compressObj(obj: unknown): Promise<Buffer> {
+    let outputBuffers: Buffer[] = [];
+    while (true) {
+        let { value, done } = await reader.read();
+        if (done) {
+            await writePromise;
+            await closePromise;
+            return Buffer.concat(outputBuffers);
+        }
+        outputBuffers.push(Buffer.from(value));
+    }
+}
+async function unzipBase(buffer: Buffer): Promise<Buffer> {
+    if (isNode()) {
+        return new Promise((resolve, reject) => {
+            zlib.gunzip(buffer, (err: any, result: Buffer) => {
+                if (err) reject(err);
+                else resolve(result);
+            });
+        });
+    } else {
+        // NOTE: pako seems to be faster, at least clientside.
+        // TIMING: 700ms vs 1200ms
+        //  - This might just be faster for small files.
+        return Buffer.from(pako.inflate(buffer));
+        // @ts-ignore
+        // return await doStream(new DecompressionStream("gzip"), buffer);
+    }
+}
+async function zipBase(buffer: Buffer, level?: number): Promise<Buffer> {
+    if (isNode()) {
+        return new Promise((resolve, reject) => {
+            zlib.gzip(buffer, { level }, (err: any, result: Buffer) => {
+                if (err) reject(err);
+                else resolve(result);
+            });
+        });
+    } else {
+        // @ts-ignore
+        return await doStream(new CompressionStream("gzip"), buffer);
+    }
+}
+
+const compressObj = measureWrap(async function wireCallCompress(obj: unknown): Promise<Buffer> {
     let buffers = await SocketFunction.WIRE_SERIALIZER.serialize(obj);
     let lengthBuffer = Buffer.from((new Float64Array(buffers.map(x => x.length))).buffer);
     let buffer = Buffer.concat([lengthBuffer, ...buffers]);
-    return Buffer.from(pako.gzip(buffer));
-}
-async function decompressObj(obj: Buffer): Promise<unknown> {
+    let result = await zipBase(buffer);
+    return result;
+});
+const decompressObj = measureWrap(async function wireCallDecompress(obj: Buffer): Promise<unknown> {
     try {
-        let buffer = Buffer.from(pako.ungzip(obj));
+        let buffer = await unzipBase(obj);
         let lengthBuffer = buffer.slice(0, 8);
         let lengths = new Float64Array(lengthBuffer.buffer, lengthBuffer.byteOffset, lengthBuffer.byteLength / 8);
         let buffers: Buffer[] = [];
@@ -586,4 +644,4 @@ async function decompressObj(obj: Buffer): Promise<unknown> {
         debugger;
         throw e;
     }
-}
+});

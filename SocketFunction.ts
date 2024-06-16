@@ -91,6 +91,13 @@ export class SocketFunction {
             /** @noAutoExpose If true SocketFunction.expose(Controller) must be called explicitly. */
             noAutoExpose?: boolean;
             statics?: Statics;
+            /** Skip timing functions calls. Useful if a lot of functions have wait time that
+                    is unrelated to processing, and therefore their timings won't be useful.
+                    - Also useful if our auto function wrapping code is breaking functionality,
+                        such as if you have a singleton function which you compare with ===,
+                        which will breaks because we replaced it with a wrapped measure function.
+            */
+            noFunctionMeasure?: boolean;
         }
     ): SocketRegistered<ExtractShape<ClassInstance, Shape>> & Statics {
         let getDefaultHooks = defaultHooksFnc && lazy(defaultHooksFnc);
@@ -108,7 +115,9 @@ export class SocketFunction {
         });
 
         void Promise.resolve().then(() => {
-            registerClass(classGuid, instance as SocketExposedInterface, getShape());
+            registerClass(classGuid, instance as SocketExposedInterface, getShape(), {
+                noFunctionMeasure: config?.noFunctionMeasure,
+            });
         });
 
         let nodeProxy = getCallProxy(classGuid, async (call) => {

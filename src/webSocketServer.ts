@@ -119,7 +119,7 @@ export async function startSocketServer(
                     let host = new URL("ws://" + request.headers["host"]).hostname;
                     let origin = new URL(originHeader).hostname;
                     if (host !== origin && !allowedHostnames.has(origin)) {
-                        throw new Error(`Invalid cross domain request, ${JSON.stringify(host)} !== ${JSON.stringify(origin)} (also not config.allowedHostnames ${JSON.stringify(config.allowHostnames)})`);
+                        throw new Error(`Invalid cross domain request, ${JSON.stringify(host)} !== ${JSON.stringify(origin)} (also not in config.allowedHostnames ${JSON.stringify(config.allowHostnames)})`);
                     }
                 } catch (e) {
                     console.error(e);
