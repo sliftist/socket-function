@@ -1,4 +1,5 @@
 import { SocketFunction } from "../SocketFunction";
+import { blue, green, red, yellow } from "../src/formatting/logColors";
 import { isNode } from "../src/misc";
 
 module.allowclient = true;
@@ -121,6 +122,12 @@ async function updateTimeOffset() {
             }
 
             let prevOffset = trueTimeOffset;
+            let offsetColored = (
+                Math.abs(offset) > 600 && red(Math.round(offset) + "ms")
+                || Math.abs(offset) > 300 && yellow(Math.round(offset) + "ms")
+                || green(Math.round(offset) + "ms")
+            );
+            console.log(`${blue("Synchronized time")}, local clock was off by ${offsetColored}`);
             for (let i = 0; i < currentSmearCount; i++) {
                 let fraction = (i + 1) / currentSmearCount;
                 trueTimeOffset = prevOffset * (1 - fraction) + offset * fraction;

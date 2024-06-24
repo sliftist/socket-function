@@ -1060,10 +1060,10 @@ typedev@^0.1.3:
     debugbreak "^0.6.3"
     eslint "^8.18.0"
 
-typenode@^5.3.11:
-  version "5.3.11"
-  resolved "https://registry.yarnpkg.com/typenode/-/typenode-5.3.11.tgz#17ce3c0cf332c000b1d8cbc4dd63fab445a33d7f"
-  integrity sha512-RtBq/vYEndC/q+u5GdJAlSheXGyNNk6PLhlri7oQ8VVQVLqz9LE8V9/VfKWOLfoo1KAkIXkiTu2MMVms6LyX0w==
+typenode@^5.4.1:
+  version "5.4.1"
+  resolved "https://registry.yarnpkg.com/typenode/-/typenode-5.4.1.tgz#9d01042035c828a980817ff29e9e77c68acd0dc0"
+  integrity sha512-mFIroz9fqziUv8FNe4x+YO7Y/PqDMqP7aSzwCQPqjwOSWnQ58srZW4af2C70xFy+t0uqZz3BqS2xgbLzc1eHrQ==
   dependencies:
     "@types/pegjs" "^0.10.3"
     source-map-support "https://github.com/7rulnik/node-source-map-support"
@@ -1098,10 +1098,10 @@ wrappy@1:
   resolved "https://registry.yarnpkg.com/wrappy/-/wrappy-1.0.2.tgz#b5243d8f3ec1aa35f1364605bc0d1036e30ab69f"
   integrity sha512-l4Sp/DRseor9wL6EvV2+TuQn63dMkPjZ/sp9XkghTEbV9KlPS1xUsZ3u7/IQO4wxtcFB4bgpQPRcR3QCvezPcQ==
 
-ws@^8.8.0:
-  version "8.8.1"
-  resolved "https://registry.yarnpkg.com/ws/-/ws-8.8.1.tgz#5dbad0feb7ade8ecc99b830c1d77c913d4955ff0"
-  integrity sha512-bGy2JzvzkPowEJV++hF07hAD6niYSr0JzBNo/J29WsB57A2r7Wlc1UFcTR9IzrPvuNVO4B8LGqF8qcpsVOhJCA==
+ws@^8.17.1:
+  version "8.17.1"
+  resolved "https://registry.yarnpkg.com/ws/-/ws-8.17.1.tgz#9293da530bb548febc95371d90f9c878727d919b"
+  integrity sha512-6XQFvXTkbfUOZOKKILFG1PDK2NDQs4azKQl26T0YS5CxqWLgXajbPZ+h4gZekJyRqFU8pvnbAbbs/3TgRPy+GQ==
 
 yallist@^4.0.0:
   version "4.0.0"

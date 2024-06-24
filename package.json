@@ -14,7 +14,7 @@
 		"pako": "^2.1.0",
 		"preact": "^10.10.6",
 		"typenode": "^5.4.1",
-		"ws": "^8.8.0"
+		"ws": "^8.17.1"
 	},
 	"optionalDependencies": {
 		"rdtsc-now": "^0.4.2"
