@@ -3,14 +3,17 @@ export function parseTLSHello(buffer: Buffer): {
         type: number;
         data: Buffer;
     }[];
+    missingBytes: number;
 } {
     let output: {
         extensions: {
             type: number;
             data: Buffer;
         }[];
+        missingBytes: number;
     } = {
-        extensions: []
+        extensions: [],
+        missingBytes: 0
     };
 
     try {
@@ -50,6 +53,7 @@ export function parseTLSHello(buffer: Buffer): {
         pos += compressionLength;
 
         let extensionsLength = readShort();
+        output.missingBytes = contentLength - (pos + extensionsLength);
         let extensionsEnd = pos + extensionsLength;
         while (pos < extensionsEnd) {
             let extensionType = readShort();

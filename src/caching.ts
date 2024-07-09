@@ -37,8 +37,10 @@ export function cacheEmptyArray<T>(array: T[]): T[] {
     return array;
 }
 
-export function cache<Output, Key>(getValue: (key: Key) => Output): {
-    (key: Key): Output;
+export function cache<Output, Key, Untracked extends unknown[]>(
+    getValue: (key: Key, ...untracked: Untracked) => Output
+): {
+    (key: Key, ...untracked: Untracked): Output;
     // NOTE: If you want to clear all, just make a new cache!
     clear(key: Key): void;
     clearAll(): void;
@@ -48,7 +50,7 @@ export function cache<Output, Key>(getValue: (key: Key) => Output): {
 } {
     let startingCalculating = new Set<Key>();
     let values = new Map<Key, Output>();
-    function cache(input: Key) {
+    function cache(input: Key, ...untracked: Untracked) {
         let key = input;
         if (values.has(key)) {
             return values.get(key) as any;
@@ -59,7 +61,7 @@ export function cache<Output, Key>(getValue: (key: Key) => Output): {
             return undefined;
         }
         startingCalculating.add(key);
-        let value = getValue(input);
+        let value = getValue(input, ...untracked);
         values.set(key, value);
         return value;
     }

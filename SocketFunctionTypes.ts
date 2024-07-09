@@ -37,6 +37,7 @@ export type SocketExposedShape<ExposedType extends SocketExposedInterface = Sock
     [functionName in keyof ExposedType]?: FunctionFlags & {
         hooks?: SocketFunctionHook<ExposedType>[];
         clientHooks?: SocketFunctionClientHook<ExposedType>[];
+        noDefaultHooks?: boolean;
     };
 };
 

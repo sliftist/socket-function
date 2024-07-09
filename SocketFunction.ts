@@ -108,7 +108,11 @@ export class SocketFunction {
             for (let value of Object.values(shape)) {
                 if (!value) continue;
                 value.clientHooks = [...(defaultHooks?.clientHooks || []), ...(value.clientHooks || [])];
-                value.hooks = [...(defaultHooks?.hooks || []), ...(value.hooks || [])];
+                if (value.noDefaultHooks) {
+                    value.hooks = [...(value.hooks || [])];
+                } else {
+                    value.hooks = [...(defaultHooks?.hooks || []), ...(value.hooks || [])];
+                }
                 value.dataImmutable = defaultHooks?.dataImmutable ?? value.dataImmutable;
             }
             return shape as any as SocketExposedShape;

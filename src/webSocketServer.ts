@@ -58,7 +58,12 @@ export async function startSocketServer(
         let httpServerPromise = new Promise<https.Server>(r => onHttpServer = r);
         let lastOptions!: https.ServerOptions;
         await watchOptions(value => {
-            lastOptions = { ...value, ca: getTrustedCertificates() };
+            lastOptions = {
+                ...value,
+                ca: getTrustedCertificates(),
+                // Attempt to disable sessions, because they make SNI significantly harder to parse.
+                secureOptions: require("node:constants").SSL_OP_NO_TICKET,
+            };
             if (!httpsServerLast) {
                 httpsServerLast = https.createServer(lastOptions);
             } else {
@@ -167,18 +172,17 @@ export async function startSocketServer(
     });
 
     let realServer = net.createServer(socket => {
-        // NOTE: ONCE is used, so we only look at the first buffer, and then after that
-        //  we pipe. This should be very efficient, as pipe has insane throughput
-        //  (100s of MB/s, easily, even on a terrible machine).
-        socket.once("data", buffer => {
+        function handleTLSHello(buffer: Buffer, packetCount: number): void | "more" {
             // All HTTPS requests start with 22, and no HTTP requests start with 22,
             //  so we just need to read the first byte.
-
             let server: https.Server | http.Server;
             if (buffer[0] !== 22) {
                 server = httpServer;
             } else {
                 let data = parseTLSHello(buffer);
+                if (data.missingBytes > 0) {
+                    return "more";
+                }
                 let sni = data.extensions.filter(x => x.type === SNIType).flatMap(x => parseSNIExtension(x.data))[0];
                 if (!SocketFunction.silent) {
                     console.log(`Received TCP connection with SNI ${JSON.stringify(sni)}`);
@@ -189,7 +193,21 @@ export async function startSocketServer(
             // NOTE: Messages aren't dequeued until the current handler finishes, so we don't need to pause the socket or anything.
             server.emit("connection", socket);
             socket.unshift(buffer);
-        });
+        }
+        let buffers: Buffer[] = [];
+        function getNextData() {
+            // NOTE: ONCE is used, so we only look at the first buffer, and then after that
+            //  we pipe. This should be very efficient, as pipe has insane throughput
+            //  (100s of MB/s, easily, even on a terrible machine).
+            socket.once("data", buffer => {
+                buffers.push(buffer);
+                let result = handleTLSHello(Buffer.concat(buffers), buffers.length);
+                if (result === "more") {
+                    getNextData();
+                }
+            });
+        }
+        getNextData();
         socket.on("error", (e) => {
             console.error(`Exposed socket error, ${e.stack}`);
         });
