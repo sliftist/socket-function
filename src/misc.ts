@@ -324,6 +324,14 @@ export function compare(lhs: unknown, rhs: unknown): number {
         return compare(typeof lhs, typeof rhs);
     }
     if (lhs === rhs) return 0;
+    if (typeof lhs === "number") {
+        if (Number.isNaN(lhs)) {
+            if (Number.isNaN(rhs)) return 0;
+            return -1;
+        } else {
+            if (Number.isNaN(rhs)) return +1;
+        }
+    }
     if (lhs as any < (rhs as any)) return -1;
     return 1;
 }
