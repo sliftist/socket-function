@@ -1,7 +1,7 @@
 import { CallerContext, CallerContextBase, CallType, FullCallType } from "../SocketFunctionTypes";
 import * as ws from "ws";
 import { getCallFlags, performLocalCall, shouldCompressCall } from "./callManager";
-import { convertErrorStackToError, formatNumberSuffixed, isNode, list } from "./misc";
+import { convertErrorStackToError, formatNumberSuffixed, isBufferType, isNode, list } from "./misc";
 import { createWebsocketFactory, getTLSSocket } from "./websocketFactory";
 import { SocketFunction } from "../SocketFunction";
 import * as tls from "tls";
@@ -16,6 +16,7 @@ import zlib from "zlib";
 import pako from "pako";
 import { setFlag } from "../require/compileFlags";
 import { measureFnc, measureWrap } from "./profiling/measure";
+import { MaybePromise } from "./types";
 setFlag(require, "pako", "allowclient", true);
 
 // NOTE: If it is too low, and too many servers disconnect, we can easily spend 100% of our time
@@ -53,7 +54,7 @@ export interface CallFactory {
 export interface SenderInterface {
     nodeId?: string;
     // Only set AFTER "open" (if set at all, as in the browser we don't have access to the socket).
-    socket?: tls.TLSSocket;
+    _socket?: tls.TLSSocket;
 
     send(data: string | Buffer): void;
 
@@ -203,8 +204,11 @@ export async function createCallFactory(
                     console.log(`SIZE\t${(formatNumberSuffixed(resultSize) + "B").padEnd(4, " ")}\tREMOTE CALL\t${call.classGuid}.${call.functionName}${fncHack} at ${Date.now()}`);
                 }
             }
-            await send(data);
-
+            // If sending OR resultPromise throws, we want to error out. This solves some issues with resultPromise
+            //      erroring out first, which is before we await it, which makes NodeJS angry (unhandled promise rejection).
+            //      Also, technically, we could receive the result before we finish sending, in which case, we might
+            //      as well return it immediately.
+            await Promise.race([send(data), resultPromise]);
             return await resultPromise;
         }
     };
@@ -248,12 +252,12 @@ export async function createCallFactory(
             // NOTE: No more logging, as we throw, so the caller should be logging the
             //  error (or swallowing it, if that is what it wants to do).
             //console.log(`Websocket error for ${niceConnectionName}`, e.message);
-            onClose(`Connection error for ${niceConnectionName}: ${e.message}`);
+            onClose(new Error(`Connection error for ${niceConnectionName}: ${e.message}`).stack!);
         });
 
         newWebSocket.addEventListener("close", async () => {
             //console.log(`Websocket closed ${niceConnectionName}`);
-            onClose(`Connection closed to ${niceConnectionName}`);
+            onClose(new Error(`Connection closed to ${niceConnectionName}`).stack!);
         });
 
         newWebSocket.addEventListener("message", onMessage);
@@ -271,9 +275,10 @@ export async function createCallFactory(
                 newWebSocket.addEventListener("close", () => resolve());
                 newWebSocket.addEventListener("error", () => resolve());
             });
-        } else if (newWebSocket.readyState !== 1 /* OPEN */) {
-            onClose(`Websocket received in closed state`);
+        } else if (newWebSocket.readyState === 1 /* OPEN */) {
             callFactory.isConnected = true;
+        } else {
+            onClose(new Error(`Websocket received in closed state`).stack!);
         }
     }
 
@@ -287,6 +292,7 @@ export async function createCallFactory(
         bufferLengths?: number[];
         metadata: Omit<InternalReturnType, "result">;
     };
+    let sendInSerial = runInSerial(async (val: () => Promise<void>) => val());
     async function sendRaw(data: (string | Buffer)[]) {
         if (!webSocketPromise) {
             if (canReconnect) {
@@ -296,9 +302,30 @@ export async function createCallFactory(
             }
         }
         let webSocket = await webSocketPromise;
-        for (let d of data) {
-            webSocket.send(d);
-        }
+        await sendInSerial(async () => {
+            for (let d of data) {
+                if (d.length > 1000 * 1000 * 10) {
+                    console.log(`Sending large packet ${formatNumber(d.length)}B to ${nodeId} at ${Date.now()}`);
+                }
+
+                // NOTE: If our latency is 500ms, with 10MB/s, then we need a high water
+                //  mark of at least 5MB, otherwise our connection is slowed down.
+                //  - Using the actual high water mark is too difficult, as we receive incoming connections.
+                //      This is also easier to configure, and we can dynamically change it if we have to.
+                // NOTE: In practice we only hit this when sending large Buffers (~30MB), so low values
+                //  are equivalent to waiting for drain. We want to avoid waiting for drain, so we use a high value.
+                const maxWriteBuffer = 128 * 1024 * 1024;
+                webSocket.send(d);
+
+                let socket = webSocket._socket;
+                if (socket) {
+                    while (socket.writableLength > maxWriteBuffer) {
+                        // NOTE: Waiting 1ms probably waits more like 16ms.
+                        await new Promise(r => setTimeout(r, 1));
+                    }
+                }
+            }
+        });
     }
     async function send(data: Buffer[]) {
         await sendRaw([
@@ -538,6 +565,9 @@ export async function createCallFactory(
                 return;
             }
             if (message instanceof Buffer) {
+                if (message.byteLength > 1000 * 1000 * 10) {
+                    console.log(`Received large packet ${formatNumber(message.byteLength)}B at ${Date.now()}`);
+                }
                 if (!pendingCall) {
                     throw new Error(`Received data without size`);
                 }

@@ -427,13 +427,14 @@ async function generateAndVerifyParser() {
     var module = { exports: {} };
     eval(parserSource);
     const parser = module.exports as any;
-    function verify(text: string) {
+    function verify(text: string, forcedObj?: unknown) {
         var parsed = parser.parse(text);
         var result = JSON.stringify(parsed);
-        let realResult = JSON.stringify(eval("(" + text + ")"));
+        let realResult = forcedObj ?? JSON.stringify(eval("(" + text + ")"));
         if (result !== realResult) {
             throw new Error(`Failed to parse: ${text} should be ${realResult}, was ${result}`);
         }
+        console.log("Parsed correctly: ", text);
     }
 
     verify(`
@@ -465,6 +466,20 @@ async function generateAndVerifyParser() {
         // Single line comment
         list2: [1,],
         // list3: [3],
+    }
+    `);
+    // Multiline double quote strings
+    verify(`
+    {
+        value: "a
+b"
+    }
+    `, JSON.stringify({ value: "a\nb" }));
+
+    // Single quotes
+    verify(`
+    {
+        value: 'a'
     }
     `);
 }

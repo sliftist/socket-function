@@ -7,7 +7,6 @@ import { getNodeIdLocation } from "./nodeCache";
 import debugbreak from "debugbreak";
 import { SocketFunction } from "../SocketFunction";
 
-
 export function getTLSSocket(webSocket: ws.WebSocket) {
     return (webSocket as any)._socket as tls.TLSSocket;
 }
@@ -37,14 +36,21 @@ export function createWebsocketFactory(): (nodeId: string) => SenderInterface {
             if (!SocketFunction.silent) {
                 console.log(`Connecting to ${address}:${port}`);
             }
-            let webSocket = new ws.WebSocket(`wss://${address}:${port}`, {
-                ca: getTrustedCertificates()
+            let webSocket = new ws.WebSocket(`wss://${address}:${port}`, undefined, {
+                ca: getTrustedCertificates(),
+                // createConnection(options, oncreate) {
+                //     // NOTE: If our latency is 500ms, with 10MB/s, then we need a high water
+                //     //  mark of at least 5MB, otherwise our connection is slowed down.
+                //     //(options as any).writableHighWaterMark = 5 * 1024 * 1024;
+                //     return tls.connect(options as any, oncreate as any);
+                // },
             });
-            let result = Object.assign(webSocket, { socket: undefined as tls.TLSSocket | undefined });
-            webSocket.once("upgrade", e => {
-                result.socket = e.socket as tls.TLSSocket;
-            });
-            return result;
+
+            // NOTE: Little setup is done here, because Sometimes websockets are created here,
+            //      and sometimes via incoming connections, We should do most setup in
+            //      CallFactory.ts:initializeWebsocket
+
+            return webSocket;
         };
     }
 }

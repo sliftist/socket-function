@@ -19,7 +19,11 @@ export type DelayType = (
     // Waits until after paint, by waiting twice.
     | "afterPaint"
 )
-export function delay(delayTime: DelayType): Promise<void> {
+export function delay(
+    delayTime: DelayType,
+    // Delays < 10ms become "immediate"
+    immediateShortDelays?: "immediateShortDelays"
+): Promise<void> {
     if (delayTime === "afterio") {
         return new Promise<void>(resolve => setImmediate(resolve));
     } else if (delayTime === "afterpromises") {
@@ -51,15 +55,26 @@ export function delay(delayTime: DelayType): Promise<void> {
             })();
         }
     } else {
-        // NOTE: setTimeout can't wait this short of a time, so just setImmediate. This should be hard to distinguish
-        //  anyways, as setImmediate (at least in nodejs), should happen after io, so... it should just work
-        //  (the only difference is there will be less unnecessary delay).
-        // NOTE: THIS DOES break certain cases where io is depending on true delay, and by only waiting a microtick
-        //  we don't give it a chance. But... we should just handle those cases explicitly, via an explicit "afterio".
-        if (delayTime < 10) {
+
+        if (delayTime < 10 && immediateShortDelays) {
+            // NOTE: setTimeout can't wait this short of a time, so just setImmediate. This should be hard to distinguish
+            //  anyways, as setImmediate (at least in nodejs), should happen after io, so... it should just work
+            //  (the only difference is there will be less unnecessary delay).
+            // NOTE: THIS DOES break certain cases where io is depending on true delay, and by only waiting a microtick
+            //  we don't give it a chance. But... we should just handle those cases explicitly, via an explicit "afterio".
             return delay("immediate");
         }
-        return new Promise<void>(resolve => setTimeout(resolve, delayTime));
+        // NOTE: We check Date.now() and wait longer if setTimeout didn't wait long enough.
+        return (async () => {
+            let targetTime = Date.now() + delayTime;
+            while (true) {
+                let timeToWait = targetTime - Date.now();
+                await new Promise<void>(resolve => setTimeout(resolve, timeToWait));
+                if (Date.now() >= targetTime) {
+                    break;
+                }
+            }
+        })();
     }
 }
 
@@ -135,7 +150,7 @@ export function batchFunction<Arg, Result = void>(
         let args: Arg[] = [arg];
         let promise = Promise.resolve().then(async () => {
             await curPrevPromise;
-            await delay(curDelay);
+            await delay(curDelay, "immediateShortDelays");
             // Reset batching, as we once we start the function we can't accept args. `prevPromise` will block
             //  the next batch from starting before we finish.
             batching = undefined;

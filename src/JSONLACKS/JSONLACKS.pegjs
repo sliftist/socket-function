@@ -212,13 +212,32 @@ zero
 // ----- 7. Strings -----
 
 string "string"
-  = quotation_mark chars:char* quotation_mark { return chars.join(""); }
+  = quotation_mark chars:char_double_quote* quotation_mark { return chars.join(""); }
+  / single_quotation_mark chars:char_single_quote* single_quotation_mark { return chars.join(""); }
 
-char
-  = unescaped
+char_double_quote
+  = unescaped_double_quote
   / escape
     sequence:(
-        '"'
+        quotation_mark
+      / "\\"
+      / "/"
+      / "b" { return "\b"; }
+      / "f" { return "\f"; }
+      / "n" { return "\n"; }
+      / "r" { return "\r"; }
+      / "t" { return "\t"; }
+      / "u" digits:$(HEXDIG HEXDIG HEXDIG HEXDIG) {
+          return String.fromCharCode(parseInt(digits, 16));
+        }
+    )
+    { return sequence; }
+
+char_single_quote
+  = unescaped_single_quote
+  / escape
+    sequence:(
+        single_quotation_mark
       / "\\"
       / "/"
       / "b" { return "\b"; }
@@ -238,8 +257,14 @@ escape
 quotation_mark
   = '"'
 
-unescaped
-  = [^\0-\x1F\x22\x5C]
+single_quotation_mark
+  = "\x27"
+
+// End on quote, or special character? BUT, allow \n
+unescaped_double_quote
+  = [^\0-\x09\x0B-\x1F\x22\x5C]
+unescaped_single_quote
+  = [^\0-\x09\x0B-\x1F\x27\x5C]
 
 // ----- Core ABNF Rules -----
 
