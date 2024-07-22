@@ -14,5 +14,6 @@ export const red = ansiHSL.bind(null, 0, 100, lightness);
 export const green = (text: string) => `\x1b[32m${text}\x1b[0m`;
 export const yellow = (text: string) => `\x1b[33m${text}\x1b[0m`;
 export const white = ansiHSL.bind(null, 0, 0, 80);
+export const gray = ansiHSL.bind(null, 0, 0, 50);
 
 export const magenta = (text: string) => `\x1b[35m${text}\x1b[0m`;

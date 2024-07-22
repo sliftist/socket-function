@@ -159,43 +159,44 @@ export function deepCloneJSON<T>(obj: T): T {
     return JSON.parse(JSON.stringify(obj));
 }
 
-
-
-export interface PromiseObj<T = void> {
-    resolve: (value: T | Promise<T>) => void;
-    reject: (error: any) => void;
-    promise: Promise<T>;
-    value: { value?: T; error?: string } | undefined;
+export class PromiseObj<T = void> {
+    public promise: Promise<T>;
+    public value: { value?: T; error?: string } | undefined;
     /** Resolve called does not mean the value is ready, as it may be resolved with a promise. */
-    resolveCalled?: boolean;
+    public resolveCalled?: boolean;
+
+    public resolve(value: T | Promise<T>) {
+        this.resolveCalled = true;
+        if (typeof value === "object" && value !== null && value instanceof Promise) {
+            value.then(
+                value => this.value = { value },
+                error => this.value = { error },
+            );
+        } else {
+            this.value = { value };
+        }
+        this.baseResolve(value);
+    }
+    public reject(error: any) {
+        this.baseReject(error);
+    }
+
+    private baseResolve!: (value: T | Promise<T>) => void;
+    private baseReject!: (error: any) => void;
+    constructor() {
+        this.promise = new Promise<T>((resolve, reject) => {
+            this.baseResolve = resolve;
+            this.baseReject = reject;
+        });
+        this.promise.then(
+            value => this.value = { value },
+            error => this.value = { error }
+        );
+    }
 }
 
 export function promiseObj<T = void>(): PromiseObj<T> {
-    let resolve!: (value: T | Promise<T>) => void;
-    let reject!: (error: any) => void;
-    let promise = new Promise<T>((_resolve, _reject) => {
-        resolve = _resolve;
-        reject = _reject;
-    });
-    let obj: PromiseObj<T> = {
-        resolve(value: T | Promise<T>) {
-            obj.resolveCalled = true;
-            if (typeof value === "object" && value !== null && value instanceof Promise) {
-                value.then(
-                    value => obj.value = { value },
-                    error => obj.value = { error },
-                );
-            } else {
-                obj.value = { value };
-            }
-            resolve(value);
-        },
-        reject,
-        promise,
-        value: undefined
-    };
-    promise.then(value => obj.value = { value }, error => obj.value = { error });
-    return obj;
+    return new PromiseObj<T>();
 }
 
 
@@ -297,7 +298,19 @@ export function sort<T>(arr: T[], sortKey: (obj: T) => unknown) {
     return arr;
 }
 
-// NOTE: If there are duplicates, returns the first match.
+export function binarySearchBasic<T, V>(array: T[], getVal: (val: T) => V, searchValue: V): number {
+    return binarySearchIndex(array.length, i => compare(getVal(array[i]), searchValue));
+}
+
+/**
+ *  Searches indexes, allowing you to query structures that aren't arrays. To search an array, use:
+ *      `binarySearchIndex(array.length, i => compare(array[i], searchValue))`
+ * 
+ *      NOTE: If there are duplicates, returns the first match.
+ * 
+ *      NOTE: If the value can't be found, returns the bitwise negation of the index where it should be inserted.
+ *          - If you just want the index which is >=, use `if(index < 0) index = ~index;`
+ */
 export function binarySearchIndex(listCount: number, compare: (lhsIndex: number) => number): number {
     if (listCount === 0) {
         return ~0;
