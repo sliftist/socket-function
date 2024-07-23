@@ -11,12 +11,14 @@ import { parseSNIExtension, parseTLSHello, SNIType } from "./tlsParsing";
 import debugbreak from "debugbreak";
 import { getNodeId } from "./nodeCache";
 import crypto from "crypto";
-import { Watchable } from "./misc";
-import { delay, runInfinitePoll } from "./batching";
-import { magenta } from "./formatting/logColors";
+import { Watchable, timeInHour } from "./misc";
+import { delay, runInfinitePoll, runInfinitePollCallAtStart } from "./batching";
+import { magenta, red } from "./formatting/logColors";
 import { yellow } from "./formatting/logColors";
 import { green } from "./formatting/logColors";
 import { formatTime } from "./formatting/format";
+import { getExternalIP, testTCPIsListening } from "./networking";
+import { forwardPort } from "./forwardPort";
 
 export type SocketServerConfig = (
     https.ServerOptions & {
@@ -30,6 +32,12 @@ export type SocketServerConfig = (
         // public sets ip to "0.0.0.0", otherwise it defaults to "127.0.0.1", which
         //  causes the server to only accept local connections.
         public?: boolean;
+        /** Tries forwarding ports (using UPnP), if we detect they aren't externally reachable.
+         *      - This causes an extra request and delay during startup, so should only be used
+         *          during development.
+         *      - Ignored if public is false
+        */
+        autoForwardPort?: boolean;
         ip?: string;
 
         // NOTE: Any same origin accesses are allowed (header.origin === header.host)
@@ -214,49 +222,66 @@ export async function startSocketServer(
     });
 
 
-    let listenPromise = new Promise<void>((resolve, error) => {
-        realServer.on("listening", () => {
-            resolve();
-        });
-        realServer.on("error", e => {
-            error(e);
-        });
-    });
-
     let host = config.public ? "0.0.0.0" : "127.0.0.1";
     if (config.ip) {
         host = config.ip;
     }
 
     let port = config.port;
-    async function isPortInUse(port: number): Promise<boolean> {
-        return new Promise<boolean>((resolve, reject) => {
-            let server = net.createServer();
-            server.listen(port, host)
-                .on("listening", function () {
-                    server.close();
-                    resolve(false);
-                }).on("close", function () {
-                    resolve(true);
-                }).on("error", function (e) {
-                    resolve(true);
-                });
-        });
-    }
-    if (config.useAvailablePortIfPortInUse && port) {
-        if (await isPortInUse(port)) {
-            port = 0;
-        }
-    }
-
     if (!SocketFunction.silent) {
         console.log(yellow(`Trying to listening on ${host}:${port}`));
     }
-    realServer.listen(port, host);
 
-    await listenPromise;
+    // Return true if we are listening, false if the address is in use, and throws on other errors
+    async function waitUntilListening() {
+        return await new Promise<boolean>((resolve, reject) => {
+            if (realServer.listening) {
+                resolve(true);
+                return;
+            }
+            realServer.once("error", e => {
+                if (e.message.includes("EADDRINUSE")) {
+                    resolve(true);
+                } else {
+                    reject(e);
+                }
+            });
+            realServer.once("listening", () => {
+                resolve(false);
+            });
+        });
+    }
 
+    if (config.useAvailablePortIfPortInUse && port) {
+        realServer.listen(port, host);
+        let isListening = await waitUntilListening();
+        if (!isListening) {
+            port = 0;
+            realServer.listen(port, host);
+        }
+    } else {
+        realServer.listen(port, host);
+    }
+
+    await waitUntilListening();
     port = (realServer.address() as net.AddressInfo).port;
+
+    if (config.autoForwardPort && config.public) {
+        // let externalIP = await getExternalIP();
+        // let isListening = await testTCPIsListening(externalIP, port);
+        // if (!isListening) {
+        //     console.log(magenta(`Port ${port} is not externally reachable, trying to forward it`));
+        //     await forwardPort({ externalPort: port, internalPort: port });
+        // }
+        // Even if they are listening, they might not stay listening. Forward every 8 hours
+        //      (including at the start, in case the forward is about to expire).
+        async function forward() {
+            await forwardPort({ externalPort: port, internalPort: port });
+            console.log(magenta(`Forwarded port ${port} to our machine`));
+        }
+        runInfinitePollCallAtStart(timeInHour * 8, forward).catch(e => console.error(red(`Error in port forwarding ${e.stack}`)));
+    }
+
     let nodeId = getNodeId(getCommonName(config.cert), port);
     console.log(green(`Started Listening on ${nodeId} after ${formatTime(process.uptime() * 1000)}`));
 
