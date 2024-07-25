@@ -126,13 +126,6 @@ export function getStringKeys<T extends {}>(obj: T): ((keyof T) & string)[] {
     return Object.keys(obj) as any;
 }
 
-if (isNode()) {
-    // TODO: Find a better place for this...
-    process.on("unhandledRejection", async (reason: any, promise) => {
-        console.error(`Uncaught promise rejection: ${String(reason.stack || reason)}`);
-    });
-}
-
 export function keyBy<T, K>(arr: T[], getKey: (value: T) => K): Map<K, T> {
     let map = new Map<K, T>();
     for (let item of arr) {

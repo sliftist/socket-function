@@ -128,7 +128,7 @@ async function updateTimeOffset() {
                 || Math.abs(offset) > 300 && yellow(offsetRound + "ms")
                 || green(offsetRound + "ms")
             );
-            console.log(`${blue("Synchronized time")}, local clock was ${offset > 0 ? "behind" : "ahead"} by ${offsetColored}`);
+            console.log(`${blue("Synchronized time")}, local clock was ${offset > 0 ? "behind" : "ahead"} by ${offsetColored} @ ${blue(Date.now() + "")}`);
             for (let i = 0; i < currentSmearCount; i++) {
                 let fraction = (i + 1) / currentSmearCount;
                 trueTimeOffset = prevOffset * (1 - fraction) + offset * fraction;

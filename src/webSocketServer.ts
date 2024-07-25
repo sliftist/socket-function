@@ -232,9 +232,24 @@ export async function startSocketServer(
         console.log(yellow(`Trying to listening on ${host}:${port}`));
     }
 
+    let listeningPromise = waitUntilListening();
+    listeningPromise.catch(e => { });
+
     // Return true if we are listening, false if the address is in use, and throws on other errors
     async function waitUntilListening() {
         return await new Promise<boolean>((resolve, reject) => {
+            realServer.once("error", e => {
+                reject(e);
+            });
+            realServer.once("listening", () => {
+                resolve(false);
+            });
+        });
+    }
+
+    if (config.useAvailablePortIfPortInUse && port) {
+        realServer.listen(port, host);
+        let isListening = await new Promise<boolean>((resolve, reject) => {
             if (realServer.listening) {
                 resolve(true);
                 return;
@@ -250,20 +265,16 @@ export async function startSocketServer(
                 resolve(false);
             });
         });
-    }
-
-    if (config.useAvailablePortIfPortInUse && port) {
-        realServer.listen(port, host);
-        let isListening = await waitUntilListening();
         if (!isListening) {
             port = 0;
             realServer.listen(port, host);
+            listeningPromise = waitUntilListening();
         }
     } else {
         realServer.listen(port, host);
     }
 
-    await waitUntilListening();
+    await listeningPromise;
     port = (realServer.address() as net.AddressInfo).port;
 
     if (config.autoForwardPort && config.public) {
@@ -279,7 +290,8 @@ export async function startSocketServer(
             await forwardPort({ externalPort: port, internalPort: port });
             console.log(magenta(`Forwarded port ${port} to our machine`));
         }
-        runInfinitePollCallAtStart(timeInHour * 8, forward).catch(e => console.error(red(`Error in port forwarding ${e.stack}`)));
+        // Every hour, in case our network configuration changes
+        runInfinitePollCallAtStart(timeInHour * 1, forward).catch(e => console.error(red(`Error in port forwarding ${e.stack}`)));
     }
 
     let nodeId = getNodeId(getCommonName(config.cert), port);

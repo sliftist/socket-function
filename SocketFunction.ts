@@ -25,6 +25,14 @@ setImmediate(async () => {
 
 setFlag(require, "cbor-x", "allowclient", true);
 let cborxInstance = new cborx.Encoder({ structuredClone: true });
+if (isNode()) {
+    // Do not crash on unhandled errors. SocketFunction is made to run a webserver,
+    //  which will run perfectly after 99.9% of errors. Crashing the process is
+    //  not a good alternative to proper error log and notifications. Do you guys
+    //  not get automated emails when unexpected errors are logged? I do.
+    process.on("unhandledRejection", () => { });
+    process.on("uncaughtException", () => { });
+}
 
 module.allowclient = true;
 
