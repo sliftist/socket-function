@@ -8,7 +8,6 @@
 		"@types/pako": "^2.0.3",
 		"@types/ws": "^8.5.3",
 		"cbor-x": "^1.5.6",
-		"cookie": "^0.5.0",
 		"mobx": "^6.6.2",
 		"node-forge": "https://github.com/sliftist/forge#name",
 		"pako": "^2.1.0",
@@ -21,7 +20,8 @@
 	},
 	"scripts": {
 		"test": "yarn typenode ./test/server.ts",
-		"type": "yarn tsc --noEmit"
+		"type": "yarn tsc --noEmit",
+		"testsni": "yarn typenode ./src/sniTest.ts"
 	},
 	"devDependencies": {
 		"@types/cookie": "^0.5.1",

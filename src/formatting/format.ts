@@ -154,9 +154,15 @@ export function formatNumber(count: number | undefined, maxAbsoluteValue?: numbe
     } else if (maxAbsoluteValue < 1000 * 1000 * 1000 * extraFactor) {
         suffix = "M";
         divisor = 1000 * 1000;
-    } else {
+    } else if (maxAbsoluteValue < 1000 * 1000 * 1000 * 1000 * extraFactor) {
         suffix = "B";
         divisor = 1000 * 1000 * 1000;
+    } else if (maxAbsoluteValue < 1000 * 1000 * 1000 * 1000 * 1000 * extraFactor) {
+        suffix = "T";
+        divisor = 1000 * 1000 * 1000 * 1000;
+    } else {
+        suffix = "Q";
+        divisor = 1000 * 1000 * 1000 * 1000 * 1000;
     }
     count /= divisor;
     maxAbsoluteValue /= divisor;

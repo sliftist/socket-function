@@ -3,6 +3,9 @@
 
     let startTime = Date.now();
 
+    Symbol.dispose = Symbol.dispose || Symbol("dispose");
+    Symbol.asyncDispose = Symbol.asyncDispose || Symbol("asyncDispose");
+
     // Globals
     Object.assign(window, {
         process: {
@@ -397,6 +400,9 @@
         module.exports = {};
         module.exports.default = module.exports;
         module.children = [];
+        for (let key in serializedModule.flags || {}) {
+            module[key] = true;
+        }
 
         module.load = load;
 

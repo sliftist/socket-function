@@ -62,12 +62,14 @@ export function measureWrap<T extends (...args: any[]) => any>(fnc: T, name?: st
         return fnc;
     }
     let usedName = name || fnc.name || fnc.toString().slice(0, 100).replaceAll(/\s/g, " ");
-    return nameFunction(usedName, (function (this: any, ...args: unknown[]): unknown {
+    let output = nameFunction(usedName, (function (this: any, ...args: unknown[]): unknown {
         if (outstandingProfiles.length === 0) {
             return fnc.apply(this, args);
         }
         return getOwnTime(usedName, () => fnc.apply(this, args), recordOwnTime);
     })) as T;
+    (output as any).originalFnc = fnc;
+    return output;
 }
 export function measureBlock<T extends (...args: any[]) => any>(fnc: T, name?: string): ReturnType<T> {
     return measureWrap(fnc, name)();

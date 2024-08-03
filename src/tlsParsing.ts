@@ -45,7 +45,6 @@ export function parseTLSHello(buffer: Buffer): {
         let sessionIdLength = buffer[pos++];
         pos += sessionIdLength;
 
-
         let cipherSuiteLength = readShort();
         pos += cipherSuiteLength;
 
@@ -53,11 +52,17 @@ export function parseTLSHello(buffer: Buffer): {
         pos += compressionLength;
 
         let extensionsLength = readShort();
-        output.missingBytes = contentLength - (pos + extensionsLength);
         let extensionsEnd = pos + extensionsLength;
         while (pos < extensionsEnd) {
             let extensionType = readShort();
             let length = readShort();
+            // Break if we only have part of the extension
+            if (Number.isNaN(extensionType) || Number.isNaN(length)) {
+                break;
+            }
+            if (pos + length > buffer.length) {
+                break;
+            }
 
             output.extensions.push({
                 type: extensionType, data: viewSliceBuffer(buffer, pos, length)
@@ -65,6 +70,7 @@ export function parseTLSHello(buffer: Buffer): {
 
             pos += length;
         }
+        output.missingBytes = contentLength - pos;
     } catch { }
 
     return output;

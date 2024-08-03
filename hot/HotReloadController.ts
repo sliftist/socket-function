@@ -44,11 +44,16 @@ declare global {
             noserverhotreload?: boolean;
         }
     }
+    var isHotReloading: (() => boolean) | undefined;
 }
 
 let isHotReloadingValue = false;
 export function isHotReloading() {
     return isHotReloadingValue;
+}
+globalThis.isHotReloading = isHotReloading;
+export function hotReloadingGuard(): true {
+    return !isHotReloading() as any;
 }
 export function setExternalHotReloading(value: boolean) {
     isHotReloadingValue = value;
@@ -86,8 +91,13 @@ const hotReloadModule = cache((module: NodeJS.Module) => {
                     console.error(red(`Error hot reloading ${module.id}`));
                     console.error(e);
                 } finally {
-                    isHotReloadingValue = false;
+                    setTimeout(() => {
+                        isHotReloadingValue = false;
+                    }, 1000);
                 }
+            }
+            for (let callback of hotReloadCallbacks) {
+                callback([module]);
             }
         }
         triggerClientSideReload({
@@ -149,7 +159,14 @@ class HotReloadControllerBase {
         for (let module of modules) {
             module.loaded = false;
         }
-        await Promise.all(modules.map(module => module.load(module.filename)));
+        isHotReloadingValue = true;
+        try {
+            await Promise.all(modules.map(module => module.load(module.filename)));
+        } finally {
+            setTimeout(() => {
+                isHotReloadingValue = false;
+            }, 1000);
+        }
 
         for (let callback of hotReloadCallbacks) {
             callback(modules);

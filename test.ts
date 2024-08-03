@@ -1,6 +1,3 @@
-//todonext;
-//  See if we can use node-ssdp to forward ports?
-
 import { getExternalIP } from "./src/networking";
 import http from "http";
 import * as dgram from "dgram";

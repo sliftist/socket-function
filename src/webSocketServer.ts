@@ -195,6 +195,10 @@ export async function startSocketServer(
                 if (!SocketFunction.silent) {
                     console.log(`Received TCP connection with SNI ${JSON.stringify(sni)}`);
                 }
+                if (!sni) {
+                    console.warn(`No SNI found in TLS hello, using main server. Packets ${packetCount}`);
+                    console.log(buffer.toString("base64"));
+                }
                 server = sniServers.get(sni) || mainHTTPSServer;
             }
 

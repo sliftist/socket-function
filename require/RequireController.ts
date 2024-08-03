@@ -69,6 +69,10 @@ export interface SerializedModule {
 
     size?: number;
     version?: number;
+
+    flags?: {
+        [flag: string]: true;
+    };
 }
 
 let nextModuleSeqNum = 1;
@@ -203,7 +207,13 @@ class RequireControllerBase {
                 size: module.size,
                 version: module.version,
                 asyncRequests: module.asyncRequires,
+                flags: {},
             };
+            for (let [flag, value] of Object.entries(module)) {
+                if (value === true) {
+                    modules[module.filename].flags![flag] = value;
+                }
+            }
             let moduleObj = modules[module.filename];
             if (moduleObj.allowclient) {
                 moduleObj.source = module.moduleContents;

@@ -42,7 +42,11 @@ function getLocalInterfaceAddress(): { internalIP: string; gatewayIP: string; } 
             if (iface.family === "IPv4" && !iface.internal) {
                 // TOOD: Correctly resolve the cidr?
                 let gatewayIP = iface.cidr.split(".").slice(0, 3).join(".") + ".1";
-                return { internalIP: iface.address, gatewayIP };
+                // TOOD: We try discovery on all gateways, so we can know for sure which one it is
+                //  (and maybe even port forward all gateway, if multiple respond?)
+                if (gatewayIP.startsWith("10.0.0") || gatewayIP.startsWith("10.0.1") || gatewayIP.startsWith("192.168.0")) {
+                    return { internalIP: iface.address, gatewayIP };
+                }
             }
         }
     }
@@ -88,7 +92,7 @@ function discoverGateway(localAddress: string): Promise<string> {
         setTimeout(() => {
             if (!isResolved) {
                 socket.close();
-                reject(new Error("SSDP discovery timeout"));
+                reject(new Error(`SSDP discovery timeout. Search on ${localAddress}`));
             }
         }, SSDP_DISCOVER_MX * 1000);
     });

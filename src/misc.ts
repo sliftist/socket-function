@@ -285,6 +285,10 @@ export function entries<Obj extends { [key: string]: unknown }>(obj: Obj): [keyo
     return Object.entries(obj) as any;
 }
 
+export function keys<Obj extends { [key: string]: unknown }>(obj: Obj): (keyof Obj)[] {
+    return Object.keys(obj) as any;
+}
+
 export function sort<T>(arr: T[], sortKey: (obj: T) => unknown) {
     if (arr.length <= 1) return arr;
     arr.sort((a, b) => compare(sortKey(a), sortKey(b)));

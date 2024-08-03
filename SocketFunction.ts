@@ -30,8 +30,12 @@ if (isNode()) {
     //  which will run perfectly after 99.9% of errors. Crashing the process is
     //  not a good alternative to proper error log and notifications. Do you guys
     //  not get automated emails when unexpected errors are logged? I do.
-    process.on("unhandledRejection", () => { });
-    process.on("uncaughtException", () => { });
+    process.on("unhandledRejection", (e) => {
+        console.error("Unhandled rejection", e);
+    });
+    process.on("uncaughtException", (e) => {
+        console.error("Uncaught exception", e);
+    });
 }
 
 module.allowclient = true;
@@ -80,6 +84,7 @@ export class SocketFunction {
         return caller;
     }
 
+    private static getShapeHotReloadable = new Map<string, () => SocketExposedShape<SocketExposedInterface>>();
     // NOTE: We use callbacks we don't run into issues with cyclic dependencies
     //  (ex, using a hook in a controller where the hook also calls the controller).
     public static register<
@@ -115,7 +120,9 @@ export class SocketFunction {
 
             for (let value of Object.values(shape)) {
                 if (!value) continue;
-                value.clientHooks = [...(defaultHooks?.clientHooks || []), ...(value.clientHooks || [])];
+                if (!value.noClientHooks) {
+                    value.clientHooks = [...(defaultHooks?.clientHooks || []), ...(value.clientHooks || [])];
+                }
                 if (value.noDefaultHooks) {
                     value.hooks = [...(value.hooks || [])];
                 } else {
@@ -126,6 +133,9 @@ export class SocketFunction {
             return shape as any as SocketExposedShape;
         });
 
+        // Wait, so any constants referenced by the base shapeFnc will be fully resolved
+        //  by now. This is IMPORTANT, as it allows permissions functions to be moved
+        //  to a common module, instead of all being inline.
         void Promise.resolve().then(() => {
             registerClass(classGuid, instance as SocketExposedInterface, getShape(), {
                 noFunctionMeasure: config?.noFunctionMeasure,
