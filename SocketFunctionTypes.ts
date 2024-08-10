@@ -42,12 +42,13 @@ export type SocketExposedShape<ExposedType extends SocketExposedInterface = Sock
     };
 };
 
-export interface CallType {
+export type FncType = (...args: any[]) => Promise<unknown>;
+export interface CallType<FncT extends FncType = FncType, FncName extends string = string> {
     classGuid: string;
-    functionName: string;
+    functionName: FncName;
     args: unknown[];
 }
-export interface FullCallType extends CallType {
+export interface FullCallType<FncT extends FncType = FncType, FncName extends string = string> extends CallType<FncT, FncName> {
     nodeId: string;
 }
 
@@ -72,6 +73,11 @@ export interface SocketFunctionClientHook<ExposedType extends SocketExposedInter
     (config: ClientHookContext<ExposedType>): MaybePromise<void>;
 }
 
+export interface SocketRegisterType<ExposedType = any> {
+    _classGuid: string;
+    _internalType: ExposedType;
+}
+
 export interface SocketRegistered<ExposedType = any> {
     nodes: {
         // NOTE: Don't pass around nodeId to other nodes, instead pass around NetworkLocation (which they
@@ -83,7 +89,11 @@ export interface SocketRegistered<ExposedType = any> {
         };
     };
     _classGuid: string;
+    _internalType: ExposedType;
 }
+export type ControllerPick<T extends SocketRegistered, K extends keyof T["_internalType"]> = (
+    SocketRegistered<Pick<T["_internalType"], K>>
+);
 export type CallerContext = Readonly<CallerContextBase>;
 export type CallerContextBase = {
     // IMPORTANT! Do not pass nodeId to other nodes with the intention of having

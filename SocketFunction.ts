@@ -1,6 +1,6 @@
 /// <reference path="./require/RequireController.ts" />
 
-import { SocketExposedInterface, SocketFunctionHook, SocketFunctionClientHook, SocketExposedShape, SocketRegistered, CallerContext, FullCallType, CallType } from "./SocketFunctionTypes";
+import { SocketExposedInterface, SocketFunctionHook, SocketFunctionClientHook, SocketExposedShape, SocketRegistered, CallerContext, FullCallType, CallType, FncType, SocketRegisterType } from "./SocketFunctionTypes";
 import { exposeClass, registerClass, registerGlobalClientHook, registerGlobalHook, runClientHooks } from "./src/callManager";
 import { SocketServerConfig, startSocketServer } from "./src/webSocketServer";
 import { getCallFactory, getCreateCallFactory, getNodeId, getNodeIdLocation } from "./src/nodeCache";
@@ -84,7 +84,6 @@ export class SocketFunction {
         return caller;
     }
 
-    private static getShapeHotReloadable = new Map<string, () => SocketExposedShape<SocketExposedInterface>>();
     // NOTE: We use callbacks we don't run into issues with cyclic dependencies
     //  (ex, using a hook in a controller where the hook also calls the controller).
     public static register<
@@ -113,6 +112,18 @@ export class SocketFunction {
             noFunctionMeasure?: boolean;
         }
     ): SocketRegistered<ExtractShape<ClassInstance, Shape>> & Statics {
+        void Promise.resolve().then(() => {
+            let onMount = getDefaultHooks?.().onMount;
+            if (onMount) {
+                let callbacks = SocketFunction.onMountCallbacks.get(classGuid);
+                if (!callbacks) {
+                    callbacks = [];
+                    SocketFunction.onMountCallbacks.set(classGuid, callbacks);
+                }
+                callbacks.push(onMount);
+            }
+        });
+
         let getDefaultHooks = defaultHooksFnc && lazy(defaultHooksFnc);
         const getShape = lazy(() => {
             let shape = shapeFnc() as SocketExposedShape;
@@ -142,58 +153,76 @@ export class SocketFunction {
             });
         });
 
-        let nodeProxy = getCallProxy(classGuid, async (call) => {
-            let nodeId = call.nodeId;
-            let functionName = call.functionName;
-            let time = Date.now();
-            if (SocketFunction.logMessages) {
-                console.log(`START\t\t\t${classGuid}.${functionName} at ${Date.now()}`);
-            }
-            try {
-                let callFactory = await getCreateCallFactory(nodeId);
-
-                let shapeObj = getShape()[functionName];
-                if (!shapeObj) {
-                    throw new Error(`Function ${functionName} is not in shape`);
-                }
-
-                let hookResult = await runClientHooks(call, shapeObj as Exclude<SocketExposedShape[""], undefined>, callFactory.connectionId);
-
-                if ("overrideResult" in hookResult) {
-                    return hookResult.overrideResult;
-                }
-
-                return await callFactory.performCall(call);
-            } finally {
-                time = Date.now() - time;
-                if (SocketFunction.logMessages) {
-                    console.log(`FINISHED\t${time}ms\t${classGuid}.${functionName} at ${Date.now()}`);
-                }
-            }
-        });
-
-        let output: SocketRegistered = {
-            nodes: nodeProxy,
+        let socketCaller = SocketFunction.rehydrateSocketCaller({
             _classGuid: classGuid,
-        };
+            _internalType: null as any,
+        }, getShape);
 
-        void Promise.resolve().then(() => {
-            let onMount = getDefaultHooks?.().onMount;
-            if (onMount) {
-                let callbacks = SocketFunction.onMountCallbacks.get(classGuid);
-                if (!callbacks) {
-                    callbacks = [];
-                    SocketFunction.onMountCallbacks.set(classGuid, callbacks);
-                }
-                callbacks.push(onMount);
-            }
-        });
-
-        let result = output as any as SocketRegistered;
         if (!config?.noAutoExpose) {
-            this.expose(result);
+            this.expose(socketCaller);
         }
-        return Object.assign(result, config?.statics);
+        return Object.assign(socketCaller, config?.statics);
+    }
+
+    private static socketCache = new Map<string, SocketRegistered>();
+    public static rehydrateSocketCaller<Controller>(
+        socketRegistered: SocketRegisterType<Controller>,
+        // Shape is required for client hooks.
+        shapeFnc?: () => SocketExposedShape,
+    ): SocketRegistered<Controller> {
+        let cached = this.socketCache.get(socketRegistered._classGuid);
+        if (!cached) {
+            let getShape = lazy(() => shapeFnc?.());
+            let classGuid = socketRegistered._classGuid;
+            let nodeProxy = getCallProxy(classGuid, async (call) => {
+                return await SocketFunction.callFromGuid(call, classGuid, getShape());
+            });
+
+            cached = {
+                nodes: nodeProxy,
+                _classGuid: classGuid,
+                _internalType: null as any,
+            };
+
+            this.socketCache.set(classGuid, cached);
+        }
+        return cached;
+    }
+
+    private static async callFromGuid<FncT extends FncType>(
+        call: FullCallType<FncT>,
+        classGuid: string,
+        shape?: SocketExposedShape,
+    ): Promise<ReturnType<FncType>> {
+        let nodeId = call.nodeId;
+        let functionName = call.functionName;
+        let time = Date.now();
+        if (SocketFunction.logMessages) {
+            console.log(`START\t\t\t${classGuid}.${functionName} at ${Date.now()}`);
+        }
+        try {
+            let callFactory = await getCreateCallFactory(nodeId);
+
+            let shapeObj = shape?.[functionName];
+            // NOTE: Actually... this just means the client doesn't have a definition for it. The server
+            //  might, so call it, and let them throw if it is unrecognized.
+            // if (!shapeObj) {
+            //     throw new Error(`Function ${functionName} is not in shape`);
+            // }
+
+            let hookResult = await runClientHooks(call, shapeObj as Exclude<SocketExposedShape[""], undefined>, callFactory.connectionId);
+
+            if ("overrideResult" in hookResult) {
+                return hookResult.overrideResult;
+            }
+
+            return await callFactory.performCall(call);
+        } finally {
+            time = Date.now() - time;
+            if (SocketFunction.logMessages) {
+                console.log(`FINISHED\t${time}ms\t${classGuid}.${functionName} at ${Date.now()}`);
+            }
+        }
     }
 
     public static onNextDisconnect(nodeId: string, callback: () => void) {
