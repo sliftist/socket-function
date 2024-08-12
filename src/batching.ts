@@ -149,7 +149,12 @@ export function batchFunction<Arg, Result = void>(
         let curPrevPromise = prevPromise;
         let args: Arg[] = [arg];
         let promise = Promise.resolve().then(async () => {
-            await curPrevPromise;
+            // Ignore the error. New callers don't care about errors in previous calls,
+            //  as they are unrelated to the current call, and just break valid calls
+            //  due to invalid calls.
+            try {
+                await curPrevPromise;
+            } catch { }
             await delay(curDelay, "immediateShortDelays");
             // Reset batching, as we once we start the function we can't accept args. `prevPromise` will block
             //  the next batch from starting before we finish.
