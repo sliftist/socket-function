@@ -589,8 +589,6 @@ export async function createCallFactory(
             } else if (err.includes("The requested file could not be read, typically due to permission problems that have occurred after a reference to a file was acquired.")) {
                 console.error(`WebSocket data was dropped by the browser due to exceeding the Blob limit. Either you are about to run out of memory, or you hit the much lower Incognito Blob limit. This will likely break the application. To reset the memory you must close all tabs of this site. This is a bug/feature in chrome.`);
             } else {
-                debugbreak(2);
-                debugger;
                 console.error(e.stack);
             }
         }
@@ -655,23 +653,14 @@ const compressObj = measureWrap(async function wireCallCompress(obj: unknown): P
     return result;
 });
 const decompressObj = measureWrap(async function wireCallDecompress(obj: Buffer): Promise<unknown> {
-    try {
-        let buffer = await unzipBase(obj);
-        let lengthBuffer = buffer.slice(0, 8);
-        let lengths = new Float64Array(lengthBuffer.buffer, lengthBuffer.byteOffset, lengthBuffer.byteLength / 8);
-        let buffers: Buffer[] = [];
-        let offset = 8;
-        for (let length of lengths) {
-            buffers.push(buffer.slice(offset, offset + length));
-            offset += length;
-        }
-
-        return await SocketFunction.WIRE_SERIALIZER.deserialize(buffers);
-    } catch (e) {
-        // We were encountering issues with the checksum failing when unzipping. Presumably if the data
-        //      is bad deserialize will also fail. I can't repro it anymore though...
-        debugbreak(2);
-        debugger;
-        throw e;
+    let buffer = await unzipBase(obj);
+    let lengthBuffer = buffer.slice(0, 8);
+    let lengths = new Float64Array(lengthBuffer.buffer, lengthBuffer.byteOffset, lengthBuffer.byteLength / 8);
+    let buffers: Buffer[] = [];
+    let offset = 8;
+    for (let length of lengths) {
+        buffers.push(buffer.slice(offset, offset + length));
+        offset += length;
     }
+    return await SocketFunction.WIRE_SERIALIZER.deserialize(buffers);
 });

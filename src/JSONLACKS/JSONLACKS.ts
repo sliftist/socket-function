@@ -298,10 +298,6 @@ export class JSONLACKS {
             if (type === "ref") {
                 let id = obj.id as string;
                 if (!JSONLACKS.IGNORE_MISSING_REFERENCES && !references.has(id)) {
-                    if (!config?.discardMissingReferences) {
-                        debugbreak(2);
-                        debugger;
-                    }
                     throw new Error(`Reference to undefined id "${id}"`);
                 }
                 return references.get(id);
