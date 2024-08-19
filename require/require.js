@@ -326,8 +326,6 @@
                             if (property === unloadedModule) return true;
                             if (property === "default") return exportsOverride;
 
-                            serializedModule;
-
                             console.warn(`Accessed non-whitelisted module %c${childId}%c, specifically property %c${String(property)}%c.\n\tAdd %cmodule.allowclient = true%c to the file to allow access.\n\t(IF it is a 3rd party library, use the global "setFlag" helper (in the file you imported the module) to set properties on other modules (it can even recursively set properties)).\n\n\tFrom ${module.id}`,
                                 "color: red", "color: unset",
                                 "color: red", "color: unset",
@@ -343,12 +341,19 @@
                 return exportsOverride;
             }
 
-            let childModule = getModule(resolvedPath);
-            module.children.push(childModule);
+            let providerModule = getModule(resolvedPath);
+            module.children.push(providerModule);
             if (exportsOverride !== undefined) {
-                childModule.exports = exportsOverride;
+                providerModule.exports = exportsOverride;
             }
-            return childModule.exports;
+
+            let exports = providerModule.exports;
+            let remapExports = providerModule.remapExports;
+            if (remapExports && typeof remapExports === "function")  {
+                exports = remapExports(exports, module);
+            }
+
+            return exports;
         };
     }
 
@@ -445,6 +450,7 @@
             }
 
             module.size = source.length;
+            module.source = source;
 
             let moduleFnc = wrapSafe(module.id, source);
 

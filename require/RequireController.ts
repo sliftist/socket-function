@@ -35,6 +35,15 @@ declare global {
             // Times are both unique (two modules evaluated at the same Date.now() will have different values).
             evalStartTime?: number;
             evalEndTime?: number;
+
+            /** (Presently only called by require.js)
+             *      Called on require calls, to allow providers to create custom exports depending on the caller.
+             *          - Mostly used to allow functions to know the calling module.
+             */
+            remapExports?: (exports: { [key: string]: unknown }, callerModule: NodeJS.Module) => { [key: string]: unknown };
+
+            /** Only set if clientside (and allowed clientside) */
+            source?: string;
         }
     }
     interface Window {
