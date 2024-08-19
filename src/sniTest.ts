@@ -6,6 +6,7 @@ let tlsExtensionLookup: { [type: number]: string } = {
     2: "client_certificate_url",
     3: "trusted_ca_keys",
     4: "truncated_hmac",
+    // Likely an OCSP status request
     5: "status_request",
     6: "user_mapping",
     7: "client_authz",
@@ -84,18 +85,19 @@ let tlsExtensionLookup: { [type: number]: string } = {
     65281: "renegotiation_info" // 0xFF01
 };
 
+// yarn testsni
 async function main() {
     const packet = Buffer.from(
-        `FgMBBwgBAAcEAwNWbpKnOzI9CRp2ESvA5QzCXg5FYncEObckUkNoG3+/DyAwI4HL0havBXKvPlJtZJBgtZ+I/FqBlKGek8NGJcgdqQAgiooTARMCEwPAK8AvwCzAMMypzKjAE8AUAJwAnQAvADUBAAabSkoAAAAbAAMCAAIACgAMAArq6mOZAB0AFwAYAAUABQEAAAAAAC0AAgEB/wEAAQAAIwAAAAsAAgEAABIAAAANABIAEAQDCAQEAQUDCAUFAQgGBgEAFwAA/g0AugAAAQABCwAgIRJsXQHGN5cbIp9ucgXJ824RS/6hqIikNiMKw7/gsDAAkK8j0YYXYsSnpX4siEVnB/AxzQCPaGMoT4y1i63f4mzV0Sa6puc4sZqkxY7TyQMJLrGPL00HaJZh6ReT/ggPbCwg5f5/2hUCdZSx4aUpYMb7lAx9VVJjhrquZIRRVrk8yV0OjEivreTN02u1mgIgMY/0P8RzOea+iQluEF9ASOYxgNIU20xoKK608ktQrTafSQAQAAsACQhodHRwLzEuMQAzBO8E7erqAAEAY5kEwB8fuK+qumVLi67+BmQ5uQ556Opa122UZFmnfuoKQY1tiXkzM7Z+wmWOLTg7l3Ncu8ECL/Z9G6ZLP4N5OKGjiHE307sEvNRqdEnFYoQMVotF6hNbt3F4GrEBa6CuCEohg9HKg3RtIfMFYNc1lDC4rJCLwNETijo5MlOFnYVGpWOMcBZbdLsGv5JxN7idRUGvxsttaya3GYxSI1yFW9dZaysTsYXA2IzPp7M950GkJzBK5Zy3wBiXoZYGYKJGy5EA1XIE88Y6X2VNghPIatHHjdav+PpsLZCyUowEsAN49gh/yRrBNZxo6gNbfOIds/UpjlYtIEo1lch2ygWzVLS55qxm35IQUVKQjEQiPDNUI6g9RZZD+VSH5vB1ouMwTqbDAAN9EsUxigYmQggjz1jGFEm+DecEQTkXoQOIwWsAq+M39Eq7M3CwYVQ6yDQI+rQD9xxin8I9PrdVoXGaTVwnY9GFKFCYZyewSGeuPGSaPcdKwvBb/IgfFVRt2aU24XNmFsCkgLSzHEkBg1uYqjd+uIY7zTWo5WIevniL4SCIvRyvTQB7DICAZ+BxSUxio9x19OWQCitnoXdoGGwuTIQqSYuimFBedKa2b4Yk3nkPIRqa3jldbGMRwQmpaQFnsOJml/pEr3sQIuEcQ2shaIuqW+Zo86yamflqpCmCbQWNiipRYwQ/AmG7oOeS1iJomPiRJDwVNaoDZzI2ApYIcQckNPNrI9qOrGwww6x1T9EwKadz/1OcHQcbWtej5QkLm5Ss/9paxqYsu1kuohlvPOSd4txqKOGNvOhzxqqOweZ7p8l/H/JhnMkEUCZYvOW4JhthXsYMfnWn8rciE7KuMskf65mqI1tI5SZqzxAfH4MidyUJRNwR6mwWUgzMi7kB3eM3IPUbCDpUIpQBipt2SyenIMXNH9ZjnYtdCwVDe7m6mshYAJVV7oJDw5yn2pYH5nsZ+gM93vNWBvZVQjZZmRdZQ2YqhKaUyQgpOEhlE1w7XAXJp+um2kA5qElw9sNbxvOziNSPLyi17xgy1CSBSzB+o8JAfZamxUHFXEGSRYoR8qekMnlJeVRXlojEoaxMsspFX3itMOqIHNUL9Nltswaqggu7s+NQfshoLEg5gkfM/tok4sISLZlX7ACgcWZBQudMPTyn3FsQIbzNgXBzWTdiCZg9iZttoJtX8FygYbzEF9kFJyc5fIBA4NACVZhOf+onlMcFEbHCu6ilqMuzwQxf6vgV`
+        `FgMBAGMBAABfAwAqM+iD/iM0AvbG4HrqGQDhvXM4pk6YKWTsJAMYDfIrcQAAFsARwAfAE8AJwBTACgAFAC8ANcASAAoBAAAgAAUABQEAAAAAAAoACAAGABcAGAAZAAsAAgEA/wEAAQA=`
             .replace(/\s/g, "")
         , "base64"
     );
 
     let data = parseTLSHello(packet);
-    let sni = data.extensions.filter(x => x.type === SNIType).flatMap(x => parseSNIExtension(x.data))[0];
+    //let sni = data.extensions.filter(x => x.type === SNIType).flatMap(x => parseSNIExtension(x.data))[0];
     console.log(`Packet size ${packet.byteLength}, missing bytes ${data.missingBytes}`);
     for (let ext of data.extensions) {
-        console.log(`Extension: ${tlsExtensionLookup[ext.type] || ext.type}, bytes length: ${ext.data.length}`);
+        console.log(`Extension: ${tlsExtensionLookup[ext.type] || ext.type}, bytes length: ${ext.data.length}, ${ext.data.toString("hex")}`);
     }
 }
 main().catch(e => console.error(e)).finally(() => process.exit());
