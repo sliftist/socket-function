@@ -3,7 +3,7 @@ import debugbreak from "debugbreak";
 import fs from "fs";
 import { SocketFunction } from "../SocketFunction";
 import { getCurrentHTTPRequest, setHTTPResultHeaders } from "../src/callHTTPHandler";
-import { formatNumberSuffixed, isNodeTrue, sha256Hash, sha256HashPromise } from "../src/misc";
+import { formatNumberSuffixed, isNode, isNodeTrue, sha256Hash, sha256HashPromise } from "../src/misc";
 import zlib from "zlib";
 import { cacheLimited } from "../src/caching";
 import { formatNumber } from "../src/formatting/format";
@@ -50,6 +50,16 @@ declare global {
         clientsideBootTime: number;
     }
     var suppressUnexpectedModuleWarning: number | undefined;
+}
+
+/** Imports it, serverside, delayed. For dynamic imports, which we need to include once, but don't want to include
+ *      immediately (due to cyclic issues), and isn't included initially.
+ */
+export function lazyImport(getModule: () => Promise<unknown>) {
+    if (!isNode()) return;
+    // Import it, asynchronously, so it isn't preloaded, but it is available for clientside imports.
+    //  NOTE: We track delayed imports (somewhere), and don't preload them by default in RequireController.
+    void Promise.resolve().then(() => getModule());
 }
 
 export interface SerializedModule {
