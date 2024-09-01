@@ -221,7 +221,7 @@ export async function startSocketServer(
         }
         getNextData();
         socket.on("error", (e) => {
-            console.error(`Exposed socket error, ${e.stack}`);
+            console.error(`Socket error for ${socket.remoteAddress}, ${e.stack}`);
         });
     });
 
