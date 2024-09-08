@@ -180,6 +180,7 @@ export async function startSocketServer(
     });
 
     let realServer = net.createServer(socket => {
+        const remoteAddress = socket.remoteAddress;
         function handleTLSHello(buffer: Buffer, packetCount: number): void | "more" {
             // All HTTPS requests start with 22, and no HTTP requests start with 22,
             //  so we just need to read the first byte.
@@ -196,7 +197,7 @@ export async function startSocketServer(
                     console.log(`Received TCP connection with SNI ${JSON.stringify(sni)}`);
                 }
                 if (!sni) {
-                    console.warn(`No SNI found in TLS hello from ${socket.remoteAddress}, using main server. Packets ${packetCount}`);
+                    console.warn(`No SNI found in TLS hello from ${remoteAddress}, using main server. Packets ${packetCount}`);
                     console.log(buffer.toString("base64"));
                 }
                 server = sniServers.get(sni) || mainHTTPSServer;
@@ -221,7 +222,7 @@ export async function startSocketServer(
         }
         getNextData();
         socket.on("error", (e) => {
-            console.error(`Socket error for ${socket.remoteAddress}, ${e.stack}`);
+            console.error(`Socket error for ${remoteAddress}, ${e.stack}`);
         });
     });
 
