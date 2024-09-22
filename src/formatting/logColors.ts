@@ -9,7 +9,7 @@ function ansiRGB(r: number, g: number, b: number, text: string): string {
 }
 
 const lightness = 68;
-export const blue = (text: string) => `\x1b[34m${text}\x1b[0m`;
+export const blue = ansiHSL.bind(null, 235, 100, lightness);
 export const red = ansiHSL.bind(null, 0, 100, lightness);
 export const green = (text: string) => `\x1b[32m${text}\x1b[0m`;
 export const yellow = (text: string) => `\x1b[33m${text}\x1b[0m`;

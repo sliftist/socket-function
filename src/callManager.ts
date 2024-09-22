@@ -69,7 +69,7 @@ export function isDataImmutable(call: CallType) {
 export function registerClass(classGuid: string, controller: SocketExposedInterface, shape: SocketExposedShape, config?: {
     noFunctionMeasure?: boolean;
 }) {
-    if (!isHotReloading?.() && classes[classGuid]) {
+    if (!globalThis.isHotReloading?.() && classes[classGuid]) {
         throw new Error(`Class ${classGuid} already registered`);
     }
 

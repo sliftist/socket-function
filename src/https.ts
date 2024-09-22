@@ -11,7 +11,7 @@ export function httpsRequest(
     method = "GET",
     sendSessionCookies = true,
     config?: {
-        headers?: { [key: string]: string },
+        headers?: { [key: string]: string | undefined },
     }
 ): Promise<Buffer> {
     if (isNode()) {
@@ -66,8 +66,9 @@ export function httpsRequest(
         var request = new XMLHttpRequest();
         request.open(method, url, true);
         if (config?.headers) {
-            for (let key in config.headers) {
-                request.setRequestHeader(key, config.headers[key]);
+            for (let [key, value] of Object.entries(config.headers)) {
+                if (value === undefined) continue;
+                request.setRequestHeader(key, value);
             }
         }
         request.responseType = "arraybuffer";
