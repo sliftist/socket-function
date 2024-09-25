@@ -15,6 +15,10 @@ const UPDATE_SMEAR_TICK_DURATION = 100;
 const UPDATE_SMEAR_TICK_COUNT = 100;
 const UPDATE_VERIFY_COUNT = 3;
 
+// Time can never go backwards, but we can run at a slower rate until the output time allows
+//      the real time to catch up with it.
+const MINIMUM_TIME_RATE = 0.5;
+
 let trueTimeOffset = 0;
 let didFirstTimeSync = false;
 let onFirstTimeSync!: () => void;
@@ -23,8 +27,29 @@ let firstTimeSyncPromise = new Promise<void>((resolve) => {
 });
 
 const baseGetTime = Date.now;
+let lastTime = 0;
+let lastBaseTime = 0;
 export function getTrueTime() {
-    return baseGetTime() + trueTimeOffset;
+    let baseTime = baseGetTime();
+    let time = baseTime + trueTimeOffset;
+    // Only adjust time once we have a time offset. Otherwise systems with a really bad clock
+    //  might take days be correct. It is better for the time to jump once at startup, rather
+    //  than be off by days, for days at a time.
+    if (lastTime && trueTimeOffset) {
+        if (time < lastTime) {
+            let diff = baseTime - lastBaseTime;
+            if (diff >= 0) {
+                // Some time passed, so we have a baseline for how much to increase the time by.
+                //  This allows the real time to catch up with our time naturally.
+                time = lastTime + diff * MINIMUM_TIME_RATE;
+            } else {
+                // The issue is the system time going backwards. In this case, allow the time to change
+            }
+        }
+    }
+    lastTime = time;
+    lastBaseTime = baseTime;
+    return time;
 }
 export function getTrueTimeOffset() {
     return trueTimeOffset;

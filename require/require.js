@@ -240,7 +240,7 @@
             return requestsResolvedPaths.map(x => getModule(x));
         } finally {
             time = Date.now() - time;
-            console.log(`%cimport(${requests.join(", ")}) finished evaluate ${time}ms (${moduleCount} modules) at ${Date.now() - startTime}ms`, "color: blue");
+            console.log(`%cimport(${requests.join(", ")}) finished evaluate ${time}ms (${moduleCount} modules) at ${Date.now() - startTime}ms`, "color: lightblue");
         }
     }
 
