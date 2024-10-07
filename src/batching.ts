@@ -226,7 +226,7 @@ export async function runInfinitePollCallAtStart(
                 try {
                     await fnc();
                 } catch (e: any) {
-                    console.error(`Error in infinite poll ${fnc.name} (continuing poll loop)\n${e.stack}`);
+                    console.error(`Error in infinite poll ${fnc.name || fnc.toString().slice(0, 100)} (continuing poll loop)\n${e.stack}`);
                 }
             }
         })();
