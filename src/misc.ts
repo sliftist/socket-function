@@ -1,4 +1,3 @@
-import * as crypto from "crypto";
 import { canHaveChildren, MaybePromise } from "./types";
 import { formatNumber } from "./formatting/format";
 
@@ -18,16 +17,17 @@ export function convertErrorStackToError(error: string): Error {
     return errorObj;
 }
 
+
 export function sha256Hash(buffer: Buffer | string): string {
-    return crypto.createHash("sha256").update(buffer).digest("hex");
+    return require("crypto").createHash("sha256").update(buffer).digest("hex");
 }
 export function sha256HashBuffer(buffer: Buffer | string): Buffer {
-    return crypto.createHash("sha256").update(buffer).digest();
+    return require("crypto").createHash("sha256").update(buffer).digest();
 }
 /** Async, but works both clientside and serverside. */
 export async function sha256HashPromise(buffer: Buffer) {
     if (isNode()) {
-        return crypto.createHash("sha256").update(buffer).digest("hex");
+        return require("crypto").createHash("sha256").update(buffer).digest("hex");
     } else {
         let buf = await window.crypto.subtle.digest("SHA-256", buffer);
         return Buffer.from(buf).toString("hex");
@@ -35,7 +35,7 @@ export async function sha256HashPromise(buffer: Buffer) {
 }
 export async function sha256BufferPromise(buffer: Buffer): Promise<Buffer> {
     if (isNode()) {
-        return crypto.createHash("sha256").update(buffer).digest();
+        return require("crypto").createHash("sha256").update(buffer).digest();
     } else {
         let buf = await window.crypto.subtle.digest("SHA-256", buffer);
         return Buffer.from(buf);
