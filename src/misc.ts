@@ -158,7 +158,7 @@ export class PromiseObj<T = void> {
     /** Resolve called does not mean the value is ready, as it may be resolved with a promise. */
     public resolveCalled?: boolean;
 
-    public resolve(value: T | Promise<T>) {
+    public resolve = (value: T | Promise<T>) => {
         this.resolveCalled = true;
         if (typeof value === "object" && value !== null && value instanceof Promise) {
             value.then(
@@ -169,10 +169,10 @@ export class PromiseObj<T = void> {
             this.value = { value };
         }
         this.baseResolve(value);
-    }
-    public reject(error: any) {
+    };
+    public reject = (error: any) => {
         this.baseReject(error);
-    }
+    };
 
     private baseResolve!: (value: T | Promise<T>) => void;
     private baseReject!: (error: any) => void;

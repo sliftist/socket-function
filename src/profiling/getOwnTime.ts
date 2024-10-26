@@ -19,7 +19,7 @@ export function getOpenTimesBase(): OwnTimeObjInternal[] {
     return openTimes;
 }
 
-(global as any).pendingOwnCallTime = openTimes;
+(globalThis as any).pendingOwnCallTime = openTimes;
 
 // NOTE: This overhead time is actually mostly for aggregate time, but it is needed,
 //  otherwise we consistently underestimate the time spent.
