@@ -205,47 +205,48 @@ export function throttleFunction<Args extends any[]>(
     let nextAllowedCall = 0;
     let pendingArgs: { args: Args; promiseObj: PromiseObj<void> } | undefined = undefined;
     function doCall(args: Args, promiseObj: PromiseObj<void>) {
-        nextAllowedCall = Number.POSITIVE_INFINITY;
         try {
             let result = fnc(...args);
             promiseObj.resolve(result);
             if (result instanceof Promise) {
-                result.finally(() => {
-                    afterCall(Date.now() + delay);
-                }).catch(e => console.error(e));
+                // NOTE: The caller should handle the promise. If not, they probably
+                //  want the unresolved promise rejection, so they can handle it properly.
+                void result.finally(() => {
+                    nextAllowedCall = Date.now() + delay;
+                    runNextCall();
+                });
             } else {
-                afterCall(Date.now() + delay);
+                nextAllowedCall = Date.now() + delay;
+                runNextCall();
             }
         } catch (e: any) {
-            debugger;
             promiseObj.reject(e);
-            afterCall(Date.now() + delay);
+            nextAllowedCall = Date.now() + delay;
+            runNextCall();
         }
     }
-    function afterCall(setNextAllowedCall: number | undefined, time = Date.now()) {
-
-        // NOTE: Ignore error, we really shouldn't have any here
-        if (setNextAllowedCall) {
-            nextAllowedCall = setNextAllowedCall;
-        } else {
-            if (nextAllowedCall === Number.POSITIVE_INFINITY) return;
-        }
+    function runNextCall() {
+        if (nextAllowedCall === Number.POSITIVE_INFINITY) return;
         if (!pendingArgs) return;
+        let time = Date.now();
         if (time > nextAllowedCall) {
-            let args = pendingArgs;
-            pendingArgs = undefined;
+            // Set nextAllowedCall to infinity, to prevent new calls from running
+            //  until doCall finishes.
+            nextAllowedCall = Number.POSITIVE_INFINITY;
             // Delay, so we don't turn a series of sequential calls to a series of nested calls
             //  (which will cause a stack overflow)
-            nextAllowedCall = Number.POSITIVE_INFINITY;
-            setImmediate(() => doCall(args.args, args.promiseObj));
-        } else {
             setTimeout(() => {
-                if (pendingArgs) {
-                    let args = pendingArgs;
-                    pendingArgs = undefined;
-                    doCall(args.args, args.promiseObj);
+                let args = pendingArgs;
+                pendingArgs = undefined;
+                if (!args) {
+                    nextAllowedCall = 0;
+                    console.warn(`Impossible, pendingArgs was reset when we shouldn't have even been in a call`);
+                    return;
                 }
-            }, nextAllowedCall - time);
+                doCall(args.args, args.promiseObj);
+            }, 0);
+        } else {
+            setTimeout(runNextCall, nextAllowedCall - time);
         }
     }
     return function (...args: Args): Promise<void> {
@@ -253,16 +254,9 @@ export function throttleFunction<Args extends any[]>(
             pendingArgs.args = args;
             return pendingArgs.promiseObj.promise;
         }
-        let time = Date.now();
-        if (time > nextAllowedCall) {
-            let promise = promiseObj();
-            doCall(args, promise);
-            return promise.promise;
-        } else {
-            pendingArgs = { args, promiseObj: promiseObj() };
-            afterCall(undefined, time);
-            return pendingArgs.promiseObj.promise;
-        }
+        pendingArgs = { args, promiseObj: promiseObj() };
+        runNextCall();
+        return pendingArgs.promiseObj.promise;
     };
 }
 

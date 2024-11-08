@@ -1,3 +1,4 @@
+import debugbreak from "debugbreak";
 import * as dgram from "dgram";
 import os from "os";
 
@@ -14,6 +15,7 @@ export async function forwardPort(config: {
     if (!localObj) throw new Error("Could not find the local address / gateway");
 
     const { internalIP, gatewayIP } = localObj;
+    console.log(`Local IP: ${internalIP}, Gateway IP: ${gatewayIP}`);
     let gateway = await discoverGateway(internalIP);
     let controlURLs = await getControlPaths(gateway);
     let controlPort = Number(new URL(gateway).port);
@@ -27,29 +29,70 @@ export async function forwardPort(config: {
                 controlPath: controlURL,
                 internalIP,
             });
+            console.log(`Port mapping created on ${gatewayIP}:${externalPort} -> ${internalIP}:${internalPort}`);
             return;
         } catch (e) {
-            console.error(e);
+            console.error(`Failed to create port mapping using controlURL ${controlURL}`, e);
         }
     }
     console.error("Failed to create port mapping, could not find controlURL");
 }
 
 function getLocalInterfaceAddress(): { internalIP: string; gatewayIP: string; } | undefined {
-    const interfaces = os.networkInterfaces() as any;
-    for (const name of Object.keys(interfaces)) {
-        for (const iface of interfaces[name]) {
-            if (iface.family === "IPv4" && !iface.internal) {
-                // TOOD: Correctly resolve the cidr?
-                let gatewayIP = iface.cidr.split(".").slice(0, 3).join(".") + ".1";
-                // TOOD: We try discovery on all gateways, so we can know for sure which one it is
-                //  (and maybe even port forward all gateway, if multiple respond?)
-                if (gatewayIP.startsWith("10.0.0") || gatewayIP.startsWith("10.0.1") || gatewayIP.startsWith("192.168.0")) {
-                    return { internalIP: iface.address, gatewayIP };
+    let looksLikeRouter = (ip: string) => ip.startsWith("10.0.0") || ip.startsWith("10.0.1") || ip.startsWith("192.168.0");
+
+    // On windows, run `ipconfig` and parse the output
+    // Otherwise, ifconfig
+    if (os.platform() === "win32") {
+        let output = require("child_process").execSync("ipconfig").toString();
+        let sections = output.split("\r\n\r\n");
+
+        for (let section of sections) {
+            if (section.includes("IPv4 Address")) {
+                let ipv4Match = section.match(/IPv4 Address[.\s]*: ([\d.]+)/);
+                let gatewayMatch = section.match(/Default Gateway[.\s]*: ([\d.]+)/);
+
+                if (ipv4Match && gatewayMatch && looksLikeRouter(gatewayMatch[1])) {
+                    return {
+                        internalIP: ipv4Match[1],
+                        gatewayIP: gatewayMatch[1]
+                    };
                 }
             }
         }
+    } else {
+        // For Unix-like systems (Linux, macOS)
+        // Try to get gateway from route command first
+        let routeOutput = require("child_process").execSync("route -n").toString();
+        let gatewayMatch = routeOutput.match(/0\.0\.0\.0\s+(\d+\.\d+\.\d+\.\d+)/);
+
+        if (!gatewayMatch) {
+            // Fallback for macOS
+            routeOutput = require("child_process").execSync("netstat -nr").toString();
+            gatewayMatch = routeOutput.match(/default\s+(\d+\.\d+\.\d+\.\d+)/);
+        }
+
+        if (gatewayMatch && looksLikeRouter(gatewayMatch[1])) {
+            // Now get the internal IP from ifconfig/ip addr
+            let ipCommand = os.platform() === "darwin" ? "ifconfig" : "ip addr";
+            let ipOutput = require("child_process").execSync(ipCommand).toString();
+
+            let ipMatch;
+            if (os.platform() === "darwin") {
+                ipMatch = ipOutput.match(/inet ((?!127\.0\.0\.1)\d+\.\d+\.\d+\.\d+)/);
+            } else {
+                ipMatch = ipOutput.match(/inet ((?!127\.0\.0\.1)\d+\.\d+\.\d+\.\d+)\/\d+/);
+            }
+
+            if (ipMatch) {
+                return {
+                    internalIP: ipMatch[1],
+                    gatewayIP: gatewayMatch[1]
+                };
+            }
+        }
     }
+
     return undefined;
 }
 
