@@ -72,7 +72,7 @@ function getLocalInterfaceAddress(): { internalIP: string; gatewayIP: string; } 
         let gatewayMatch: RegExpMatchArray | undefined;
         try {
             // Attempt to get the gateway using "ip route" command (more universal)
-            const routeOutput = require("child_process")("ip route show default").toString();
+            const routeOutput = require("child_process").execSync("ip route show default").toString();
             gatewayMatch = routeOutput.match(/default via (\d+\.\d+\.\d+\.\d+)/);
         } catch (err) {
             console.error("Failed to execute 'ip route show default', trying fallback", err);
@@ -81,7 +81,7 @@ function getLocalInterfaceAddress(): { internalIP: string; gatewayIP: string; } 
         if (!gatewayMatch) {
             try {
                 // Fallback to "netstat -rn" for older systems
-                const netstatOutput = require("child_process")("netstat -rn").toString();
+                const netstatOutput = require("child_process").execSync("netstat -rn").toString();
                 gatewayMatch = netstatOutput.match(/default\s+(\d+\.\d+\.\d+\.\d+)/);
             } catch (err) {
                 console.error("Failed to execute 'netstat -rn', unable to find gateway", err);
@@ -91,7 +91,7 @@ function getLocalInterfaceAddress(): { internalIP: string; gatewayIP: string; } 
         if (gatewayMatch) {
             try {
                 // Use "ip addr" to get internal IP (more universal)
-                const ipOutput = require("child_process")("ip addr").toString();
+                const ipOutput = require("child_process").execSync("ip addr").toString();
                 const ipMatch = ipOutput.match(/inet (?!127\.0\.0\.1)(\d+\.\d+\.\d+\.\d+)\//);
 
                 if (ipMatch) {
