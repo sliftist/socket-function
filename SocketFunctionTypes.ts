@@ -38,6 +38,7 @@ export type SocketExposedShape<ExposedType extends SocketExposedInterface = Sock
         hooks?: SocketFunctionHook<ExposedType>[];
         clientHooks?: SocketFunctionClientHook<ExposedType>[];
         noDefaultHooks?: boolean;
+        /** BUG: I think this is broken if it is on the default hooks function? */
         noClientHooks?: boolean;
     };
 };

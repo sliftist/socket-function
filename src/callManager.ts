@@ -122,13 +122,13 @@ export const runClientHooks = measureWrap(async function runClientHooks(
 ): Promise<ClientHookContext> {
     let context: ClientHookContext = { call: callType, connectionId };
 
-    let clientHooks = (
-        globalClientHooks
-            .concat(hooks.clientHooks || [])
-    );
-    for (let otherClientHook of globalHooks.concat(hooks.hooks || []).map(x => x.clientHook)) {
-        if (otherClientHook) {
-            clientHooks.push(otherClientHook);
+    let clientHooks = hooks.clientHooks?.slice() || [];
+    if (!hooks.noClientHooks) {
+        clientHooks = globalClientHooks.concat(clientHooks);
+        for (let otherClientHook of globalHooks.concat(hooks.hooks || []).map(x => x.clientHook)) {
+            if (otherClientHook) {
+                clientHooks.push(otherClientHook);
+            }
         }
     }
     for (let hook of clientHooks) {

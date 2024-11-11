@@ -11,7 +11,7 @@ import { parseSNIExtension, parseTLSHello, SNIType } from "./tlsParsing";
 import debugbreak from "debugbreak";
 import { getNodeId } from "./nodeCache";
 import crypto from "crypto";
-import { Watchable, timeInHour } from "./misc";
+import { Watchable, timeInHour, timeInMinute } from "./misc";
 import { delay, runInfinitePoll, runInfinitePollCallAtStart } from "./batching";
 import { magenta, red } from "./formatting/logColors";
 import { yellow } from "./formatting/logColors";
@@ -35,7 +35,8 @@ export type SocketServerConfig = (
         /** Tries forwarding ports (using UPnP), if we detect they aren't externally reachable.
          *      - This causes an extra request and delay during startup, so should only be used
          *          during development.
-         *      - Ignored if public is false
+         *      - Ignored if public is false (in which case we mount on 127.0.0.1, so port forwarding
+         *          wouldn't matter anyways).
         */
         autoForwardPort?: boolean;
         ip?: string;
@@ -180,6 +181,7 @@ export async function startSocketServer(
     });
 
     let realServer = net.createServer(socket => {
+        //console.log("Received TCP connection from " + socket.remoteAddress);
         const remoteAddress = socket.remoteAddress;
         function handleTLSHello(buffer: Buffer, packetCount: number): void | "more" {
             // All HTTPS requests start with 22, and no HTTP requests start with 22,
@@ -296,7 +298,7 @@ export async function startSocketServer(
             console.log(magenta(`Forwarded port ${port} to our machine`));
         }
         // Every hour, in case our network configuration changes
-        runInfinitePollCallAtStart(timeInHour * 1, forward).catch(e => console.error(red(`Error in port forwarding ${e.stack}`)));
+        runInfinitePollCallAtStart(timeInMinute * 30, forward).catch(e => console.error(red(`Error in port forwarding ${e.stack}`)));
     }
 
     let nodeId = getNodeId(getCommonName(config.cert), port);

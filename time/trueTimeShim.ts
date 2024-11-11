@@ -200,10 +200,15 @@ const TimeController = SocketFunction.register(
     "TimeController-ddf4753e-fc8a-413f-8cc2-b927dd449976",
     new TimeControllerBase(),
     () => ({
-        getTrueTime: {},
+        getTrueTime: {
+            // No hooks, as this needs to run very early on. Also, it is basically just a ping,
+            //  so it should be safe for anyone to use (we might even make it just a regular HTTPS endpoint,
+            //  or even just set up a dedicated domain for this).
+            noDefaultHooks: true,
+            noClientHooks: true,
+        },
     }),
-    () => ({
-    }),
+    () => ({}),
     {
         // NOTE: Autoexpose, because our exposed endpoints are incredibly lightweight
         //  (just a ping), and don't expose really expose any data.

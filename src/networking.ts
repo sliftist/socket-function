@@ -33,7 +33,7 @@ const ipServers = [
 export const getExternalIP = lazy(measureWrap(async function getExternalIP(): Promise<string> {
     for (let server of ipServers) {
         try {
-            return (await httpsRequest(server)).toString();
+            return (await httpsRequest(server, undefined, undefined, false)).toString();
         } catch (e) {
             console.warn(`Failed to get external ip from ${server}: ${e}`);
         }

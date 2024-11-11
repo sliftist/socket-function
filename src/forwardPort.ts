@@ -1,6 +1,7 @@
 import debugbreak from "debugbreak";
 import * as dgram from "dgram";
 import os from "os";
+import { timeInHour } from "./misc";
 
 const SSDP_DISCOVER_MX = 2;
 const SSDP_DISCOVER_MSG = `M-SEARCH * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\nMAN: "ssdp:discover"\r\nMX: ${SSDP_DISCOVER_MX}\r\nST: urn:schemas-upnp-org:device:InternetGatewayDevice:1\r\n\r\n`;
@@ -8,8 +9,10 @@ const SSDP_DISCOVER_MSG = `M-SEARCH * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\n
 export async function forwardPort(config: {
     externalPort: number;
     internalPort: number;
+    duration?: number;
 }) {
     const { externalPort, internalPort } = config;
+    let duration = config.duration ?? timeInHour;
 
     const localObj = getLocalInterfaceAddress();
     if (!localObj) throw new Error("Could not find the local address / gateway");
@@ -28,6 +31,7 @@ export async function forwardPort(config: {
                 controlPort,
                 controlPath: controlURL,
                 internalIP,
+                duration,
             });
             console.log(`Port mapping created on ${gatewayIP}:${externalPort} -> ${internalIP}:${internalPort}`);
             return;
@@ -160,7 +164,7 @@ async function createPortMapping(config: {
     controlPort: number;
     controlPath: string;
     internalIP: string;
-
+    duration: number;
 }): Promise<void> {
     const { externalPort, internalPort, internalIP, controlPath, controlPort, gatewayIP } = config;
     const action = "\"urn:schemas-upnp-org:service:WANIPConnection:1#AddPortMapping\"";
@@ -177,7 +181,7 @@ async function createPortMapping(config: {
                     <NewInternalClient>${internalIP}</NewInternalClient>
                     <NewEnabled>1</NewEnabled>
                     <NewPortMappingDescription>My Port Mapping</NewPortMappingDescription>
-                    <NewLeaseDuration>0</NewLeaseDuration>
+                    <NewLeaseDuration>${Math.ceil(config.duration / 1000)}</NewLeaseDuration>
                 </u:AddPortMapping>
             </s:Body>
         </s:Envelope>
