@@ -11,35 +11,39 @@ export async function forwardPort(config: {
     internalPort: number;
     duration?: number;
 }) {
-    const { externalPort, internalPort } = config;
-    let duration = config.duration ?? timeInHour;
+    try {
+        const { externalPort, internalPort } = config;
+        let duration = config.duration ?? timeInHour;
 
-    const localObj = getLocalInterfaceAddress();
-    if (!localObj) throw new Error("Could not find the local address / gateway");
+        const localObj = getLocalInterfaceAddress();
+        if (!localObj) throw new Error("Could not find the local address / gateway");
 
-    const { internalIP, gatewayIP } = localObj;
-    console.log(`Local IP: ${internalIP}, Gateway IP: ${gatewayIP}`);
-    let gateway = await discoverGateway(internalIP);
-    let controlURLs = await getControlPaths(gateway);
-    let controlPort = Number(new URL(gateway).port);
+        const { internalIP, gatewayIP } = localObj;
+        console.log(`Local IP: ${internalIP}, Gateway IP: ${gatewayIP}`);
+        let gateway = await discoverGateway(internalIP);
+        let controlURLs = await getControlPaths(gateway);
+        let controlPort = Number(new URL(gateway).port);
 
-    for (let controlURL of controlURLs) {
-        try {
-            await createPortMapping({
-                externalPort, internalPort,
-                gatewayIP,
-                controlPort,
-                controlPath: controlURL,
-                internalIP,
-                duration,
-            });
-            console.log(`Port mapping created on ${gatewayIP}:${externalPort} -> ${internalIP}:${internalPort}`);
-            return;
-        } catch (e) {
-            console.error(`Failed to create port mapping using controlURL ${controlURL}`, e);
+        for (let controlURL of controlURLs) {
+            try {
+                await createPortMapping({
+                    externalPort, internalPort,
+                    gatewayIP,
+                    controlPort,
+                    controlPath: controlURL,
+                    internalIP,
+                    duration,
+                });
+                console.log(`Port mapping created on ${gatewayIP}:${externalPort} -> ${internalIP}:${internalPort}`);
+                return;
+            } catch (e) {
+                console.error(`Failed to create port mapping using controlURL ${controlURL}`, e);
+            }
         }
+        console.error("Failed to create port mapping, could not find controlURL");
+    } catch (e) {
+        console.error("Error in forwardPort", e);
     }
-    console.error("Failed to create port mapping, could not find controlURL");
 }
 
 function getLocalInterfaceAddress(): { internalIP: string; gatewayIP: string; } | undefined {
@@ -65,34 +69,41 @@ function getLocalInterfaceAddress(): { internalIP: string; gatewayIP: string; } 
             }
         }
     } else {
-        // For Unix-like systems (Linux, macOS)
-        // Try to get gateway from route command first
-        let routeOutput = require("child_process").execSync("route -n").toString();
-        let gatewayMatch = routeOutput.match(/0\.0\.0\.0\s+(\d+\.\d+\.\d+\.\d+)/);
-
-        if (!gatewayMatch) {
-            // Fallback for macOS
-            routeOutput = require("child_process").execSync("netstat -nr").toString();
-            gatewayMatch = routeOutput.match(/default\s+(\d+\.\d+\.\d+\.\d+)/);
+        let gatewayMatch: RegExpMatchArray | undefined;
+        try {
+            // Attempt to get the gateway using "ip route" command (more universal)
+            const routeOutput = require("child_process")("ip route show default").toString();
+            gatewayMatch = routeOutput.match(/default via (\d+\.\d+\.\d+\.\d+)/);
+        } catch (err) {
+            console.error("Failed to execute 'ip route show default', trying fallback", err);
         }
 
-        if (gatewayMatch && looksLikeRouter(gatewayMatch[1])) {
-            // Now get the internal IP from ifconfig/ip addr
-            let ipCommand = os.platform() === "darwin" ? "ifconfig" : "ip addr";
-            let ipOutput = require("child_process").execSync(ipCommand).toString();
-
-            let ipMatch;
-            if (os.platform() === "darwin") {
-                ipMatch = ipOutput.match(/inet ((?!127\.0\.0\.1)\d+\.\d+\.\d+\.\d+)/);
-            } else {
-                ipMatch = ipOutput.match(/inet ((?!127\.0\.0\.1)\d+\.\d+\.\d+\.\d+)\/\d+/);
+        if (!gatewayMatch) {
+            try {
+                // Fallback to "netstat -rn" for older systems
+                const netstatOutput = require("child_process")("netstat -rn").toString();
+                gatewayMatch = netstatOutput.match(/default\s+(\d+\.\d+\.\d+\.\d+)/);
+            } catch (err) {
+                console.error("Failed to execute 'netstat -rn', unable to find gateway", err);
             }
+        }
 
-            if (ipMatch) {
-                return {
-                    internalIP: ipMatch[1],
-                    gatewayIP: gatewayMatch[1]
-                };
+        if (gatewayMatch) {
+            try {
+                // Use "ip addr" to get internal IP (more universal)
+                const ipOutput = require("child_process")("ip addr").toString();
+                const ipMatch = ipOutput.match(/inet (?!127\.0\.0\.1)(\d+\.\d+\.\d+\.\d+)\//);
+
+                if (ipMatch) {
+                    return {
+                        internalIP: ipMatch[1],
+                        gatewayIP: gatewayMatch[1]
+                    };
+                } else {
+                    console.error("Failed to match internal IP");
+                }
+            } catch (err) {
+                console.error("Failed to execute 'ip addr'", err);
             }
         }
     }
