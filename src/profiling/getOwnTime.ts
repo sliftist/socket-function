@@ -1,7 +1,12 @@
 import debugbreak from "debugbreak";
+import { isNode } from "../misc";
 // TODO: We could probably make this an optional / dev dependency, to allow
 //  for use on machines without the ability to compile?
-import { now } from "rdtsc-now";
+//import { now } from "rdtsc-now";
+let now = () => Date.now();
+if (isNode()) {
+    now = () => performance.now();
+}
 
 export type OwnTimeObj = {
     name: string;
