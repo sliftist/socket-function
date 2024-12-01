@@ -30,6 +30,8 @@ const measureOverhead = 5 / 1000;
 
 const AsyncFunction = (async () => { }).constructor;
 
+const noDiskLogPrefix = "\u200C";
+
 // TIMING: 1-5us. I have seen timing values greatly vary, but it does seem to be quite high, despite
 //  microbenchmarks saying it is slow. Perhaps it is because getOwnTime breaks the cpu pipeline,
 //  which causes slowness for code around us, but not if we are running in isolation?
@@ -131,12 +133,25 @@ export interface LogMeasureTableConfig {
     mergeDepth?: number;
     // Defaults to 10
     maxTableEntries?: number;
+
+    // No logging, just returns FormattedMeasureTable
+    returnOnly?: boolean;
+}
+
+export interface FormattedMeasureTable {
+    title: string;
+    entries: {
+        name: string;
+        ownTime: number;
+        fraction: number;
+        equation: string;
+    }[];
 }
 
 export function logMeasureTable(
     profile: MeasureProfile,
     config?: LogMeasureTableConfig
-) {
+): FormattedMeasureTable | undefined {
     let { useTotalTime, name } = config || {};
     const thresholdInTable = config?.thresholdInTable ?? 0.05;
     let minTimeToLog = config?.minTimeToLog ?? 50;
@@ -149,7 +164,7 @@ export function logMeasureTable(
     entries.sort((a, b) => getTime(b).sum - getTime(a).sum);
 
     let totalTime = entries.map(x => getTime(x).sum).reduce((a, b) => a + b, 0);
-    if (totalTime < minTimeToLog) return;
+    if (totalTime < minTimeToLog) return undefined;
 
     let mergeDepth = config?.mergeDepth ?? 2;
     {
@@ -186,7 +201,7 @@ export function logMeasureTable(
     if (name) {
         title = `(${blue(name)}) ${title}`;
     }
-    console.log(title);
+    console.log(noDiskLogPrefix + title);
     function percent(value: number) {
         return `${(value * 100).toFixed(2)}%`;
     }
@@ -244,9 +259,23 @@ export function logMeasureTable(
             output += red(`    (${entry.stillOpenCount} open)`);
         }
 
-        console.log(output);
+        console.log(noDiskLogPrefix + output);
     }
     console.log();
+
+    return {
+        title,
+        entries: entries.map(entry => {
+            let time = getTime(entry);
+            let fraction = time.sum / totalTime;
+            return {
+                name: entry.name,
+                ownTime: time.sum,
+                fraction,
+                equation: formatStats(time),
+            };
+        })
+    };
 }
 
 export async function measureCode<T>(code: () => Promise<T>, config?: LogMeasureTableConfig) {

@@ -230,6 +230,23 @@ export function formatDateTime(time: number) {
     return date.getFullYear() + "/" + p(date.getMonth() + 1) + "/" + p(date.getDate()) + " " + strTime;
 }
 
+/** 2024 January 1, Monday, 12:53:02pm */
+export function formatNiceDateTime(time: number) {
+    function p(s: number) {
+        return s.toString().padStart(2, "0");
+    }
+    let date = new Date(time);
+    let hours = date.getHours();
+    let minutes = date.getMinutes();
+    let seconds = date.getSeconds();
+    let ampm = hours >= 12 ? "pm" : "am";
+    hours = hours % 12;
+    hours = hours ? hours : 12; // the hour '0' should be '12'
+    let strTime = p(hours) + ":" + p(minutes) + ":" + p(seconds) + ampm;
+    let days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    return date.getFullYear() + " " + date.toLocaleString("default", { month: "long" }) + " " + date.getDate() + ", " + days[date.getDay()] + ", " + strTime;
+}
+
 /** YYYY/MM/DD */
 export function formatDate(time: number) {
     function p(s: number) {

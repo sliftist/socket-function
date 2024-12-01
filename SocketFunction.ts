@@ -279,6 +279,9 @@ export class SocketFunction {
      *      to add additional imports to ensure the register call runs.
      */
     public static expose(socketRegistered: SocketRegistered) {
+        if (!socketRegistered._classGuid) {
+            throw new Error("SocketFunction.expose must be called with a classGuid");
+        }
         console.log(`Exposing Controller ${blue(socketRegistered._classGuid)}`);
         exposeClass(socketRegistered);
         this.exposedClasses.add(socketRegistered._classGuid);

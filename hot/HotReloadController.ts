@@ -8,6 +8,7 @@ import * as fs from "fs";
 import debugbreak from "debugbreak";
 import { isNode } from "../src/misc";
 import { magenta, red } from "../src/formatting/logColors";
+import { formatTime } from "../src/formatting/format";
 
 /** Enables some hot reload functionality.
  *      - Triggers a refresh clientside
@@ -136,7 +137,7 @@ class HotReloadControllerBase {
         clientWatcherNodes.add(callerId);
     }
     async fileUpdated(files: string[], changeTime: number) {
-        console.groupCollapsed(magenta(`Trigger hotreload for files (${Date.now() - changeTime}ms after file change)`));
+        console.groupCollapsed(magenta(`Trigger hotreload for files ${formatTime(Date.now() - changeTime)} after file change`));
         for (let file of files) {
             console.log(file);
         }
@@ -171,7 +172,7 @@ class HotReloadControllerBase {
         for (let callback of hotReloadCallbacks) {
             callback(modules);
         }
-        console.log(magenta(`Hot reload complete (${Date.now() - changeTime}ms after file change)`));
+        console.log(magenta(`Hot reload complete ${formatTime(Date.now() - changeTime)} after file change`));
     }
 }
 

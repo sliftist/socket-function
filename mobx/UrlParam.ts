@@ -30,6 +30,13 @@ export class UrlParam<T> {
         history.pushState({}, "", url.toString());
         this.valueSeqNum.value++;
     }
+
+    public get value() {
+        return this.get();
+    }
+    public set value(value: T) {
+        this.set(value);
+    }
 }
 
 let urlBackSeqNum = observable({ value: 1 });
