@@ -149,7 +149,11 @@ export function keyByArray<T, K>(arr: T[], getKey: (value: T) => K): Map<K, T[]>
 
 export function deepCloneJSON<T>(obj: T): T {
     if (obj === undefined) return obj;
-    return JSON.parse(JSON.stringify(obj));
+    let str = JSON.stringify(obj);
+    // It is possible for an object to not be defined, but return undefined when JSON.stringified,
+    //  via overriding the toJSON method.
+    if (str === undefined) return undefined as any;
+    return JSON.parse(str);
 }
 
 export class PromiseObj<T = void> {
