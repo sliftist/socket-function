@@ -247,6 +247,17 @@ export function formatNiceDateTime(time: number) {
     return date.getFullYear() + " " + date.toLocaleString("default", { month: "long" }) + " " + date.getDate() + ", " + days[date.getDay()] + ", " + strTime;
 }
 
+/** 2024 January 1, Monday, 12:53:02pm (4 months ago)  */
+export function formatVeryNiceDateTime(time: number) {
+    if (!time) {
+        return "";
+    }
+    if (typeof time !== "number") {
+        return String(time);
+    }
+    return `${formatNiceDateTime(time)} (${formatTime(Date.now() - time)})`;
+}
+
 /** YYYY/MM/DD */
 export function formatDate(time: number) {
     function p(s: number) {
