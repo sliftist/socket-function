@@ -302,7 +302,7 @@ export async function startSocketServer(
     }
 
     let nodeId = getNodeId(getCommonName(config.cert), port);
-    console.log(green(`Started Listening on ${nodeId} after ${formatTime(process.uptime() * 1000)}`));
+    console.log(green(`Started Listening on ${nodeId} (${host}) after ${formatTime(process.uptime() * 1000)}`));
 
     return nodeId;
 }
