@@ -40,8 +40,6 @@ declare global {
              *      - If not set for any files serverside, we will do nothing (and just leave old code running).
              */
             hotreload?: boolean;
-            /** Only hotreloads the file in the browser. */
-            hotreloadBrowser?: boolean;
             noserverhotreload?: boolean;
         }
     }
@@ -68,7 +66,7 @@ const hotReloadModule = cache((module: NodeJS.Module) => {
     if (!module.updateContents) return;
     let interval = 1000;
     let fast = false;
-    if (module.hotreload || module.hotreloadBrowser) {
+    if (module.hotreload) {
         interval = 10;
         fast = true;
     }
@@ -150,7 +148,7 @@ class HotReloadControllerBase {
                 document.location.reload();
                 return;
             }
-            if (!module.hotreload && !module.hotreloadBrowser) {
+            if (!module.hotreload) {
                 console.log(`Module not hotreloadable: ${file}, reloading page to ensure new version is loaded`);
                 document.location.reload();
                 return;
