@@ -32,7 +32,7 @@ export async function performLocalCall(
     let classDef = classes[call.classGuid];
 
     if (!classDef) {
-        throw new Error(`Class ${call.classGuid} not found`);
+        throw new Error(`Class ${call.classGuid} not found. Have ${Object.keys(classes).join(", ")}`);
     }
 
     if (!exposedClasses.has(call.classGuid)) {
