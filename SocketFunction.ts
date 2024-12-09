@@ -274,11 +274,22 @@ export class SocketFunction {
         return url.toString();
     }
 
+    private static ignoreExposeCount = 0;
+    public static async ignoreExposeCalls<T>(code: () => Promise<T>) {
+        this.ignoreExposeCount++;
+        try {
+            return await code();
+        } finally {
+            this.ignoreExposeCount--;
+        }
+    }
+
     /** Expose should be called before your mounting occurs. It mostly just exists to ensure you include the class type,
      *      so the class type's module construction runs, which should trigger register. Otherwise you would have
      *      to add additional imports to ensure the register call runs.
      */
     public static expose(socketRegistered: SocketRegistered) {
+        if (this.ignoreExposeCount > 0) return;
         if (!socketRegistered._classGuid) {
             throw new Error("SocketFunction.expose must be called with a classGuid");
         }
