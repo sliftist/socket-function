@@ -16,7 +16,11 @@ export class UrlParam<T> {
         if (value === null) {
             return this.defaultValue;
         }
-        return JSON.parse(value) as T;
+        try {
+            return JSON.parse(value) as T;
+        } catch {
+            return undefined as any;
+        }
     }
     public set(value: T) {
         let url = new URL(location.href);
