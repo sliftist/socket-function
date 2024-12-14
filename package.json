@@ -1,13 +1,13 @@
 {
 	"name": "socket-function",
-	"version": "0.35.0",
+	"version": "0.36.0",
 	"main": "index.js",
 	"license": "MIT",
 	"note1": "note on node-forge fork, see https://github.com/digitalbazaar/forge/issues/744 for details",
 	"dependencies": {
 		"@types/pako": "^2.0.3",
 		"@types/ws": "^8.5.3",
-		"cbor-x": "^1.5.6",
+		"cbor-x": "^1.6.0",
 		"mobx": "^6.6.2",
 		"node-forge": "https://github.com/sliftist/forge#name",
 		"pako": "^2.1.0",
