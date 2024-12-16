@@ -67,6 +67,9 @@ export async function startSocketServer(
         let httpServerPromise = new Promise<https.Server>(r => onHttpServer = r);
         let lastOptions!: https.ServerOptions;
         await watchOptions(value => {
+            // NOTE: If this is called a lot... STOP CALLING IT A LOT! Calling setSecureContext
+            //  so frequently likely leaks memory!
+            console.log(`Updating websocket server options`);
             lastOptions = {
                 ...value,
                 ca: getTrustedCertificates(),
@@ -88,6 +91,9 @@ export async function startSocketServer(
         }
 
         watchTrustedCertificates(() => {
+            // NOTE: If this is called a lot... STOP CALLING IT A LOT! Calling setSecureContext
+            //  so frequently likely leaks memory!
+            console.log(`Updating websocket server trusted certificates`);
             lastOptions.ca = getTrustedCertificates();
             httpsServer.setSecureContext(lastOptions);
         });

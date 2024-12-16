@@ -11,6 +11,9 @@ export async function forwardPort(config: {
     internalPort: number;
     duration?: number;
 }) {
+    // On linux, just return, the server probably doesn't require forwarding, and if it does,
+    //  it probably this code probably won't work anyways.
+    if (os.platform() === "linux") return;
     try {
         const { externalPort, internalPort } = config;
         let duration = config.duration ?? timeInHour;
