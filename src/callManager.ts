@@ -51,14 +51,25 @@ export async function performLocalCall(
 
     let serverContext = await runServerHooks(call, caller, functionShape);
     if ("overrideResult" in serverContext) {
-        return serverContext.overrideResult;
+        for (let callback of serverContext.onResult) {
+            await callback(serverContext.overrideResult);
+        }
+        if ("overrideResult" in serverContext) {
+            return serverContext.overrideResult;
+        }
     }
 
     // NOTE: We purposely don't await inside _setSocketContext, so the context is reset synchronously
     let result = _setSocketContext(caller, () => {
         return controller[call.functionName](...call.args);
     });
+    for (let callback of serverContext.onResult) {
+        await callback(result);
+    }
 
+    if ("overrideResult" in serverContext) {
+        return serverContext.overrideResult;
+    }
     return await result;
 }
 
@@ -120,7 +131,7 @@ export const runClientHooks = measureWrap(async function runClientHooks(
     hooks: Exclude<SocketExposedShape[""], undefined>,
     connectionId: { nodeId: string },
 ): Promise<ClientHookContext> {
-    let context: ClientHookContext = { call: callType, connectionId };
+    let context: ClientHookContext = { call: callType, connectionId, onResult: [] };
 
     let clientHooks = hooks.clientHooks?.slice() || [];
     if (!hooks.noClientHooks) {
@@ -133,6 +144,7 @@ export const runClientHooks = measureWrap(async function runClientHooks(
     }
     for (let hook of clientHooks) {
         await hook(context);
+        // NOTE: See ClientHookContext.overrideResult for why we break here
         if ("overrideResult" in context) {
             break;
         }
@@ -146,12 +158,10 @@ export const runServerHooks = measureWrap(async function runServerHooks(
     caller: CallerContext,
     hooks: Exclude<SocketExposedShape[""], undefined>,
 ): Promise<HookContext> {
-    let hookContext: HookContext = { call: callType };
+    let hookContext: HookContext = { call: callType, onResult: [] };
     for (let hook of globalHooks.concat(hooks.hooks || [])) {
         await _setSocketContext(caller, () => hook(hookContext));
-        if ("overrideResult" in hookContext) {
-            break;
-        }
+        // NOTE: See HookContext.overrideResult for why we don't break here
     }
     return hookContext;
 });

@@ -16,6 +16,7 @@ import "./SetProcessVariables";
 import cborx from "cbor-x";
 import { setFlag } from "./require/compileFlags";
 import { isNode } from "./src/misc";
+import { getPendingCallCount, harvestCallTimes, harvestFailedCallCount } from "./src/CallFactory";
 
 /** Always shim Date.now(), because we usually DO want an accurate time... */
 setImmediate(async () => {
@@ -84,8 +85,43 @@ export class SocketFunction {
         return caller;
     }
 
+    public static harvestFailedCallCount = () => harvestFailedCallCount();
+    public static getPendingCallCount = () => getPendingCallCount();
+    public static harvestCallTimes = () => harvestCallTimes();
+
     // NOTE: We use callbacks we don't run into issues with cyclic dependencies
     //  (ex, using a hook in a controller where the hook also calls the controller).
+    /*
+        export const DiskLoggerController = SocketFunction.register(
+            // Can be anything, but should be unique amongst other controllers on your server.
+            "DiskLoggerController-f76a6fdf-3bd5-4bd4-a183-55a8be0a5a32",
+            // Contains the functions that can be exposed, which must all be async.
+            //  Only those listed below will be exposed.
+            new DiskLoggerControllerBase(),
+            () => ({
+                // Only functions listed here will be exposed
+                getRemoteLogFiles: {},
+                getRemoteLogBuffer: {
+                    compress: true,
+                    // SocketFunctionClientHook[]
+                    clientHooks: [
+                        (x) => {
+                            // If overrideResult is set, it skips the call and returns overrideResult
+                            x.overrideResult = Buffer.from(...);
+                        }
+                    ]
+                },
+            }),
+            () => ({
+                // Default hooks for all functions
+                // SocketFunctionHook[]
+                hooks: [assertIsManagementUser],
+            }),
+            {
+                // Additionaly flags
+            }
+        );
+    */
     public static register<
         ClassInstance extends object,
         Shape extends SocketExposedShape<{
@@ -213,10 +249,22 @@ export class SocketFunction {
             let hookResult = await runClientHooks(call, shapeObj as Exclude<SocketExposedShape[""], undefined>, callFactory.connectionId);
 
             if ("overrideResult" in hookResult) {
-                return hookResult.overrideResult;
+                for (let callback of hookResult.onResult) {
+                    await callback(hookResult.overrideResult);
+                }
+                if ("overrideResult" in hookResult) {
+                    return hookResult.overrideResult;
+                }
             }
 
-            return await callFactory.performCall(call);
+            let result = await callFactory.performCall(call);
+            for (let callback of hookResult.onResult) {
+                await callback(result);
+            }
+            if ("overrideResult" in hookResult) {
+                return hookResult.overrideResult;
+            }
+            return result;
         } finally {
             time = Date.now() - time;
             if (SocketFunction.logMessages) {
@@ -374,10 +422,10 @@ export class SocketFunction {
         return SocketFunction.connect({ address: location.hostname, port: +location.port || 443 });
     }
 
-    public static addGlobalHook(hook: SocketFunctionHook<SocketExposedInterface>) {
+    public static addGlobalHook(hook: SocketFunctionHook) {
         registerGlobalHook(hook as SocketFunctionHook);
     }
-    public static addGlobalClientHook(hook: SocketFunctionClientHook<SocketExposedInterface>) {
+    public static addGlobalClientHook(hook: SocketFunctionClientHook) {
         registerGlobalClientHook(hook as SocketFunctionClientHook);
     }
 }

@@ -38,12 +38,6 @@ export function createWebsocketFactory(): (nodeId: string) => SenderInterface {
             }
             let webSocket = new ws.WebSocket(`wss://${address}:${port}`, undefined, {
                 ca: getTrustedCertificates(),
-                // createConnection(options, oncreate) {
-                //     // NOTE: If our latency is 500ms, with 10MB/s, then we need a high water
-                //     //  mark of at least 5MB, otherwise our connection is slowed down.
-                //     //(options as any).writableHighWaterMark = 5 * 1024 * 1024;
-                //     return tls.connect(options as any, oncreate as any);
-                // },
             });
 
             // NOTE: Little setup is done here, because Sometimes websockets are created here,

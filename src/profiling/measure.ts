@@ -30,7 +30,8 @@ const measureOverhead = 5 / 1000;
 
 const AsyncFunction = (async () => { }).constructor;
 
-const noDiskLogPrefix = "\u200C";
+// NOTE: Also hardcoded in diskLogger.ts (in querysub)
+const noDiskLogPrefix = "█ ";
 
 // TIMING: 1-5us. I have seen timing values greatly vary, but it does seem to be quite high, despite
 //  microbenchmarks saying it is slow. Perhaps it is because getOwnTime breaks the cpu pipeline,
@@ -78,6 +79,9 @@ export function measureBlock<T extends (...args: any[]) => any>(fnc: T, name?: s
 }
 
 let extraInfoGetters: (() => string | undefined)[] = [];
+/** NOTE: You should often call registerNodeMetadata for this as well. registerMeasureInfo
+ *      is for logs, while registerNodeMetadata is for the overview page.
+ */
 export function registerMeasureInfo(getInfo: () => string | undefined) {
     extraInfoGetters.push(getInfo);
 }

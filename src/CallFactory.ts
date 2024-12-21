@@ -1,7 +1,7 @@
 import { CallerContext, CallerContextBase, CallType, FullCallType } from "../SocketFunctionTypes";
 import * as ws from "ws";
 import { getCallFlags, performLocalCall, shouldCompressCall } from "./callManager";
-import { convertErrorStackToError, formatNumberSuffixed, isBufferType, isNode, list } from "./misc";
+import { convertErrorStackToError, formatNumberSuffixed, isBufferType, isNode, list, timeInHour, timeInMinute } from "./misc";
 import { createWebsocketFactory, getTLSSocket } from "./websocketFactory";
 import { SocketFunction } from "../SocketFunction";
 import * as tls from "tls";
@@ -10,7 +10,7 @@ import debugbreak from "debugbreak";
 import { lazy } from "./caching";
 import { red, yellow } from "./formatting/logColors";
 import { isSplitableArray, markArrayAsSplitable } from "./fixLargeNetworkCalls";
-import { delay, runInSerial } from "./batching";
+import { delay, runInfinitePoll, runInSerial } from "./batching";
 import { formatNumber, formatTime } from "./formatting/format";
 import zlib from "zlib";
 import pako from "pako";
@@ -67,6 +67,30 @@ export interface SenderInterface {
 
     ping?(): void;
 }
+
+let pendingCallCount = 0;
+let harvestableFailedCalls = 0;
+const CALL_TIMES_LIMIT = 1000 * 1000 * 10;
+let harvestableCallTimes: number[] = [];
+export function harvestFailedCallCount() {
+    let count = harvestableFailedCalls;
+    harvestableFailedCalls = 0;
+    return count;
+}
+export function getPendingCallCount() {
+    return pendingCallCount;
+}
+export function harvestCallTimes() {
+    let times = harvestableCallTimes;
+    harvestableCallTimes = [];
+    return times;
+}
+runInfinitePoll(timeInMinute * 15, () => {
+    if (harvestableCallTimes.length > CALL_TIMES_LIMIT) {
+        harvestableCallTimes = harvestableCallTimes.slice(-CALL_TIMES_LIMIT);
+    }
+});
+
 
 export async function createCallFactory(
     webSocketBase: SenderInterface | undefined,
@@ -179,8 +203,13 @@ export async function createCallFactory(
             }
 
             let resultPromise = new Promise((resolve, reject) => {
+                let startTime = Date.now();
+                pendingCallCount++;
                 let callback = (result: InternalReturnType) => {
+                    pendingCallCount--;
                     pendingCalls.delete(seqNum);
+                    harvestableCallTimes.push(Date.now() - startTime);
+
                     if (result.error) {
                         reject(convertErrorStackToError(result.error));
                     } else {
@@ -225,11 +254,13 @@ export async function createCallFactory(
         function onClose(error: string) {
             callFactory.connectionId = { nodeId };
             callFactory.lastClosed = Date.now();
+            callFactory.isConnected = false;
             webSocketPromise = undefined;
             if (!canReconnect) {
                 callFactory.closedForever = true;
             }
             for (let [key, call] of pendingCalls) {
+                harvestableFailedCalls++;
                 pendingCalls.delete(key);
                 call.callback({
                     isReturn: true,

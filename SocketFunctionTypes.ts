@@ -35,8 +35,13 @@ export type FunctionFlags = {
 };
 export type SocketExposedShape<ExposedType extends SocketExposedInterface = SocketExposedInterface> = {
     [functionName in keyof ExposedType]?: FunctionFlags & {
-        hooks?: SocketFunctionHook<ExposedType>[];
-        clientHooks?: SocketFunctionClientHook<ExposedType>[];
+        // NOTE: Due tohow register is called we can't use ExposedType[functionName] here,
+        //  because we didn'tt use the double call pattern. Maybe we will later,
+        //  but the type benefits are marginal. Args and overrideResult can be typed,
+        //  but 99% of the time those are used by generic helper functions anyways,
+        //  which only want unknowns anyways.
+        hooks?: SocketFunctionHook[];
+        clientHooks?: SocketFunctionClientHook[];
         noDefaultHooks?: boolean;
         /** BUG: I think this is broken if it is on the default hooks function? */
         noClientHooks?: boolean;
@@ -53,25 +58,36 @@ export interface FullCallType<FncT extends FncType = FncType, FncName extends st
     nodeId: string;
 }
 
-export interface SocketFunctionHook<ExposedType extends SocketExposedInterface = SocketExposedInterface> {
-    (config: HookContext<ExposedType>): MaybePromise<void>;
+export interface SocketFunctionHook {
+    (config: HookContext): MaybePromise<void>;
     /** NOTE: This is useful when we need a clientside hook to set up state specifically for our serverside hook. */
-    clientHook?: SocketFunctionClientHook<ExposedType>;
+    clientHook?: SocketFunctionClientHook;
 }
-export type HookContext<ExposedType extends SocketExposedInterface = SocketExposedInterface> = {
+export type HookContext = {
     call: FullCallType;
     // If the result is overriden, we continue evaluating hooks BUT DO NOT perform the final call
+    //  - It is important we continue evaluating hooks, in case some later hooks check permissions
+    //      and throw. We wouldn't want a caching layer to accidentally avoid a permissions check.
     overrideResult?: unknown;
+    // Is called on a result, even if it is from overrideResult
+    //  Maybe further mutate overrideResult, or even add it
+    onResult: ((result: unknown) => MaybePromise<void>)[];
 };
 
-export type ClientHookContext<ExposedType extends SocketExposedInterface = SocketExposedInterface> = {
+export type ClientHookContext = {
     call: FullCallType;
-    // If the result is overriden, we continue evaluating hooks BUT DO NOT perform the final call
+    // If the result is overriden, we STOP evaluating hooks and do not perform the final call
+    //  - We stop evaluating hooks, because other hooks might end up making unnecessary calls,
+    //      which won't be needed, because we aren't calling the server. There is no security issue,
+    //      because the clientside checks are never security checks (how could they be, the client
+    //      can't authorize itself...)
     overrideResult?: unknown;
+    // Is called on a result, even if it is from overrideResult
+    onResult: ((result: unknown) => MaybePromise<void>)[];
     connectionId: { nodeId: string };
 };
-export interface SocketFunctionClientHook<ExposedType extends SocketExposedInterface = SocketExposedInterface> {
-    (config: ClientHookContext<ExposedType>): MaybePromise<void>;
+export interface SocketFunctionClientHook {
+    (config: ClientHookContext): MaybePromise<void>;
 }
 
 export interface SocketRegisterType<ExposedType = any> {

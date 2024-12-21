@@ -23,13 +23,15 @@ export function httpsRequest(
             if (urlObj.port) {
                 port = +urlObj.port;
             }
-
             return new Promise<Buffer>((resolve, reject) => {
                 let httpRequest = requestor.request(
                     urlObj + "",
                     {
                         method,
                         headers: config?.headers,
+                        // NOTE: We get a lot of backblaze errors when we try to re-use connections. It might be faster,
+                        //  but... anything that cares about speed should use websockets anyways...
+                        agent: new requestor.Agent({ keepAlive: false }),
                     },
                     async httpResponse => {
                         let data: Buffer[] = [];
