@@ -71,7 +71,7 @@ export interface SenderInterface {
 let pendingCallCount = 0;
 let harvestableFailedCalls = 0;
 const CALL_TIMES_LIMIT = 1000 * 1000 * 10;
-let harvestableCallTimes: number[] = [];
+let harvestableCallTimes: { start: number; end: number; }[] = [];
 export function harvestFailedCallCount() {
     let count = harvestableFailedCalls;
     harvestableFailedCalls = 0;
@@ -208,7 +208,7 @@ export async function createCallFactory(
                 let callback = (result: InternalReturnType) => {
                     pendingCallCount--;
                     pendingCalls.delete(seqNum);
-                    harvestableCallTimes.push(Date.now() - startTime);
+                    harvestableCallTimes.push({ start: startTime, end: Date.now(), });
 
                     if (result.error) {
                         reject(convertErrorStackToError(result.error));
