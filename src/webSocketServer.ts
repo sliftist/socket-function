@@ -142,7 +142,9 @@ export async function startSocketServer(
                         throw new Error(`Invalid cross domain request, ${JSON.stringify(host)} !== ${JSON.stringify(origin)} (also not in config.allowedHostnames ${JSON.stringify(config.allowHostnames)})`);
                     }
                 } catch (e) {
-                    console.error(e);
+                    // NOTE: Just log, because invalid requests are guaranteed to happen, and
+                    //  there's no point wasting time looking at them.
+                    console.log(e);
                     return;
                 }
             }

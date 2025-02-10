@@ -293,6 +293,25 @@ export function sort<T>(arr: T[], sortKey: (obj: T) => unknown) {
     return arr;
 }
 
+export class QueueLimited<T> {
+    private items: T[] = [];
+    private index = 0;
+    constructor(private readonly maxCount: number) { }
+
+    public push(item: T) {
+        this.index = (this.index + 1) % this.maxCount;
+        this.items[this.index] = item;
+    }
+
+    public getAllUnordered() {
+        return this.items;
+    }
+    public reset() {
+        this.items = [];
+        this.index = 0;
+    }
+}
+
 export function binarySearchBasic<T, V>(array: T[], getVal: (val: T) => V, searchValue: V): number {
     return binarySearchIndex(array.length, i => compare(getVal(array[i]), searchValue));
 }
