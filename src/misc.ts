@@ -298,19 +298,28 @@ export class QueueLimited<T> {
     private index = 0;
     constructor(private readonly maxCount: number) { }
 
-    public push(item: T) {
+    public push(item: T): void {
         this.index = (this.index + 1) % this.maxCount;
         this.items[this.index] = item;
     }
 
-    public getAllUnordered() {
+    public getAllUnordered(): T[] {
         return this.items;
     }
-    public reset() {
+    public reset(): void {
         this.items = [];
         this.index = 0;
     }
+    public getOldest(): T | undefined {
+        if (this.items.length === 0) return undefined;
+        let index = this.index - 1;
+        if (index === -1) {
+            index += this.maxCount;
+        }
+        return this.items[index];
+    }
 }
+
 
 export function binarySearchBasic<T, V>(array: T[], getVal: (val: T) => V, searchValue: V): number {
     return binarySearchIndex(array.length, i => compare(getVal(array[i]), searchValue));
