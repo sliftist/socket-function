@@ -210,7 +210,7 @@ export async function httpCallHandler(request: http.IncomingMessage, response: h
 
     } catch (e: any) {
         console.log(`HTTP error  (${request.method}) ${e.stack}`);
-        response.writeHead(500, String(e.message));
+        response.writeHead(500, String(e.message).replace(/[^\x20-\x7E]/g, ""));
     } finally {
         response.end();
     }

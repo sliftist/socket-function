@@ -295,12 +295,12 @@ export function sort<T>(arr: T[], sortKey: (obj: T) => unknown) {
 
 export class QueueLimited<T> {
     private items: T[] = [];
-    private index = 0;
+    private nextIndex = 0;
     constructor(private readonly maxCount: number) { }
 
     public push(item: T): void {
-        this.index = (this.index + 1) % this.maxCount;
-        this.items[this.index] = item;
+        this.items[this.nextIndex] = item;
+        this.nextIndex = (this.nextIndex + 1) % this.maxCount;
     }
 
     public getAllUnordered(): T[] {
@@ -308,11 +308,15 @@ export class QueueLimited<T> {
     }
     public reset(): void {
         this.items = [];
-        this.index = 0;
+        this.nextIndex = 0;
+    }
+    public clear(): void {
+        this.reset();
     }
     public getOldest(): T | undefined {
         if (this.items.length === 0) return undefined;
-        let index = this.index - 1;
+        let index = this.nextIndex - 1;
+
         if (index === -1) {
             index += this.maxCount;
         }
