@@ -1,8 +1,10 @@
+/// <reference path="../hot/HotReloadController.ts" />
 import { CallerContext, CallType, ClientHookContext, FullCallType, FunctionFlags, HookContext, SocketExposedInterface, SocketExposedInterfaceClass, SocketExposedShape, SocketFunctionClientHook, SocketFunctionHook, SocketRegistered } from "../SocketFunctionTypes";
 import { _setSocketContext } from "../SocketFunction";
 import { entries, isNode } from "./misc";
 import debugbreak from "debugbreak";
 import { measureWrap } from "./profiling/measure";
+import { formatTime } from "./formatting/format";
 
 let classes: {
     [classGuid: string]: {
@@ -143,7 +145,12 @@ export const runClientHooks = measureWrap(async function runClientHooks(
         }
     }
     for (let hook of clientHooks) {
+        let time = Date.now();
         await hook(context);
+        time = Date.now() - time;
+        if (time > 100) {
+            console.warn(`Slow (${formatTime(time)}) client hook: ${JSON.stringify(hook.name || hook.toString().slice(0, 100))} for ${callType.classGuid}.${callType.functionName}(...)`);
+        }
         // NOTE: See ClientHookContext.overrideResult for why we break here
         if ("overrideResult" in context) {
             break;
@@ -160,7 +167,12 @@ export const runServerHooks = measureWrap(async function runServerHooks(
 ): Promise<HookContext> {
     let hookContext: HookContext = { call: callType, onResult: [] };
     for (let hook of globalHooks.concat(hooks.hooks || [])) {
+        let time = Date.now();
         await _setSocketContext(caller, () => hook(hookContext));
+        time = Date.now() - time;
+        if (time > 100) {
+            console.warn(`Slow (${formatTime(time)}) server hook: ${JSON.stringify(hook.name || hook.toString().slice(0, 100))} for ${callType.classGuid}.${callType.functionName}(...)`);
+        }
         // NOTE: See HookContext.overrideResult for why we don't break here
     }
     return hookContext;

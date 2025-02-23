@@ -197,7 +197,7 @@ export class SocketFunction {
         if (!config?.noAutoExpose) {
             this.expose(socketCaller);
         }
-        return Object.assign(socketCaller, config?.statics);
+        return Object.assign(socketCaller, config?.statics) as any;
     }
 
     private static socketCache = new Map<string, SocketRegistered>();

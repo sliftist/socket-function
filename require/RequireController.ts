@@ -225,7 +225,7 @@ class RequireControllerBase {
                 seqNum: module.requireControllerSeqNum,
                 size: module.size,
                 version: module.version,
-                asyncRequests: module.asyncRequires,
+                asyncRequests: module.asyncRequires || {},
                 flags: {},
             };
             for (let [flag, value] of Object.entries(module)) {
@@ -256,7 +256,7 @@ class RequireControllerBase {
                 if (requiredModule) {
                     // Only include synchronous modules. BUT, DO include the requests, so when/if the request is made
                     //  it can be resolved correctly.
-                    if (!module.asyncRequires[request]) {
+                    if (!module.asyncRequires?.[request]) {
                         addModule(requiredModule);
                     }
                     moduleObj.requests[request] = requiredModule.filename;
