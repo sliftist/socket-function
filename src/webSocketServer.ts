@@ -99,17 +99,18 @@ export async function startSocketServer(
         });
 
         httpsServer.on("connection", socket => {
+            let debug = (socket as any).remoteAddress + ":" + (socket as any).remotePort;
             if (!SocketFunction.silent) {
-                console.log("Client connection established");
+                console.log(`HTTP server connection established ${debug}`);
             }
             socket.on("error", e => {
                 if (!SocketFunction.silent) {
-                    console.log(`Client socket error ${e.message}`);
+                    console.log(`HTTP server socket error for ${debug}, ${e.message}`);
                 }
             });
             socket.on("close", () => {
                 if (!SocketFunction.silent) {
-                    console.log("Client socket closed");
+                    console.log(`HTTP server socket closed for ${debug}`);
                 }
             });
         });
@@ -127,12 +128,6 @@ export async function startSocketServer(
         httpsServer.on("request", httpCallHandler);
 
         httpsServer.on("upgrade", (request, socket, upgradeHead) => {
-            socket.on("error", e => {
-                if (!SocketFunction.silent) {
-                    console.log(`Client socket error ${e.message}`);
-                }
-            });
-
             let originHeader = request.headers["origin"];
             if (originHeader) {
                 try {
@@ -162,6 +157,10 @@ export async function startSocketServer(
     //  so it is easy to read, and consistent.
     let options: https.ServerOptions = {
         ...config,
+        // Keep alive causes problems with our HTTP requests. AND... almost all of our data uses
+        //  our websockets, so... we really don't need to keep alive our HTTP requests
+        //  (and our images go through cloudflare, so we don't even need keep alive for that)
+        keepAlive: false,
     };
     if (!config.cert) {
         throw new Error("No cert specified");
@@ -189,9 +188,14 @@ export async function startSocketServer(
     });
 
     let realServer = net.createServer(socket => {
-        //console.log("Received TCP connection from " + socket.remoteAddress);
-        const remoteAddress = socket.remoteAddress;
+        const debug = socket.remoteAddress + ":" + socket.remotePort;
+        if (!SocketFunction.silent) {
+            console.log(`Received TCP connection from ${debug}`);
+        }
         function handleTLSHello(buffer: Buffer, packetCount: number): void | "more" {
+            if (!SocketFunction.silent) {
+                console.log(`Received TCP header packet from ${debug}, have ${buffer.length} bytes so far, ${packetCount} packets`);
+            }
             // All HTTPS requests start with 22, and no HTTP requests start with 22,
             //  so we just need to read the first byte.
             let server: https.Server | http.Server;
@@ -207,7 +211,7 @@ export async function startSocketServer(
                     console.log(`Received TCP connection with SNI ${JSON.stringify(sni)}`);
                 }
                 if (!sni) {
-                    console.warn(`No SNI found in TLS hello from ${remoteAddress}, using main server. Packets ${packetCount}`);
+                    console.warn(`No SNI found in TLS hello from ${debug}, using main server. Packets ${packetCount}`);
                     console.log(buffer.toString("base64"));
                 }
                 server = sniServers.get(sni) || mainHTTPSServer;
@@ -232,7 +236,7 @@ export async function startSocketServer(
         }
         getNextData();
         socket.on("error", (e) => {
-            console.error(`Socket error for ${remoteAddress}, ${e.stack}`);
+            console.error(`TCP socket error for ${debug}, ${e.stack}`);
         });
     });
 

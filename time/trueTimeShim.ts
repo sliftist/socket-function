@@ -60,6 +60,9 @@ export function waitForFirstTimeSync() {
 export function shimDateNow() {
     Date.now = getTrueTime;
 }
+export function getBrowserTime() {
+    return baseGetTime();
+}
 
 export function setGetTimeOffsetBase(base: () => Promise<number>) {
     getTimeOffsetBase = base;

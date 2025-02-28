@@ -2,6 +2,7 @@
     //# sourceURL=require.js
 
     let startTime = Date.now();
+    globalThis.BOOT_TIME = startTime;
 
     Symbol.dispose = Symbol.dispose || Symbol("dispose");
     Symbol.asyncDispose = Symbol.asyncDispose || Symbol("asyncDispose");
@@ -12,24 +13,22 @@
             argv: [],
             env: {
                 // Mirror the tnode.js setting
-                NODE_ENV: "production"
+                NODE_ENV: "production",
             },
-            versions: {
-
-            },
+            versions: {},
         },
         setImmediate(callback) {
             setTimeout(callback, 0);
         },
         // Ignore flags for now, even though they should work fine if we just hardcoded compileFlags.ts here.
-        setFlag() { },
+        setFlag() {},
         global: window,
     });
 
     // Not real modules, as we just define their exports
     const builtInModuleExports = {
         worker_threads: {
-            isMainThread: true
+            isMainThread: true,
         },
         util: {
             // https://nodejs.org/api/util.html#util_util_inherits_constructor_superconstructor
@@ -42,8 +41,8 @@
         buffer: { Buffer },
         stream: {
             // HACK: Needed to get SAX JS to work correctly.
-            Stream: function () { },
-            Transform: function () { },
+            Stream: function () {},
+            Transform: function () {},
         },
         timers: {
             // TODO: Add all members of timers
@@ -101,11 +100,7 @@
 
     window.r = function r(text) {
         text = text.toLowerCase();
-        return Object
-            .values(moduleCache)
-            .filter(x => x.filename.toLowerCase().includes(text))
-        [0]
-            .exports;
+        return Object.values(moduleCache).filter((x) => x.filename.toLowerCase().includes(text))[0].exports;
     };
 
     let requireBatch;
@@ -117,7 +112,6 @@
                     return rootRequire.cache[resolvedRequest].exports;
                 }
             }
-
 
             if (request in rootRequire.cache) {
                 return rootRequire.cache[request].exports;
@@ -134,19 +128,24 @@
                     let requests = Object.keys(requireBatch);
                     let callbacks = Object.values(requireBatch).reduce((a, b) => a.concat(b), []);
                     requireBatch = undefined;
-                    void rootRequireMultiple(requests, true).then(() => {
-                        for (let callback of callbacks) {
-                            callback();
+                    void rootRequireMultiple(requests, true).then(
+                        () => {
+                            for (let callback of callbacks) {
+                                callback();
+                            }
+                        },
+                        (err) => {
+                            throw err;
                         }
-                    }, err => { throw err; });
+                    );
                 }, 0);
             }
-            return new Promise(resolve => {
+            return new Promise((resolve) => {
                 requireBatch[request] = requireBatch[request] || [];
                 requireBatch[request].push(resolve);
             });
         } else {
-            return rootRequireMultiple([request]).then(x => x[0].exports);
+            return rootRequireMultiple([request]).then((x) => x[0].exports);
         }
     }
     async function rootRequireMultiple(requests) {
@@ -156,7 +155,7 @@
 
         let alreadyHaveRanges;
         if (alreadyHave) {
-            let seqNums = Object.keys(alreadyHave.seqNums).map(x => +x);
+            let seqNums = Object.keys(alreadyHave.seqNums).map((x) => +x);
             seqNums.sort((a, b) => a - b);
             let seqNumRanges = [];
             alreadyHaveRanges = { requireSeqNumProcessId: alreadyHave.requireSeqNumProcessId, seqNumRanges };
@@ -182,7 +181,10 @@
         if (new URL(location).searchParams.get("droppermissions") !== null) {
             args.push(true);
         }
-        let requestUrl = location.origin + location.pathname + `?classGuid=RequireController-e2f811f3-14b8-4759-b0d6-73f14516cf1d&functionName=getModules`;
+        let requestUrl =
+            location.origin +
+            location.pathname +
+            `?classGuid=RequireController-e2f811f3-14b8-4759-b0d6-73f14516cf1d&functionName=getModules`;
         let remapImportRequestsClientside = globalThis.remapImportRequestsClientside;
         if (remapImportRequestsClientside) {
             for (let fnc of remapImportRequestsClientside) {
@@ -219,10 +221,15 @@
         }, 0);
 
         time = Date.now() - time;
-        let moduleCount = Object.values(modules).filter(x => x.source).length;
-        let requireModuleCount = Object.values(modules).filter(x => !x.source).length;
+        let moduleCount = Object.values(modules).filter((x) => x.source).length;
+        let requireModuleCount = Object.values(modules).filter((x) => !x.source).length;
         let dependenciesOnlyText = requireModuleCount ? ` (+${requireModuleCount} dependencies only)` : "";
-        console.log(`%cimport(${requests.join(", ")}) finished download ${time}ms, ${Math.ceil(rawText.length / 1024)}KB, ${moduleCount} modules${dependenciesOnlyText} at ${Date.now() - startTime}ms`, "color: green");
+        console.log(
+            `%cimport(${requests.join(", ")}) finished download ${time}ms, ${Math.ceil(
+                rawText.length / 1024
+            )}KB, ${moduleCount} modules${dependenciesOnlyText} at ${Date.now() - startTime}ms`,
+            "color: green"
+        );
 
         time = Date.now();
 
@@ -237,10 +244,15 @@
         }
 
         try {
-            return requestsResolvedPaths.map(x => getModule(x));
+            return requestsResolvedPaths.map((x) => getModule(x));
         } finally {
             time = Date.now() - time;
-            console.log(`%cimport(${requests.join(", ")}) finished evaluate ${time}ms (${moduleCount} modules) at ${Date.now() - startTime}ms`, "color: lightblue");
+            console.log(
+                `%cimport(${requests.join(", ")}) finished evaluate ${time}ms (${moduleCount} modules) at ${
+                    Date.now() - startTime
+                }ms`,
+                "color: lightblue"
+            );
         }
     }
 
@@ -272,9 +284,12 @@
             } else {
                 if (!(request in serializedModule.requests)) {
                     if (!asyncIsFine && !globalThis.suppressUnexpectedModuleWarning) {
-                        console.warn(`Accessed unexpected module %c${request}%c in %c${module.id}%c\n\tTreating it as an async require.\n\tAll modules require synchronously clientside must be required serverside at a module level.`,
-                            "color: red", "color: unset",
-                            "color: red", "color: unset",
+                        console.warn(
+                            `Accessed unexpected module %c${request}%c in %c${module.id}%c\n\tTreating it as an async require.\n\tAll modules require synchronously clientside must be required serverside at a module level.`,
+                            "color: red",
+                            "color: unset",
+                            "color: red",
+                            "color: unset"
                         );
                     }
                     // NOTE: We should still namespace it to the current folder (if it is a relative path),
@@ -295,9 +310,12 @@
             }
             if (resolvedPath !== "NOTALLOWEDCLIENTSIDE" && !serializedModules[resolvedPath]) {
                 if (!asyncIsFine) {
-                    console.warn(`Accessed unexpected module %c${request}%c in %c${module.id}%c\n\tTreating it as an async require.\n\tAll modules require synchronously clientside must be required serverside at a module level.`,
-                        "color: red", "color: unset",
-                        "color: red", "color: unset",
+                    console.warn(
+                        `Accessed unexpected module %c${request}%c in %c${module.id}%c\n\tTreating it as an async require.\n\tAll modules require synchronously clientside must be required serverside at a module level.`,
+                        "color: red",
+                        "color: unset",
+                        "color: red",
+                        "color: unset"
                     );
                     debugger;
                 }
@@ -308,32 +326,48 @@
             if (resolvedPath === "NOTALLOWEDCLIENTSIDE" || !serializedModules[resolvedPath].allowclient) {
                 let childId = resolvedPath === "NOTALLOWEDCLIENTSIDE" ? request : resolvedPath;
                 if (serializedModules[resolvedPath]?.serveronly) {
-                    exportsOverride = new Proxy({}, {
-                        get(target, property) {
-                            if (property === "__esModule") return undefined;
-                            // NOTE: Return a toString that evaluates to "" so we can EXPLICITLY detect non-loaded modules
-                            if (property === unloadedModule) return true;
-                            if (property === "default") return exportsOverride;
+                    exportsOverride = new Proxy(
+                        {},
+                        {
+                            get(target, property) {
+                                if (property === "__esModule") return undefined;
+                                // NOTE: Return a toString that evaluates to "" so we can EXPLICITLY detect non-loaded modules
+                                if (property === unloadedModule) return true;
+                                if (property === "default") return exportsOverride;
 
-                            throw new Error(`Module ${childId} is serverside only. Tried to access ${property} from ${module.id}`);
+                                throw new Error(
+                                    `Module ${childId} is serverside only. Tried to access ${property} from ${module.id}`
+                                );
+                            },
                         }
-                    });
+                    );
                 } else {
-                    exportsOverride = new Proxy({}, {
-                        get(target, property) {
-                            if (property === "__esModule") return undefined;
-                            // NOTE: Return a toString that evaluates to "" so we can EXPLICITLY detect non-loaded modules
-                            if (property === unloadedModule) return true;
-                            if (property === "default") return exportsOverride;
+                    exportsOverride = new Proxy(
+                        {},
+                        {
+                            get(target, property) {
+                                if (property === "__esModule") return undefined;
+                                // NOTE: Return a toString that evaluates to "" so we can EXPLICITLY detect non-loaded modules
+                                if (property === unloadedModule) return true;
+                                if (property === "default") return exportsOverride;
 
-                            console.warn(`Accessed non-whitelisted module %c${childId}%c, specifically property %c${String(property)}%c.\n\tAdd %cmodule.allowclient = true%c to the file to allow access.\n\t(IF it is a 3rd party library, use the global "setFlag" helper (in the file you imported the module) to set properties on other modules (it can even recursively set properties)).\n\n\tFrom ${module.id}`,
-                                "color: red", "color: unset",
-                                "color: red", "color: unset",
-                                "color: red", "color: unset",
-                            );
-                            return undefined;
+                                console.warn(
+                                    `Accessed non-whitelisted module %c${childId}%c, specifically property %c${String(
+                                        property
+                                    )}%c.\n\tAdd %cmodule.allowclient = true%c to the file to allow access.\n\t(IF it is a 3rd party library, use the global "setFlag" helper (in the file you imported the module) to set properties on other modules (it can even recursively set properties)).\n\n\tFrom ${
+                                        module.id
+                                    }`,
+                                    "color: red",
+                                    "color: unset",
+                                    "color: red",
+                                    "color: unset",
+                                    "color: red",
+                                    "color: unset"
+                                );
+                                return undefined;
+                            },
                         }
-                    });
+                    );
                 }
             }
 
@@ -349,12 +383,12 @@
 
             let exports = providerModule.exports;
             let remapExports = providerModule.remapExports;
-            if (remapExports && typeof remapExports === "function")  {
+            if (remapExports && typeof remapExports === "function") {
                 exports = remapExports(exports, module);
             }
 
             return exports;
-        };
+        }
     }
 
     /** Generates the module root function, which can be called to evaluate the module,
@@ -364,25 +398,24 @@
     function wrapSafe(filename, contents) {
         // TODO: Have the serverside inform us of the correct loader, or... have it actually emit a .json loader.
         if (filename.endsWith(".json")) {
-            return (exports, require, module) => module.exports = contents && JSON.parse(contents);
+            return (exports, require, module) => (module.exports = contents && JSON.parse(contents));
         }
 
         // NOTE: debugName only matters during module evaluation. After that the sourcemap should work.
-        let debugName = (
-            filename
-                .replace(/\\/g, "/")
-                .split("/")
-                .slice(-1)[0]
-                .replace(/\./g, "_")
-                .replace(/[^a-zA-Z_]/g, "")
-        );
+        let debugName = filename
+            .replace(/\\/g, "/")
+            .split("/")
+            .slice(-1)[0]
+            .replace(/\./g, "_")
+            .replace(/[^a-zA-Z_]/g, "");
         // NOTE: eval is used instead of new Function, as new Function inject lines, which messes
         //  up our sourcemaps.
         // NOTE: All on one line, so we don't break sourcemaps by TOO much. We could also parse
         //  the sourcemap and adjust it, but... it is much easier to just not change the line counts.
-        return eval(`(function ${debugName}(exports, require, module, __filename, __dirname, importDynamic) {${contents}\n })`);
+        return eval(
+            `(function ${debugName}(exports, require, module, __filename, __dirname, importDynamic) {${contents}\n })`
+        );
     }
-
 
     const unloadedModule = Symbol("unloadedModule");
 
@@ -421,10 +454,12 @@
                     delete alreadyHave.seqNums[serializedModule.seqNum];
                 }
                 // NOTE: There is almost never recovery from module downloading errors, so just don't catch them
-                return Promise.resolve().then(() => rootRequire(resolvedId, true)).then(async () => {
-                    module.loaded = true;
-                    await load();
-                });
+                return Promise.resolve()
+                    .then(() => rootRequire(resolvedId, true))
+                    .then(async () => {
+                        module.loaded = true;
+                        await load();
+                    });
             }
 
             module.requires = serializedModule.requests;
@@ -443,10 +478,9 @@
             // Import children, as the children may be allowed clientside, and may have side-effects!
             if (!source) {
                 let requests = Object.keys(serializedModule.requests)
-                    .filter(x => x !== "NOTALLOWEDCLIENTSIDE")
-                    .filter(x => !(x in serializedModule.asyncRequests))
-                    ;
-                source = requests.map(id => `require(${JSON.stringify(id)});\n`).join("");
+                    .filter((x) => x !== "NOTALLOWEDCLIENTSIDE")
+                    .filter((x) => !(x in serializedModule.asyncRequests));
+                source = requests.map((id) => `require(${JSON.stringify(id)});\n`).join("");
             }
 
             module.size = source.length;
@@ -490,7 +524,6 @@
                 module.isPreloading = false;
                 currentModuleEvaluationStack.pop();
             }
-
         }
 
         return module;

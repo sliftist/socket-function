@@ -58,6 +58,8 @@ export async function httpCallHandler(request: http.IncomingMessage, response: h
     try {
         // Always set x-frame-options, to prevent iframe embedding click hijacking
         response.setHeader("X-Frame-Options", "SAMEORIGIN");
+        // Don't keep alive, to prevent issues with zombie sockets.
+        response.setHeader("Connection", "close");
 
         let urlBase = request.url;
         if (!urlBase) {
