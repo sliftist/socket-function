@@ -81,7 +81,7 @@ const hotReloadModule = cache((module: NodeJS.Module) => {
                 || module.moduleContents?.includes("\nmodule.hotreload = true;" + "\n")
                 || module.moduleContents?.includes("\r\nmodule.hotreload = true;" + "\r\n")
             ) {
-                console.log(`Reloading ${module.id}`);
+                console.log(`Serverside reloading ${module.id}`);
                 isHotReloadingValue = true;
                 try {
                     module.loaded = false;

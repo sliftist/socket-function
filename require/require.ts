@@ -1,11 +1,14 @@
-(function () {
+import { GetModulesArgs, SerializedModule } from "./RequireController";
+
+export function requireMain() {
     //# sourceURL=require.js
 
+    const g = globalThis as any;
     let startTime = Date.now();
-    globalThis.BOOT_TIME = startTime;
+    g.BOOT_TIME = startTime;
 
-    Symbol.dispose = Symbol.dispose || Symbol("dispose");
-    Symbol.asyncDispose = Symbol.asyncDispose || Symbol("asyncDispose");
+    (Symbol as any).dispose = Symbol.dispose || Symbol("dispose");
+    (Symbol as any).asyncDispose = Symbol.asyncDispose || Symbol("asyncDispose");
 
     // Globals
     Object.assign(window, {
@@ -17,11 +20,11 @@
             },
             versions: {},
         },
-        setImmediate(callback) {
+        setImmediate(callback: () => void) {
             setTimeout(callback, 0);
         },
         // Ignore flags for now, even though they should work fine if we just hardcoded compileFlags.ts here.
-        setFlag() {},
+        setFlag() { },
         global: window,
     });
 
@@ -32,7 +35,7 @@
         },
         util: {
             // https://nodejs.org/api/util.html#util_util_inherits_constructor_superconstructor
-            inherits(constructor, superConstructor) {
+            inherits(constructor: any, superConstructor: any) {
                 Object.setPrototypeOf(constructor.prototype, superConstructor.prototype);
             },
             TextDecoder: TextDecoder,
@@ -41,8 +44,8 @@
         buffer: { Buffer },
         stream: {
             // HACK: Needed to get SAX JS to work correctly.
-            Stream: function () {},
-            Transform: function () {},
+            Stream: function () { },
+            Transform: function () { },
         },
         timers: {
             // TODO: Add all members of timers
@@ -51,7 +54,7 @@
         child_process: {},
         events: {},
     };
-    global.builtInModuleExports = builtInModuleExports;
+    g.builtInModuleExports = builtInModuleExports;
 
     let lastTime = 0;
     function nextTime() {
@@ -88,23 +91,42 @@
     }} */
     let serializedModules = Object.create(null);
 
-    let moduleCache = Object.create(null);
-    let alreadyHave = undefined;
+    type ModuleType = {
+        id: string;
+        filename: string;
+        exports: unknown;
+        children: ModuleType[];
+        flags: { [key: string]: boolean };
+        load: () => void;
+        loaded: boolean;
+        isPreloading: boolean;
+        evalStartTime: number;
+        evalEndTime: number;
+        source: string;
+        allowclient: boolean;
+        size: number;
+    };
+
+    let moduleCache: { [id: string]: ModuleType } = Object.create(null);
+    let alreadyHave: {
+        requireSeqNumProcessId: string;
+        seqNums: { [seqNum: string]: true | 1 | 0 | undefined };
+    } | undefined;
 
     let rootResolveCache = Object.create(null);
 
     rootRequire.cache = moduleCache;
     // Expose require for debugging, not so it can be called
-    window.require = rootRequire;
-    window.import = rootRequire;
+    g.require = rootRequire;
+    g.import = rootRequire;
 
-    window.r = function r(text) {
+    g.r = function r(text: string) {
         text = text.toLowerCase();
         return Object.values(moduleCache).filter((x) => x.filename.toLowerCase().includes(text))[0].exports;
     };
 
-    let requireBatch;
-    function rootRequire(request, batch) {
+    let requireBatch: { [request: string]: (() => void)[] } | undefined;
+    function rootRequire(request: string, batch?: boolean): unknown {
         if (!batch) {
             if (request in rootResolveCache) {
                 let resolvedRequest = rootResolveCache[request];
@@ -119,16 +141,16 @@
         }
 
         if (request in builtInModuleExports) {
-            return builtInModuleExports[request];
+            return builtInModuleExports[request as keyof typeof builtInModuleExports];
         }
         if (batch) {
             if (!requireBatch) {
-                requireBatch = requireBatch || {};
                 setTimeout(() => {
+                    requireBatch = requireBatch || {};
                     let requests = Object.keys(requireBatch);
                     let callbacks = Object.values(requireBatch).reduce((a, b) => a.concat(b), []);
                     requireBatch = undefined;
-                    void rootRequireMultiple(requests, true).then(
+                    void rootRequireMultiple(requests).then(
                         () => {
                             for (let callback of callbacks) {
                                 callback();
@@ -140,7 +162,8 @@
                     );
                 }, 0);
             }
-            return new Promise((resolve) => {
+            return new Promise<void>((resolve) => {
+                if (!requireBatch) throw new Error("Impossible");
                 requireBatch[request] = requireBatch[request] || [];
                 requireBatch[request].push(resolve);
             });
@@ -148,7 +171,7 @@
             return rootRequireMultiple([request]).then((x) => x[0].exports);
         }
     }
-    async function rootRequireMultiple(requests) {
+    async function rootRequireMultiple(requests: string[]) {
         console.log(`%cimport(${requests.join(", ")}) at ${Date.now() - startTime}ms`, "color: orange");
 
         let time = Date.now();
@@ -157,7 +180,7 @@
         if (alreadyHave) {
             let seqNums = Object.keys(alreadyHave.seqNums).map((x) => +x);
             seqNums.sort((a, b) => a - b);
-            let seqNumRanges = [];
+            let seqNumRanges: { s: number; e?: number }[] = [];
             alreadyHaveRanges = { requireSeqNumProcessId: alreadyHave.requireSeqNumProcessId, seqNumRanges };
             for (let seqNum of seqNums) {
                 let prev = seqNumRanges[seqNumRanges.length - 1];
@@ -174,17 +197,40 @@
             }
         }
 
-        let args = [requests, alreadyHaveRanges];
+        let domainOrigin = "";
+        let originalRequests = requests;
+        if (requests.some(x => x.startsWith("https://"))) {
+            requests = requests.map((request) => {
+                if (!request.startsWith("https://")) {
+                    throw new Error(`Mixed domains with non-domain requests is not supported presently. Requests: ${requests.join(" | ")}`);
+                }
+                let url = new URL(request);
+                if (domainOrigin && domainOrigin !== url.origin) {
+                    // TODO: If this happens, we can probably just split the call up into multiple calls?
+                    throw new Error(`Mixed domains in require call is not supported presently. Requests: ${requests.join(" | ")}`);
+                }
+                domainOrigin = url.origin + "/";
+                // By stripping by length, we can turn https://example.com/./test => "./test"
+                //  (where as if we used pathname, it would turn into "/test"
+                return request.slice(domainOrigin.length);
+            });
+        }
+
+        let args: GetModulesArgs = [requests, alreadyHaveRanges];
         // We have to add hardcoded support for droppermissions, because... this call
         //  doesn't have the conventional persisted code sending code, because... it's
         //  all on its own.
-        if (new URL(location).searchParams.get("droppermissions") !== null) {
+        let searchParams = new URLSearchParams(location.search);
+        if (searchParams.get("droppermissions") !== null) {
             args.push(true);
         }
-        let requestUrl =
-            location.origin +
-            location.pathname +
-            `?classGuid=RequireController-e2f811f3-14b8-4759-b0d6-73f14516cf1d&functionName=getModules`;
+
+        let requestUrlBase = location.origin + location.pathname;
+        if (domainOrigin) {
+            requestUrlBase = domainOrigin;
+        }
+        let requestUrl = requestUrlBase + `?classGuid=RequireController-e2f811f3-14b8-4759-b0d6-73f14516cf1d&functionName=getModules`;
+
         let remapImportRequestsClientside = globalThis.remapImportRequestsClientside;
         if (remapImportRequestsClientside) {
             for (let fnc of remapImportRequestsClientside) {
@@ -192,7 +238,12 @@
             }
         }
         let rawText = await requestText(requestUrl, { args });
-        let resultObj;
+        let resultObj: {
+            modules: { [id: string]: SerializedModule };
+            requestsResolvedPaths: string[];
+            requireSeqNumProcessId: string;
+            error?: string;
+        };
         try {
             resultObj = JSON.parse(rawText);
         } catch (e) {
@@ -207,13 +258,37 @@
             throw errorObj;
         }
 
+
+        if (Object.keys(modules).length === 1 && "" in modules) {
+            eval(modules[""].source || "");
+            throw new Error(`Failed to find modules for ${originalRequests.join(", ")} (mapped to ${requests.join(", ")})`);
+        }
+
+
+        if (domainOrigin) {
+            function fixDomain(request: string) {
+                if (!request) return request;
+                return domainOrigin + request;
+            }
+            requests = requests.map(fixDomain);
+            for (let [id, module] of Object.entries(modules)) {
+                delete modules[id];
+                modules[fixDomain(id)] = module;
+                module.filename = fixDomain(module.filename);
+                module.requests = Object.fromEntries(Object.entries(module.requests).map(([k, v]) => [k, fixDomain(v)]));
+                module.originalId = fixDomain(module.originalId);
+            }
+            requestsResolvedPaths = requestsResolvedPaths.map(fixDomain);
+        }
+
+
         for (let i = 0; i < requests.length; i++) {
             rootResolveCache[requests[i]] = requestsResolvedPaths[i];
         }
 
         // Store the function, so we only call it if it exists BEFORE we import
         //  (which means we already have something loading, so this is likely hot reloading...)
-        let observerOnHotReload = global.observerOnHotReload;
+        let observerOnHotReload = g.observerOnHotReload;
         setTimeout(() => {
             if (observerOnHotReload) {
                 observerOnHotReload();
@@ -234,8 +309,9 @@
         time = Date.now();
 
         if (alreadyHave?.requireSeqNumProcessId !== requireSeqNumProcessId) {
-            alreadyHave = { requireSeqNumProcessId, seqNums: {} };
+            alreadyHave = undefined;
         }
+        alreadyHave = alreadyHave || { requireSeqNumProcessId, seqNums: {} };
 
         for (let id in modules) {
             let module = modules[id];
@@ -248,23 +324,22 @@
         } finally {
             time = Date.now() - time;
             console.log(
-                `%cimport(${requests.join(", ")}) finished evaluate ${time}ms (${moduleCount} modules) at ${
-                    Date.now() - startTime
+                `%cimport(${requests.join(", ")}) finished evaluate ${time}ms (${moduleCount} modules) at ${Date.now() - startTime
                 }ms`,
                 "color: lightblue"
             );
         }
     }
 
-    function createRequire(module, serializedModule, asyncIsFineOuter) {
+    function createRequire(module: ModuleType, serializedModule: SerializedModule, asyncIsFineOuter?: boolean) {
         require.cache = moduleCache;
-        require.resolve = function (request) {
+        require.resolve = function (request: string) {
             // TODO: Maybe do a request, making this async, if it isn't found?
             return serializedModule.requests[request];
         };
         let moduleFolder = module.filename.replace(/\\/g, "/").split("/").slice(0, -1).join("/") + "/";
         return require;
-        function require(request, asyncIsFine) {
+        function require(request: string, asyncIsFine?: boolean) {
             if (asyncIsFineOuter) {
                 asyncIsFine = true;
             }
@@ -275,7 +350,7 @@
                 asyncIsFine = true;
             }
             if (request in builtInModuleExports) {
-                return builtInModuleExports[request];
+                return builtInModuleExports[request as keyof typeof builtInModuleExports];
             }
 
             let resolvedPath;
@@ -322,7 +397,7 @@
                 return rootRequire(resolvedPath);
             }
 
-            let exportsOverride = undefined;
+            let exportsOverride: unknown | undefined;
             if (resolvedPath === "NOTALLOWEDCLIENTSIDE" || !serializedModules[resolvedPath].allowclient) {
                 let childId = resolvedPath === "NOTALLOWEDCLIENTSIDE" ? request : resolvedPath;
                 if (serializedModules[resolvedPath]?.serveronly) {
@@ -336,7 +411,7 @@
                                 if (property === "default") return exportsOverride;
 
                                 throw new Error(
-                                    `Module ${childId} is serverside only. Tried to access ${property} from ${module.id}`
+                                    `Module ${childId} is serverside only. Tried to access ${String(property)} from ${module.id}`
                                 );
                             },
                         }
@@ -354,8 +429,7 @@
                                 console.warn(
                                     `Accessed non-whitelisted module %c${childId}%c, specifically property %c${String(
                                         property
-                                    )}%c.\n\tAdd %cmodule.allowclient = true%c to the file to allow access.\n\t(IF it is a 3rd party library, use the global "setFlag" helper (in the file you imported the module) to set properties on other modules (it can even recursively set properties)).\n\n\tFrom ${
-                                        module.id
+                                    )}%c.\n\tAdd %cmodule.allowclient = true%c to the file to allow access.\n\t(IF it is a 3rd party library, use the global "setFlag" helper (in the file you imported the module) to set properties on other modules (it can even recursively set properties)).\n\n\tFrom ${module.id
                                     }`,
                                     "color: red",
                                     "color: unset",
@@ -395,10 +469,10 @@
      *      and has code equal to contents.
      *      - filename is just for debugging / stack traces
      */
-    function wrapSafe(filename, contents) {
+    function wrapSafe(filename: string, contents: string) {
         // TODO: Have the serverside inform us of the correct loader, or... have it actually emit a .json loader.
         if (filename.endsWith(".json")) {
-            return (exports, require, module) => (module.exports = contents && JSON.parse(contents));
+            return (exports: unknown, require: unknown, module: ModuleType) => (module.exports = contents && JSON.parse(contents));
         }
 
         // NOTE: debugName only matters during module evaluation. After that the sourcemap should work.
@@ -419,9 +493,9 @@
 
     const unloadedModule = Symbol("unloadedModule");
 
-    let currentModuleEvaluationStack = [];
+    let currentModuleEvaluationStack: string[] = [];
     // See https://nodejs.org/api/modules.html
-    function getModule(resolvedId) {
+    function getModule(resolvedId: string) {
         if (resolvedId === "") {
             return {};
         }
@@ -447,7 +521,7 @@
         module.loaded = true;
         module.load();
 
-        function load(filename) {
+        function load() {
             let serializedModule = serializedModules[resolvedId];
             if (!module.loaded) {
                 if (alreadyHave) {
@@ -500,11 +574,11 @@
                     {
                         // NOTE: Adding __importStar to the module causes typescript to use our implementation,
                         //  which checks for unloadedModule and returns undefined in that case.
-                        __importStar(mod) {
+                        __importStar(mod: any) {
                             if (mod[unloadedModule]) return undefined;
                             return mod;
                         },
-                        __importDefault(mod) {
+                        __importDefault(mod: any) {
                             return mod.default ? mod : { default: mod };
                         },
                     },
@@ -529,7 +603,7 @@
         return module;
     }
 
-    async function requestText(endpoint, values) {
+    async function requestText(endpoint: string, values: any) {
         let url = new URL(endpoint);
 
         let json = JSON.stringify(values);
@@ -553,4 +627,4 @@
             return await response.text();
         }
     }
-})();
+}

@@ -5,8 +5,9 @@ import { SocketFunction } from "../SocketFunction";
 import { getCurrentHTTPRequest, setHTTPResultHeaders } from "../src/callHTTPHandler";
 import { formatNumberSuffixed, isNode, isNodeTrue, sha256Hash, sha256HashPromise } from "../src/misc";
 import zlib from "zlib";
-import { cacheLimited } from "../src/caching";
+import { cacheLimited, lazy } from "../src/caching";
 import { formatNumber } from "../src/formatting/format";
+import { requireMain } from "./require";
 
 const COMPRESS_CACHE_SIZE = 1024 * 1024 * 128;
 
@@ -98,25 +99,29 @@ let nextModuleSeqNum = 1;
 
 const requireSeqNumProcessId = "requireSeqNumProcessId_" + Date.now() + "_" + Math.random();
 
-const htmlFile = isNodeTrue() && fs.readFileSync(__dirname + "/require.html").toString();
-const jsFile = isNodeTrue() && fs.readFileSync(__dirname + "/require.js").toString();
-const bufferShim = isNodeTrue() && fs.readFileSync(__dirname + "/buffer.js").toString();
 const BEFORE_ENTRY_TEMPLATE = "<!-- BEFORE_ENTRY_TEMPLATE -->";
 const ENTRY_TEMPLATE = "<!-- ENTRY_TEMPLATE -->";
 
-const resolvedHTMLFile = isNodeTrue() && (
-    htmlFile
-        .replace(`<script src="./buffer.js"></script>`, `<script>${bufferShim}</script>`)
-        .replace(`<script src="./require.js"></script>`, `<script>${jsFile}</script>`)
-);
+const resolvedHTMLFile = lazy(() => {
+    const bufferShim = fs.readFileSync(__dirname + "/buffer.js").toString();
+    return fs.readFileSync(__dirname + "/require.html").toString()
+        .replace(BEFORE_ENTRY_TEMPLATE,
+            `
+                <script>${bufferShim}</script>
+                <script>(${requireMain.toString()})()</script>
 
-let beforeEntryText: string[] = [];
-function injectHTMLBeforeStartup(text: string) {
+                ${BEFORE_ENTRY_TEMPLATE}
+            `
+        );
+});
+
+let beforeEntryText: (string | (() => Promise<string>))[] = [];
+function injectHTMLBeforeStartup(text: string | (() => Promise<string>)) {
     beforeEntryText.push(text);
 }
 
 type GetModulesResult = ReturnType<RequireControllerBase["getModules"]> extends Promise<infer T> ? T : never;
-type GetModulesArgs = Parameters<RequireControllerBase["getModules"]>;
+export type GetModulesArgs = Parameters<RequireControllerBase["getModules"]>;
 let mapGetModules: {
     remap(result: GetModulesResult, args: GetModulesArgs): Promise<GetModulesResult>
 }[] = [];
@@ -131,9 +136,17 @@ class RequireControllerBase {
         requireCalls?: string[];
     }) {
         let { requireCalls } = config || {};
-        let result = resolvedHTMLFile;
+        let result = resolvedHTMLFile();
         if (beforeEntryText.length > 0) {
-            result = result.replace(BEFORE_ENTRY_TEMPLATE, beforeEntryText.join("\n"));
+            let resolved: string[] = [];
+            for (let text of beforeEntryText) {
+                if (typeof text === "string") {
+                    resolved.push(text);
+                } else {
+                    resolved.push(await text());
+                }
+            }
+            result = result.replace(BEFORE_ENTRY_TEMPLATE, resolved.join("\n"));
         }
         if (requireCalls) {
             async function requireAll(calls: string[]) {
@@ -150,15 +163,10 @@ class RequireControllerBase {
                 }
             }
             result = result.replace(ENTRY_TEMPLATE, `<script>\n(${requireAll.toString()})(${JSON.stringify(requireCalls)});\n</script>`);
+        } else {
+            result = result.replace(ENTRY_TEMPLATE, "");
         }
         return setHTTPResultHeaders(Buffer.from(result), { "Content-Type": "text/html" });
-    }
-
-    public async bufferJS() {
-        return setHTTPResultHeaders(Buffer.from(bufferShim), { "Content-Type": "text/javascript" });
-    }
-    public async requireJS() {
-        return setHTTPResultHeaders(Buffer.from(jsFile), { "Content-Type": "text/javascript" });
     }
 
     public async getModules(

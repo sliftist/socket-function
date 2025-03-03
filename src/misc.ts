@@ -377,6 +377,13 @@ export function compare(lhs: unknown, rhs: unknown): number {
     if (lhs as any < (rhs as any)) return -1;
     return 1;
 }
+export function compareArray(lhs: unknown[], rhs: unknown[]): number {
+    for (let i = 0; i < Math.min(lhs.length, rhs.length); i++) {
+        let comparison = compare(lhs[i], rhs[i]);
+        if (comparison !== 0) return comparison;
+    }
+    return lhs.length - rhs.length;
+}
 
 export function insertIntoSortedList<T>(list: T[], map: (val: T) => string | number, element: T) {
     let searchValue = map(element);
