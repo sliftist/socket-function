@@ -189,6 +189,7 @@ export async function httpCallHandler(request: http.IncomingMessage, response: h
                 return;
             }
         }
+        let uncompressedLength = resultBuffer.length;
         if (SocketFunction.HTTP_COMPRESS && request.headers["accept-encoding"]?.includes("gzip") && !headers?.["Content-Encoding"]) {
             // NOTE: This is a BIT slow. To speed it up, functions can use an internal cache, according to their function,
             //  and return a Buffer (which they can as any cast to make the returned type allowed, as returned Buffers will
@@ -204,6 +205,10 @@ export async function httpCallHandler(request: http.IncomingMessage, response: h
                     }
                 });
             });
+        }
+        response.setHeader("Content-Length", resultBuffer.length.toString());
+        if (!response.getHeader("X-Uncompressed-Content-Length")) {
+            response.setHeader("X-Uncompressed-Content-Length", uncompressedLength.toString());
         }
         response.write(resultBuffer);
         if (SocketFunction.logMessages) {

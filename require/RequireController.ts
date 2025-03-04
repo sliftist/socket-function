@@ -347,8 +347,14 @@ class RequireControllerBase {
                 }]),
             };
             let key = sha256Hash(JSON.stringify(simplifiedResult));
-            let buffer = await compressCached(key, () => Buffer.from(JSON.stringify(result)));
-            setHTTPResultHeaders(buffer, { "Content-Type": "application/json", "Content-Encoding": "gzip" });
+            let uncompressedBuffer = Buffer.from(JSON.stringify(result));
+            let buffer = await compressCached(key, () => uncompressedBuffer);
+            setHTTPResultHeaders(buffer, {
+                "Content-Type": "application/json",
+                "Content-Encoding": "gzip",
+                "Content-Length": buffer.length.toString(),
+                "X-Uncompressed-Content-Length": uncompressedBuffer.length.toString(),
+            });
             return buffer as any;
         }
 

@@ -1,11 +1,86 @@
 import { GetModulesArgs, SerializedModule } from "./RequireController";
 
+
+declare global {
+    var onProgressHandler: undefined | ((progress: {
+        type: string;
+        addValue: number;
+        addMax: number;
+    }) => void);
+    var onErrorHandler: undefined | ((error: string) => void);
+
+
+    var BOOT_TIME: number;
+    var builtInModuleExports: {
+        [key: string]: unknown;
+    };
+}
+
 export function requireMain() {
-    //# sourceURL=require.js
+    async function requestText(endpoint: string, values: any) {
+        let url = new URL(endpoint);
+
+        let json = JSON.stringify(values);
+        let response: Response;
+        if (json.length < 6000) {
+            // NOTE: Try to use a GET, as GETs can be cached! However, if the data is too large,
+            //  we have to use a post, or else the request url will be too large
+            for (let key in values) {
+                url.searchParams.set(key, JSON.stringify(values[key]));
+            }
+            response = await fetch(url.toString(), {
+                method: "GET",
+                credentials: "include",
+            });
+        } else {
+            response = await fetch(url.toString(), {
+                method: "POST",
+                body: json,
+                credentials: "include",
+            });
+        }
+
+        let compressionRatio = 1;
+        let uncompressedLength = response.headers.get("X-Uncompressed-Content-Length");
+        let compressedLength = response.headers.get("Content-Length");
+        if (uncompressedLength && compressedLength) {
+            compressionRatio = +uncompressedLength / +compressedLength;
+        }
+        let totalLength = +(uncompressedLength || compressedLength || 0);
+        if (totalLength) {
+            globalThis.onProgressHandler?.({
+                type: "Download",
+                addValue: 0,
+                addMax: Math.floor(totalLength / compressionRatio),
+            });
+        }
+
+        // If it's an error, set requestError
+        if (!response.ok) {
+            globalThis.onErrorHandler?.(response.statusText);
+        }
+
+        // Stream it, so we can get progrss
+        let reader = response.body!.getReader();
+        let result = "";
+        while (true) {
+            let { done, value } = await reader.read();
+            if (done) break;
+            result += new TextDecoder().decode(value);
+            let cur = (value?.length || 0) / compressionRatio;
+            globalThis.onProgressHandler?.({
+                type: "Download",
+                addValue: cur,
+                addMax: 0,
+            });
+        }
+
+        return result;
+    }
 
     const g = globalThis as any;
     let startTime = Date.now();
-    g.BOOT_TIME = startTime;
+    globalThis.BOOT_TIME = startTime;
 
     (Symbol as any).dispose = Symbol.dispose || Symbol("dispose");
     (Symbol as any).asyncDispose = Symbol.asyncDispose || Symbol("asyncDispose");
@@ -54,7 +129,8 @@ export function requireMain() {
         child_process: {},
         events: {},
     };
-    g.builtInModuleExports = builtInModuleExports;
+    globalThis.builtInModuleExports = globalThis.builtInModuleExports || {};
+    Object.assign(globalThis.builtInModuleExports, builtInModuleExports);
 
     let lastTime = 0;
     function nextTime() {
@@ -286,6 +362,12 @@ export function requireMain() {
             rootResolveCache[requests[i]] = requestsResolvedPaths[i];
         }
 
+        globalThis.onProgressHandler?.({
+            type: "Compile",
+            addValue: 0,
+            addMax: Object.keys(modules).length,
+        });
+
         // Store the function, so we only call it if it exists BEFORE we import
         //  (which means we already have something loading, so this is likely hot reloading...)
         let observerOnHotReload = g.observerOnHotReload;
@@ -300,13 +382,13 @@ export function requireMain() {
         let requireModuleCount = Object.values(modules).filter((x) => !x.source).length;
         let dependenciesOnlyText = requireModuleCount ? ` (+${requireModuleCount} dependencies only)` : "";
         console.log(
-            `%cimport(${requests.join(", ")}) finished download ${time}ms, ${Math.ceil(
+            `%cimport(${requests.join(", ")}) finished download ${time.toFixed(0)}ms, ${Math.ceil(
                 rawText.length / 1024
-            )}KB, ${moduleCount} modules${dependenciesOnlyText} at ${Date.now() - startTime}ms`,
-            "color: green"
+            )}KB, ${moduleCount} modules${dependenciesOnlyText} at ${(Date.now() - startTime).toFixed(0)}ms`,
+            "color: lightgreen"
         );
 
-        time = Date.now();
+
 
         if (alreadyHave?.requireSeqNumProcessId !== requireSeqNumProcessId) {
             alreadyHave = undefined;
@@ -319,13 +401,37 @@ export function requireMain() {
             serializedModules[id] = module;
         }
 
+        time = Date.now();
+        let lastWaitTime = time;
+        for (let key of Object.keys(modules)) {
+            getModule(key, "preload");
+            // Wait, so we can render progress (and in generals, so the UI remains somewhat responsive)
+            if (Date.now() - lastWaitTime > 10) {
+                await new Promise(resolve => setTimeout(resolve, 0));
+                lastWaitTime = Date.now();
+            }
+        }
+
+        time = Date.now() - time;
+        console.log(
+            `%cimport(${requests.join(", ")}) finished compile ${time.toFixed(0)}ms (${moduleCount} modules) at ${(Date.now() - startTime).toFixed(0)}ms`,
+            "color: hotpink"
+        );
+
+
+        globalThis.onProgressHandler?.({
+            type: "Evaluate",
+            addValue: 0,
+            addMax: Object.keys(modules).length,
+        });
+
+        time = Date.now();
         try {
             return requestsResolvedPaths.map((x) => getModule(x));
         } finally {
             time = Date.now() - time;
             console.log(
-                `%cimport(${requests.join(", ")}) finished evaluate ${time}ms (${moduleCount} modules) at ${Date.now() - startTime
-                }ms`,
+                `%cimport(${requests.join(", ")}) finished evaluate ${time.toFixed(0)}ms (${moduleCount} modules) at ${(Date.now() - startTime).toFixed(0)}ms`,
                 "color: lightblue"
             );
         }
@@ -392,7 +498,6 @@ export function requireMain() {
                         "color: red",
                         "color: unset"
                     );
-                    debugger;
                 }
                 return rootRequire(resolvedPath);
             }
@@ -495,12 +600,17 @@ export function requireMain() {
 
     let currentModuleEvaluationStack: string[] = [];
     // See https://nodejs.org/api/modules.html
-    function getModule(resolvedId: string) {
+    function getModule(resolvedId: string, preload?: "preload") {
         if (resolvedId === "") {
             return {};
         }
         if (resolvedId in moduleCache) {
-            return moduleCache[resolvedId];
+            let module = moduleCache[resolvedId];
+            if (!preload && !module.loaded) {
+                module.loaded = true;
+                module.load();
+            }
+            return module;
         }
 
         let serializedModule = serializedModules[resolvedId];
@@ -513,13 +623,25 @@ export function requireMain() {
         module.exports.default = module.exports;
         module.children = [];
         for (let key in serializedModule.flags || {}) {
+            if (key === "loaded") continue;
             module[key] = true;
         }
 
         module.load = load;
 
-        module.loaded = true;
-        module.load();
+        let originalSource = serializedModule.source;
+        let moduleFnc = wrapSafe(module.id, originalSource);
+
+        globalThis.onProgressHandler?.({
+            type: "Compile",
+            addValue: 1,
+            addMax: 0,
+        });
+
+        if (!preload) {
+            module.loaded = true;
+            module.load();
+        }
 
         function load() {
             let serializedModule = serializedModules[resolvedId];
@@ -560,7 +682,10 @@ export function requireMain() {
             module.size = source.length;
             module.source = source;
 
-            let moduleFnc = wrapSafe(module.id, source);
+            if (source !== originalSource) {
+                originalSource = source;
+                moduleFnc = wrapSafe(module.id, originalSource);
+            }
 
             let dirname = module.filename.replace(/\\/g, "/").split("/").slice(0, -1).join("/");
 
@@ -597,34 +722,15 @@ export function requireMain() {
             } finally {
                 module.isPreloading = false;
                 currentModuleEvaluationStack.pop();
+
+                globalThis.onProgressHandler?.({
+                    type: "Evaluate",
+                    addValue: 1,
+                    addMax: 0,
+                });
             }
         }
 
         return module;
-    }
-
-    async function requestText(endpoint: string, values: any) {
-        let url = new URL(endpoint);
-
-        let json = JSON.stringify(values);
-        if (json.length < 6000) {
-            // NOTE: Try to use a GET, as GETs can be cached! However, if the data is too large,
-            //  we have to use a post, or else the request url will be too large
-            for (let key in values) {
-                url.searchParams.set(key, JSON.stringify(values[key]));
-            }
-            let response = await fetch(url.toString(), {
-                method: "GET",
-                credentials: "include",
-            });
-            return await response.text();
-        } else {
-            let response = await fetch(url.toString(), {
-                method: "POST",
-                body: json,
-                credentials: "include",
-            });
-            return await response.text();
-        }
     }
 }
