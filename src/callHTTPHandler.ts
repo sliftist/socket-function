@@ -81,12 +81,18 @@ export async function httpCallHandler(request: http.IncomingMessage, response: h
                 }
                 function rootDomain(hostname: string) {
                     let parts = hostname.split(".");
-                    if (parts.length > 2) {
-                        return parts.slice(-2).join(".");
+                    hostname = parts.slice(-2).join(".");
+                    if (hostname.startsWith("https://")) {
+                        hostname = hostname.slice("https://".length);
                     }
                     return hostname;
                 }
-                allowed = rootDomain(host) === rootDomain(origin);
+                let hostDomain = rootDomain(host);
+                let originDomain = rootDomain(origin);
+                allowed = hostDomain === originDomain;
+                if (!allowed) {
+                    console.log(`Rejected CORS, hostDomain: ${hostDomain} !== ${originDomain}`);
+                }
             }
 
             // Allow if it has no origin, as that means it isn't a CORS request?
