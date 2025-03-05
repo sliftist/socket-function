@@ -134,8 +134,9 @@ class RequireControllerBase {
 
     public async requireHTML(config?: {
         requireCalls?: string[];
+        cacheTime?: number;
     }) {
-        let { requireCalls } = config || {};
+        let { requireCalls, cacheTime } = config || {};
         let result = resolvedHTMLFile();
         if (beforeEntryText.length > 0) {
             let resolved: string[] = [];
@@ -166,7 +167,13 @@ class RequireControllerBase {
         } else {
             result = result.replace(ENTRY_TEMPLATE, "");
         }
-        return setHTTPResultHeaders(Buffer.from(result), { "Content-Type": "text/html" });
+        let headers: Record<string, string> = {
+            "Content-Type": "text/html"
+        };
+        if (cacheTime) {
+            headers["Cache-Control"] = `max-age=${Math.floor(cacheTime / 1000)}`;
+        }
+        return setHTTPResultHeaders(Buffer.from(result), headers);
     }
 
     public async getModules(

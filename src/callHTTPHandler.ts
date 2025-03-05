@@ -61,6 +61,53 @@ export async function httpCallHandler(request: http.IncomingMessage, response: h
         // Don't keep alive, to prevent issues with zombie sockets.
         response.setHeader("Connection", "close");
 
+        // CORS bs (due to having to explictly allow subdomains)
+        {
+            response.setHeader("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload");
+            response.setHeader("Cross-Origin-Opener-Policy", "same-origin-allow-popups");
+            // NOTE: "credentialless" would work here too
+            response.setHeader("Cross-Origin-Embedder-Policy", "require-corp");
+
+            let origin = request.headers.origin || request.headers.referer;
+            let allowed = false;
+            if (!origin) {
+                // I guess it's a script, so just allow it (as it could easily set any header it wanted anyways)
+                allowed = true;
+                origin = "*";
+            } else {
+                let host = request.headers.host;
+                if (!host) {
+                    throw new Error("Missing host in request headers");
+                }
+                function rootDomain(hostname: string) {
+                    let parts = hostname.split(".");
+                    if (parts.length > 2) {
+                        return parts.slice(-2).join(".");
+                    }
+                    return hostname;
+                }
+                allowed = rootDomain(host) === rootDomain(origin);
+            }
+
+            // Allow if it has no origin, as that means it isn't a CORS request?
+            if (allowed) {
+                response.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+            } else {
+                response.setHeader("Cross-Origin-Resource-Policy", "same-site");
+            }
+
+            response.setHeader("vary", "Access-Control-Request-Headers");
+            response.setHeader("Access-Control-Allow-Origin", allowed ? origin : "");
+
+            if (allowed) {
+                response.setHeader("Access-Control-Allow-Credentials", "true");
+                response.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+                response.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, Content-Length, X-Requested-With, x-uncompressed-content-length, Cookie");
+            }
+            response.setHeader("Access-Control-Expose-Headers", "x-uncompressed-content-length");
+        }
+
+
         let urlBase = request.url;
         if (!urlBase) {
             throw new Error("Missing URL");
