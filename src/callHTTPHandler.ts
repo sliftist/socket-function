@@ -85,6 +85,8 @@ export async function httpCallHandler(request: http.IncomingMessage, response: h
                     if (hostname.startsWith("https://")) {
                         hostname = hostname.slice("https://".length);
                     }
+                    hostname = hostname.split(":")[0];
+                    hostname = hostname.split("/")[0];
                     return hostname;
                 }
                 let hostDomain = rootDomain(host);
