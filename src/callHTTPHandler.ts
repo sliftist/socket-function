@@ -65,8 +65,7 @@ export async function httpCallHandler(request: http.IncomingMessage, response: h
         {
             response.setHeader("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload");
             response.setHeader("Cross-Origin-Opener-Policy", "same-origin-allow-popups");
-            // NOTE: "credentialless" would work here too
-            response.setHeader("Cross-Origin-Embedder-Policy", "require-corp");
+            response.setHeader("Cross-Origin-Embedder-Policy", SocketFunction.COEP);
 
             let origin = request.headers.origin || request.headers.referer;
             let allowed = false;

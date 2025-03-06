@@ -65,6 +65,10 @@ export class SocketFunction {
 
     public static HTTP_COMPRESS = false;
 
+    // If you have HTTP resources that require cookies you might to set `SocketFunction.COEP = "require-corp"`
+    //  - Cross-origin-resource-policy.
+    public static COEP = "credentialless";
+
     // In retrospect... dynamically changing the wire serializer is a BAD idea. If any calls happen
     //  before it is changed, things just break. Also, it needs to be changed on both sides,
     //  or else things break. Also, it is very hard to detect when the issue is different serializers
