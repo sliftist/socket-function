@@ -11,7 +11,7 @@ import { parseSNIExtension, parseTLSHello, SNIType } from "./tlsParsing";
 import debugbreak from "debugbreak";
 import { getNodeId } from "./nodeCache";
 import crypto from "crypto";
-import { Watchable, timeInHour, timeInMinute } from "./misc";
+import { Watchable, getRootDomain, timeInHour, timeInMinute } from "./misc";
 import { delay, runInfinitePoll, runInfinitePollCallAtStart } from "./batching";
 import { magenta, red } from "./formatting/logColors";
 import { yellow } from "./formatting/logColors";
@@ -133,12 +133,14 @@ export async function startSocketServer(
             let originHeader = request.headers["origin"];
             if (originHeader) {
                 try {
-                    let host = new URL("ws://" + request.headers["host"]).hostname;
-                    let origin = new URL(originHeader).hostname;
+                    let host = getRootDomain(new URL("ws://" + request.headers["host"]).hostname);
+                    let origin = getRootDomain(new URL(originHeader).hostname);
                     if (host !== origin && !allowedHostnames.has(origin)) {
                         throw new Error(`Invalid cross domain request, ${JSON.stringify(host)} !== ${JSON.stringify(origin)} (also not in config.allowedHostnames ${JSON.stringify(config.allowHostnames)})`);
                     }
                 } catch (e) {
+                    // Destroy the socket, so we don't lock up the client
+                    socket.destroy();
                     // NOTE: Just log, because invalid requests are guaranteed to happen, and
                     //  there's no point wasting time looking at them.
                     console.log(e);
@@ -217,11 +219,13 @@ export async function startSocketServer(
                     console.log(buffer.toString("base64"));
                 }
                 let originalSNI = sni;
-                // Remove subdomains until we can find a domain
-                while (!sniServers.has(sni)) {
-                    let parts = sni.split(".");
-                    if (parts.length <= 2) break;
-                    sni = parts.slice(1).join(".");
+                if (sni) {
+                    // Remove subdomains until we can find a domain
+                    while (!sniServers.has(sni)) {
+                        let parts = sni.split(".");
+                        if (parts.length <= 2) break;
+                        sni = parts.slice(1).join(".");
+                    }
                 }
 
                 if (!sniServers.has(sni)) {

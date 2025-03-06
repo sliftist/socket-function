@@ -5,7 +5,7 @@ import { isDataImmutable, performLocalCall } from "./callManager";
 import { SocketFunction } from "../SocketFunction";
 import { gzip } from "zlib";
 import zlib from "zlib";
-import { formatNumberSuffixed, sha256Hash } from "./misc";
+import { formatNumberSuffixed, getRootDomain, sha256Hash } from "./misc";
 import { getClientNodeId, getNodeId } from "./nodeCache";
 
 let defaultHTTPCall: CallType | undefined;
@@ -79,18 +79,8 @@ export async function httpCallHandler(request: http.IncomingMessage, response: h
                 if (!host) {
                     throw new Error("Missing host in request headers");
                 }
-                function rootDomain(hostname: string) {
-                    let parts = hostname.split(".");
-                    hostname = parts.slice(-2).join(".");
-                    if (hostname.startsWith("https://")) {
-                        hostname = hostname.slice("https://".length);
-                    }
-                    hostname = hostname.split(":")[0];
-                    hostname = hostname.split("/")[0];
-                    return hostname;
-                }
-                let hostDomain = rootDomain(host);
-                let originDomain = rootDomain(origin);
+                let hostDomain = getRootDomain(host);
+                let originDomain = getRootDomain(origin);
                 allowed = hostDomain === originDomain;
                 if (!allowed) {
                     console.log(`Rejected CORS, hostDomain: ${hostDomain} !== ${originDomain}`);

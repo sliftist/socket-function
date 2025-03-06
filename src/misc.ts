@@ -293,6 +293,17 @@ export function sort<T>(arr: T[], sortKey: (obj: T) => unknown) {
     return arr;
 }
 
+export function getRootDomain(hostname: string) {
+    if (hostname.startsWith("https://")) {
+        hostname = hostname.slice("https://".length);
+    }
+    hostname = hostname.split("/")[0];
+    let parts = hostname.split(".");
+    hostname = parts.slice(-2).join(".");
+    hostname = hostname.split(":")[0];
+    return hostname;
+}
+
 export class QueueLimited<T> {
     private items: T[] = [];
     private nextIndex = 0;
