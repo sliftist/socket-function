@@ -214,6 +214,12 @@ export async function startSocketServer(
                     console.warn(`No SNI found in TLS hello from ${debug}, using main server. Packets ${packetCount}`);
                     console.log(buffer.toString("base64"));
                 }
+                if (sni) {
+                    sni = sni.split(".").slice(-2).join(".");
+                }
+                if (!sniServers.has(sni)) {
+                    console.warn(`No SNI server found for ${sni}, using main server.`);
+                }
                 server = sniServers.get(sni) || mainHTTPSServer;
             }
 
