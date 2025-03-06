@@ -281,11 +281,20 @@ export function requireMain() {
                     throw new Error(`Mixed domains with non-domain requests is not supported presently. Requests: ${requests.join(" | ")}`);
                 }
                 let url = new URL(request);
-                if (domainOrigin && domainOrigin !== url.origin) {
+                let origin = url.origin;
+                // Fix stupid :443 erasure (other ports aren't erased, except 80, but we'll never use HTTP,
+                //  so that's fine).
+                {
+                    let remaining = request.slice(origin.length);
+                    if (remaining.startsWith(":443/")) {
+                        origin += ":443";
+                    }
+                }
+                if (domainOrigin && domainOrigin !== origin) {
                     // TODO: If this happens, we can probably just split the call up into multiple calls?
                     throw new Error(`Mixed domains in require call is not supported presently. Requests: ${requests.join(" | ")}`);
                 }
-                domainOrigin = url.origin + "/";
+                domainOrigin = origin + "/";
                 // By stripping by length, we can turn https://example.com/./test => "./test"
                 //  (where as if we used pathname, it would turn into "/test"
                 return request.slice(domainOrigin.length);
