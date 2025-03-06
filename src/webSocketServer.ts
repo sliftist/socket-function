@@ -46,7 +46,9 @@ export type SocketServerConfig = (
         //  may be, "querysub.com", for example), use ["letx.ca"]
         allowHostnames?: string[];
 
-        /** If the SNI matches this domain, we use a different key/cert. */
+        /** If the SNI matches this domain, we use a different key/cert.
+         *      We remove subdomains until we find a match
+         */
         SNICerts?: {
             [domain: string]: Watchable<https.ServerOptions>;
         };
@@ -208,20 +210,22 @@ export async function startSocketServer(
                 }
                 let sni = data.extensions.filter(x => x.type === SNIType).flatMap(x => parseSNIExtension(x.data))[0];
                 if (!SocketFunction.silent) {
-                    console.log(`Received TCP connection with SNI ${JSON.stringify(sni)}`);
+                    console.log(`Received TCP connection with SNI ${JSON.stringify(sni)}. Have handlers for: ${Array.from(sniServers.keys()).join(", ")}`);
                 }
                 if (!sni) {
                     console.warn(`No SNI found in TLS hello from ${debug}, using main server. Packets ${packetCount}`);
                     console.log(buffer.toString("base64"));
                 }
+                let originalSNI = sni;
+                // Remove subdomains until we can find a domain
+                while (!sniServers.has(sni)) {
+                    let parts = sni.split(".");
+                    if (parts.length <= 2) break;
+                    sni = parts.slice(1).join(".");
+                }
 
                 if (!sniServers.has(sni)) {
-                    if (sni) {
-                        sni = sni.split(".").slice(-2).join(".");
-                    }
-                    if (!sniServers.has(sni)) {
-                        console.warn(`No SNI server found for ${sni}, using main server.`);
-                    }
+                    console.warn(`No SNI server found for ${originalSNI}, using main server. SNI candidates ${Array.from(sniServers.keys()).join(", ")}`);
                 }
                 server = sniServers.get(sni) || mainHTTPSServer;
             }

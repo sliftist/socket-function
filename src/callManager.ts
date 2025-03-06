@@ -148,7 +148,7 @@ export const runClientHooks = measureWrap(async function runClientHooks(
         let time = Date.now();
         await hook(context);
         time = Date.now() - time;
-        if (time > 100) {
+        if (time > 500) {
             console.warn(`Slow (${formatTime(time)}) client hook: ${JSON.stringify(hook.name || hook.toString().slice(0, 100))} for ${callType.classGuid}.${callType.functionName}(...)`);
         }
         // NOTE: See ClientHookContext.overrideResult for why we break here
@@ -170,7 +170,7 @@ export const runServerHooks = measureWrap(async function runServerHooks(
         let time = Date.now();
         await _setSocketContext(caller, () => hook(hookContext));
         time = Date.now() - time;
-        if (time > 100) {
+        if (time > 500) {
             console.warn(`Slow (${formatTime(time)}) server hook: ${JSON.stringify(hook.name || hook.toString().slice(0, 100))} for ${callType.classGuid}.${callType.functionName}(...)`);
         }
         // NOTE: See HookContext.overrideResult for why we don't break here
