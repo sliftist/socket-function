@@ -419,6 +419,9 @@ export class SocketFunction {
         if (isNode()) {
             throw new Error("Cannot get browser nodeId on server");
         }
+        if (globalThis.BOOTED_EDGE_NODE) {
+            return globalThis.BOOTED_EDGE_NODE.host;
+        }
         return SocketFunction.connect({ address: location.hostname, port: +location.port || 443 });
     }
 
@@ -429,6 +432,15 @@ export class SocketFunction {
         registerGlobalClientHook(hook as SocketFunctionClientHook);
     }
 }
+
+
+declare global {
+    var BOOTED_EDGE_NODE: EdgeNodeConfig | undefined;
+}
+type EdgeNodeConfig = {
+    // EX: 127-0-0-1.example.com:3334
+    host: string;
+};
 
 
 let socketContextSeqNum = 1;

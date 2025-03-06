@@ -68,7 +68,6 @@ export function setGetTimeOffsetBase(base: () => Promise<number>) {
     getTimeOffsetBase = base;
 }
 
-
 async function defaultGetTimeOffset(): Promise<number> {
     if (!isNode()) {
         let sendTime = baseGetTime();
