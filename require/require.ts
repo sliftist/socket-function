@@ -165,7 +165,7 @@ export function requireMain() {
             source?: string;
         }
     }} */
-    let serializedModules = Object.create(null);
+    let serializedModules: { [id: string]: SerializedModule | undefined } = Object.create(null);
 
     type ModuleType = {
         id: string;
@@ -468,7 +468,7 @@ export function requireMain() {
                 return builtInModuleExports[request as keyof typeof builtInModuleExports];
             }
 
-            let resolvedPath;
+            let resolvedPath: string | undefined;
             if (request in moduleCache) {
                 resolvedPath = request;
             } else {
@@ -512,7 +512,7 @@ export function requireMain() {
             }
 
             let exportsOverride: unknown | undefined;
-            if (resolvedPath === "NOTALLOWEDCLIENTSIDE" || !serializedModules[resolvedPath].allowclient) {
+            if (resolvedPath === "NOTALLOWEDCLIENTSIDE" || !serializedModules[resolvedPath]?.allowclient) {
                 let childId = resolvedPath === "NOTALLOWEDCLIENTSIDE" ? request : resolvedPath;
                 if (serializedModules[resolvedPath]?.serveronly) {
                     exportsOverride = new Proxy(
@@ -540,8 +540,13 @@ export function requireMain() {
                                 if (property === unloadedModule) return true;
                                 if (property === "default") return exportsOverride;
 
+                                let type = "non-whitelisted";
+                                if (!serializedModules[resolvedPath!]) {
+                                    type = "missing module";
+                                }
+
                                 console.warn(
-                                    `Accessed non-whitelisted module %c${childId}%c, specifically property %c${String(
+                                    `Accessed ${type} module %c${childId}%c, specifically property %c${String(
                                         property
                                     )}%c.\n\tAdd %cmodule.allowclient = true%c to the file to allow access.\n\t(IF it is a 3rd party library, use the global "setFlag" helper (in the file you imported the module) to set properties on other modules (it can even recursively set properties)).\n\n\tFrom ${module.id
                                     }`,
@@ -623,6 +628,16 @@ export function requireMain() {
         }
 
         let serializedModule = serializedModules[resolvedId];
+        if (!serializedModule) {
+            // I can't figure out why this happens as it seems to happen very rarely and only when I'm debugging other code.
+            //  - I have had it happen immediately after starting the app. Although in theory a hot reload could have
+            //      triggered due to VS code writing to a file. 
+            //  - I've had times when it happens once after startup and then it goes away and other times where it
+            //      happens every single time and never goes away until I restart aipaint.
+            //  - Maybe it happens if we switch servers and so the root paths are different in some way?
+            debugger;
+            console.warn(`Failed to find module ${resolvedId}. The server should have given an error about this.`, serializedModules);
+        }
 
         let module = Object.create(null);
         moduleCache[resolvedId] = module;
@@ -631,14 +646,14 @@ export function requireMain() {
         module.exports = {};
         module.exports.default = module.exports;
         module.children = [];
-        for (let key in serializedModule.flags || {}) {
+        for (let key in serializedModule?.flags || {}) {
             if (key === "loaded") continue;
             module[key] = true;
         }
 
         module.load = load;
 
-        let originalSource = serializedModule.source;
+        let originalSource = serializedModule?.source || "";
         let moduleFnc = wrapSafe(module.id, originalSource);
 
         globalThis.onProgressHandler?.({
@@ -653,7 +668,8 @@ export function requireMain() {
         }
 
         function load() {
-            let serializedModule = serializedModules[resolvedId];
+            const serializedModule = serializedModules[resolvedId];
+            if (!serializedModule) return;
             if (!module.loaded) {
                 if (alreadyHave) {
                     delete alreadyHave.seqNums[serializedModule.seqNum];

@@ -243,9 +243,10 @@ class RequireControllerBase {
                 asyncRequests: module.asyncRequires || {},
                 flags: {},
             };
+            let flags = modules[module.filename].flags!;
             for (let [flag, value] of Object.entries(module)) {
                 if (value === true) {
-                    modules[module.filename].flags![flag] = value;
+                    flags[flag] = value;
                 }
             }
             let moduleObj = modules[module.filename];
