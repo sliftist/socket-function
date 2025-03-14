@@ -82,6 +82,10 @@ export function requireMain() {
     let startTime = Date.now();
     globalThis.BOOT_TIME = startTime;
 
+    // Set to the first rootDomain, unless the first import does not have a domain
+    let mainRootOrigin = location.origin + location.pathname;
+    let isFirstImport = true;
+
     (Symbol as any).dispose = Symbol.dispose || Symbol("dispose");
     (Symbol as any).asyncDispose = Symbol.asyncDispose || Symbol("asyncDispose");
 
@@ -203,6 +207,16 @@ export function requireMain() {
 
     let requireBatch: { [request: string]: (() => void)[] } | undefined;
     function rootRequire(request: string, batch?: boolean): unknown {
+        if (isFirstImport) {
+            isFirstImport = false;
+            if (request.startsWith("https://")) {
+                mainRootOrigin = getRootDomain(request);
+            }
+        }
+        if (!request.startsWith("https://")) {
+            request = mainRootOrigin + request;
+        }
+
         if (!batch) {
             if (request in rootResolveCache) {
                 let resolvedRequest = rootResolveCache[request];
@@ -247,6 +261,21 @@ export function requireMain() {
             return rootRequireMultiple([request]).then((x) => x[0].exports);
         }
     }
+
+    function getRootDomain(request: string) {
+        let url = new URL(request);
+        let origin = url.origin;
+        // Fix stupid :443 erasure (other ports aren't erased, except 80, but we'll never use HTTP,
+        //  so that's fine).
+        {
+            let remaining = request.slice(origin.length);
+            if (remaining.startsWith(":443/")) {
+                origin += ":443";
+            }
+        }
+        return origin + "/";
+    }
+
     async function rootRequireMultiple(requests: string[]) {
         console.log(`%cimport(${requests.join(", ")}) at ${Date.now() - startTime}ms`, "color: orange");
 
@@ -280,21 +309,12 @@ export function requireMain() {
                 if (!request.startsWith("https://")) {
                     throw new Error(`Mixed domains with non-domain requests is not supported presently. Requests: ${requests.join(" | ")}`);
                 }
-                let url = new URL(request);
-                let origin = url.origin;
-                // Fix stupid :443 erasure (other ports aren't erased, except 80, but we'll never use HTTP,
-                //  so that's fine).
-                {
-                    let remaining = request.slice(origin.length);
-                    if (remaining.startsWith(":443/")) {
-                        origin += ":443";
-                    }
-                }
+                let origin = getRootDomain(request);
                 if (domainOrigin && domainOrigin !== origin) {
                     // TODO: If this happens, we can probably just split the call up into multiple calls?
                     throw new Error(`Mixed domains in require call is not supported presently. Requests: ${requests.join(" | ")}`);
                 }
-                domainOrigin = origin + "/";
+                domainOrigin = origin;
                 // By stripping by length, we can turn https://example.com/./test => "./test"
                 //  (where as if we used pathname, it would turn into "/test"
                 return request.slice(domainOrigin.length);
@@ -475,7 +495,7 @@ export function requireMain() {
                 if (!(request in serializedModule.requests)) {
                     if (!asyncIsFine && !globalThis.suppressUnexpectedModuleWarning) {
                         console.warn(
-                            `Accessed unexpected module %c${request}%c in %c${module.id}%c\n\tTreating it as an async require.\n\tAll modules require synchronously clientside must be required serverside at a module level.`,
+                            `Accessed unexpected module %c${request}%c in %c${module.id}%c\n\tTreating it as an async require.\n\tAll modules require synchronously clientside must be required serverside at a module level. Expected imports: ${Object.keys(serializedModule.requests).join(" | ")}`,
                             "color: red",
                             "color: unset",
                             "color: red",
@@ -487,6 +507,11 @@ export function requireMain() {
                     //  (This path isn't hit often, as we usually preload, but... sometimes we won't).
                     if (request.startsWith(".")) {
                         request = moduleFolder + request;
+                    } else {
+                        // Still use the same domain
+                        if (!request.startsWith("https://")) {
+                            request = getRootDomain(request) + request;
+                        }
                     }
                     return rootRequire(request);
                 }
@@ -501,7 +526,7 @@ export function requireMain() {
             if (resolvedPath !== "NOTALLOWEDCLIENTSIDE" && !serializedModules[resolvedPath]) {
                 if (!asyncIsFine) {
                     console.warn(
-                        `Accessed unexpected module %c${request}%c in %c${module.id}%c\n\tTreating it as an async require.\n\tAll modules require synchronously clientside must be required serverside at a module level.`,
+                        `Accessed unexpected module %c${request}%c in %c${module.id}%c\n\tTreating it as an async require.\n\tAll modules require synchronously clientside must be required serverside at a module level. Expected imports: ${Object.keys(serializedModule.requests).join(" | ")}`,
                         "color: red",
                         "color: unset",
                         "color: red",
