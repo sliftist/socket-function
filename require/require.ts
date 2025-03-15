@@ -207,6 +207,11 @@ export function requireMain() {
 
     let requireBatch: { [request: string]: (() => void)[] } | undefined;
     function rootRequire(request: string, batch?: boolean): unknown {
+        if (request.includes("file://")) {
+            // How does this happen? It definitely breaks things, and we could remove the file://, but... how
+            //  does it even happen?
+            debugger;
+        }
         if (isFirstImport) {
             isFirstImport = false;
             if (request.startsWith("https://")) {
@@ -365,6 +370,7 @@ export function requireMain() {
 
 
         if (Object.keys(modules).length === 1 && "" in modules) {
+            debugger;
             eval(modules[""].source || "");
             throw new Error(`Failed to find modules for ${originalRequests.join(", ")} (mapped to ${requests.join(", ")})`);
         }
@@ -468,10 +474,31 @@ export function requireMain() {
 
     function createRequire(module: ModuleType, serializedModule: SerializedModule, asyncIsFineOuter?: boolean) {
         require.cache = moduleCache;
-        require.resolve = function (request: string) {
-            // TODO: Maybe do a request, making this async, if it isn't found?
-            return serializedModule.requests[request];
-        };
+        function resolve(request: string) {
+            let requests = serializedModule.requests;
+            if (request in requests) {
+                return requests[request];
+            }
+            let absolutePath = request;
+            if (absolutePath.startsWith("./") || absolutePath.startsWith("../")) {
+                let folderParts = moduleFolder.split("/");
+                while (absolutePath.startsWith("./") || absolutePath.startsWith("../")) {
+                    if (absolutePath.startsWith("./")) {
+                        absolutePath = absolutePath.slice("./".length);
+                    } else {
+                        folderParts.pop();
+                        absolutePath = absolutePath.slice("../".length);
+                    }
+                }
+                absolutePath = folderParts.join("/") + "/" + absolutePath;
+            }
+            // Still use the same domain
+            if (!absolutePath.startsWith("https://")) {
+                absolutePath = mainRootOrigin + absolutePath;
+            }
+            return absolutePath;
+        }
+        require.resolve = resolve;
         let moduleFolder = module.filename.replace(/\\/g, "/").split("/").slice(0, -1).join("/") + "/";
         return require;
         function require(request: string, asyncIsFine?: boolean) {
@@ -488,9 +515,13 @@ export function requireMain() {
                 return builtInModuleExports[request as keyof typeof builtInModuleExports];
             }
 
+            let absolutePath = resolve(request);
+
             let resolvedPath: string | undefined;
             if (request in moduleCache) {
                 resolvedPath = request;
+            } else if (absolutePath in moduleCache) {
+                resolvedPath = absolutePath;
             } else {
                 if (!(request in serializedModule.requests)) {
                     if (!asyncIsFine && !globalThis.suppressUnexpectedModuleWarning) {
@@ -502,18 +533,7 @@ export function requireMain() {
                             "color: unset"
                         );
                     }
-                    // NOTE: We should still namespace it to the current folder (if it is a relative path),
-                    //  otherwise relative async imports won't work!
-                    //  (This path isn't hit often, as we usually preload, but... sometimes we won't).
-                    if (request.startsWith(".")) {
-                        request = moduleFolder + request;
-                    } else {
-                        // Still use the same domain
-                        if (!request.startsWith("https://")) {
-                            request = getRootDomain(request) + request;
-                        }
-                    }
-                    return rootRequire(request);
+                    return rootRequire(absolutePath);
                 }
 
                 // Built in modules that we haven't been implemented
