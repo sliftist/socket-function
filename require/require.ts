@@ -92,7 +92,7 @@ export function requireMain() {
     // Globals
     Object.assign(window, {
         process: {
-            argv: [],
+            argv: window?.process?.argv || [],
             env: {
                 // Mirror the tnode.js setting
                 NODE_ENV: "production",

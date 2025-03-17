@@ -155,18 +155,22 @@ export async function createCallFactory(
                 functionName: call.functionName,
                 seqNum,
             };
-            let originalArgs = call.args;
-            if (shouldCompressCall(fullCall)) {
-                fullCall.args = await compressObj(fullCall.args) as any;
-                fullCall.isArgsCompressed = true;
-            }
-            let time = Date.now();
             let data: Buffer[];
-            let dataMaybePromise = SocketFunction.WIRE_SERIALIZER.serialize(fullCall);
-            if (dataMaybePromise instanceof Promise) {
-                data = await dataMaybePromise;
-            } else {
-                data = dataMaybePromise;
+            let originalArgs = call.args;
+            let time = Date.now();
+            try {
+                if (shouldCompressCall(fullCall)) {
+                    fullCall.args = await compressObj(fullCall.args) as any;
+                    fullCall.isArgsCompressed = true;
+                }
+                let dataMaybePromise = SocketFunction.WIRE_SERIALIZER.serialize(fullCall);
+                if (dataMaybePromise instanceof Promise) {
+                    data = await dataMaybePromise;
+                } else {
+                    data = dataMaybePromise;
+                }
+            } catch (e: any) {
+                throw new Error(`Error serializing data for call ${call.classGuid}.${call.functionName}\n${e.stack}`);
             }
             time = Date.now() - time;
             let size = data.map(x => x.length).reduce((a, b) => a + b, 0);

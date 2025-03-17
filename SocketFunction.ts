@@ -244,6 +244,9 @@ export class SocketFunction {
             let callFactory = await getCreateCallFactory(nodeId);
 
             let shapeObj = shape?.[functionName];
+            if (!shapeObj) {
+                shapeObj = {};
+            }
             // NOTE: Actually... this just means the client doesn't have a definition for it. The server
             //  might, so call it, and let them throw if it is unrecognized.
             // if (!shapeObj) {

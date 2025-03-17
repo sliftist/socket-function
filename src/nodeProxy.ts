@@ -20,6 +20,10 @@ export function getCallProxy(id: string, callback: (callType: FullCallType) => P
                     nodeProxy = new Proxy(Object.create(null), {
                         get(target, functionName) {
                             if (typeof functionName !== "string") return undefined;
+                            // Ignore "then" calls, as they happen when awaiting a callProxy (to check if it's
+                            //  a promise), and we don't want to act like a promise (we don't want to call the
+                            //  "then" api call).
+                            if (functionName === "then") return undefined;
                             return Object.assign(
                                 (...args: unknown[]) => {
                                     let call: FullCallType = {
