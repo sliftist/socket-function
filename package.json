@@ -1,6 +1,6 @@
 {
 	"name": "socket-function",
-	"version": "0.87.0",
+	"version": "0.88.0",
 	"main": "index.js",
 	"license": "MIT",
 	"dependencies": {
@@ -10,7 +10,7 @@
 		"mobx": "^6.6.2",
 		"pako": "^2.1.0",
 		"preact": "10.24.3",
-		"typenode": "^5.7.0",
+		"typenode": "^5.9.0",
 		"ws": "^8.17.1"
 	},
 	"scripts": {
