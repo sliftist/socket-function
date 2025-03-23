@@ -40,6 +40,11 @@ declare global {
              *      - If not set for any files serverside, we will do nothing (and just leave old code running).
              */
             hotreload?: boolean;
+            /** Overrides hotreload to disable hot reloading. Useful if you add "hotreload.flag" to a directory
+             *      (which sets hotreload on all files in and under that directory), but want a specific file
+             *      to not hotreload.
+             *  - Also useful if you want files to hotreload clientside, but not serverside.
+             */
             noserverhotreload?: boolean;
         }
     }
@@ -99,11 +104,13 @@ const hotReloadModule = cache((module: NodeJS.Module) => {
                 callback([module]);
             }
         }
-        triggerClientSideReload({
-            files: [module.filename],
-            changeTime: curr.mtimeMs,
-            fast,
-        });
+        if (module.allowclient) {
+            triggerClientSideReload({
+                files: [module.filename],
+                changeTime: curr.mtimeMs,
+                fast,
+            });
+        }
     });
 });
 let reloadTriggering = false;
@@ -135,42 +142,47 @@ class HotReloadControllerBase {
         clientWatcherNodes.add(callerId);
     }
     async fileUpdated(files: string[], changeTime: number) {
-        console.groupCollapsed(magenta(`Trigger hotreload for files ${formatTime(Date.now() - changeTime)} after file change`));
-        for (let file of files) {
-            console.log(file);
-        }
-        console.groupEnd();
-        let modules: NodeJS.Module[] = [];
-        for (let file of files) {
-            let module = require.cache[file];
-            if (!module) {
-                console.log(`Module not found: ${file}, reloading page to ensure new version is loaded`);
-                document.location.reload();
-                return;
-            }
-            if (!module.hotreload) {
-                console.log(`Module not hotreloadable: ${file}, reloading page to ensure new version is loaded`);
-                document.location.reload();
-                return;
-            }
-            modules.push(module);
-        }
-        for (let module of modules) {
-            module.loaded = false;
-        }
-        isHotReloadingValue = true;
         try {
-            await Promise.all(modules.map(module => module.load(module.filename)));
-        } finally {
-            setTimeout(() => {
-                isHotReloadingValue = false;
-            }, 1000);
-        }
+            console.groupCollapsed(magenta(`Trigger hotreload for files ${formatTime(Date.now() - changeTime)} after file change`));
+            for (let file of files) {
+                console.log(file);
+            }
+            console.groupEnd();
+            let modules: NodeJS.Module[] = [];
+            for (let file of files) {
+                file = location.origin + "/" + file;
+                let module = require.cache[file];
+                if (!module) {
+                    console.log(`Module not found: ${file}, reloading page to ensure new version is loaded`);
+                    document.location.reload();
+                    return;
+                }
+                if (!module.hotreload) {
+                    console.log(`Module not hotreloadable: ${file}, reloading page to ensure new version is loaded`);
+                    document.location.reload();
+                    return;
+                }
+                modules.push(module);
+            }
+            for (let module of modules) {
+                module.loaded = false;
+            }
+            isHotReloadingValue = true;
+            try {
+                await Promise.all(modules.map(module => module.load(module.filename)));
+            } finally {
+                setTimeout(() => {
+                    isHotReloadingValue = false;
+                }, 1000);
+            }
 
-        for (let callback of hotReloadCallbacks) {
-            callback(modules);
+            for (let callback of hotReloadCallbacks) {
+                callback(modules);
+            }
+            console.log(magenta(`Hot reload complete ${formatTime(Date.now() - changeTime)} after file change`));
+        } catch (e: any) {
+            console.error(`Hot reload failed ${e.stack}`);
         }
-        console.log(magenta(`Hot reload complete ${formatTime(Date.now() - changeTime)} after file change`));
     }
 }
 

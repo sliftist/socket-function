@@ -240,8 +240,9 @@ export function requireMain() {
         }
         if (batch) {
             if (!requireBatch) {
+                requireBatch = requireBatch || {};
                 setTimeout(() => {
-                    requireBatch = requireBatch || {};
+                    if (!requireBatch) throw new Error("Impossible");
                     let requests = Object.keys(requireBatch);
                     let callbacks = Object.values(requireBatch).reduce((a, b) => a.concat(b), []);
                     requireBatch = undefined;
