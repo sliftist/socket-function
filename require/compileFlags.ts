@@ -28,8 +28,7 @@ function setRecursive(bangPart: string, module: NodeJS.Module) {
     }
 }
 
-const g = new Function("return this")();
-g.setFlag = setFlag;
+(globalThis as any).setFlag = setFlag;
 export function setFlag(require: NodeRequire, request: string, flag: string, recursive?: boolean) {
     let resolvedPath = require.resolve(request);
     let module = require.cache[resolvedPath] as any;
