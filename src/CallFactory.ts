@@ -498,6 +498,9 @@ export async function createCallFactory(
                 call.args = await decompressObj(call.args as any as Buffer) as any;
                 call.isArgsCompressed = false;
             }
+            if (call.functionName === "changeIdentity") {
+                console.log(red(`Call to ${call.classGuid}.${call.functionName} at ${Date.now()}`));
+            }
             if (SocketFunction.logMessages) {
                 console.log(`SIZE\t${(formatNumberSuffixed(resultSize) + "B").padEnd(4, " ")}\tEVALUATE\t${call.classGuid}.${call.functionName} at ${Date.now()}`);
             }
