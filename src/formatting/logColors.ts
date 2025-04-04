@@ -1,3 +1,4 @@
+import { isNode } from "../misc";
 import { hslToHex, hslToRGB } from "./colors";
 
 function ansiHSL(h: number, s: number, l: number, text: string): string {
@@ -5,7 +6,10 @@ function ansiHSL(h: number, s: number, l: number, text: string): string {
     return ansiRGB(r, g, b, text);
 }
 function ansiRGB(r: number, g: number, b: number, text: string): string {
-    return `\x1b[38;5;${16 + (36 * Math.round(r / 255 * 5)) + (6 * Math.round(g / 255 * 5)) + Math.round(b / 255 * 5)}m${text}\x1b[0m`;
+    if (isNode()) {
+        return `\x1b[38;5;${16 + (36 * Math.round(r / 255 * 5)) + (6 * Math.round(g / 255 * 5)) + Math.round(b / 255 * 5)}m${text}\x1b[0m`;
+    }
+    return `\x1b[38;2;${r};${g};${b}m${text}\x1b[0m`;
 }
 
 const lightness = 68;
