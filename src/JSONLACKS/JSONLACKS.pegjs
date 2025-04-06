@@ -1,3 +1,6 @@
+// IMPORTANT! If you update this, also run `yarn typenode src\JSONLACKS\JSONLACKS.ts`
+//  (after uncommenting the generateAndVerifyParser line)
+
 // JSON Grammar
 // ============
 //
@@ -60,10 +63,12 @@ value
   / array
   / number
   / string
+  / undefined
 
 false = "false" { return false; }
 null  = "null"  { return null;  }
 true  = "true"  { return true;  }
+undefined = "undefined" { return undefined; }
 
 // ----- 4. Objects -----
 
