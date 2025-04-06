@@ -84,6 +84,8 @@ export class JSONLACKS {
     //  then it is about 2X slower (although it depends on the size and complexity of the objects!)
     @measureFnc
     public static parse<T>(text: string, config?: JSONLACKS_ParseConfig, hydrateState?: HydrateState): T {
+        // Empty string should parse to SOMETHING
+        if (text.trim() === "") return undefined as T;
         let obj: unknown;
 
         let extendedParsing = config?.extended ?? JSONLACKS.EXTENDED_PARSER;
