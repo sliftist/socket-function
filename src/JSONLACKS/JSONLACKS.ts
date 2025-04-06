@@ -480,4 +480,4 @@ b"
     `);
     verify(`undefined`);
 }
-generateAndVerifyParser().catch(console.error).finally(() => process.exit());
+//generateAndVerifyParser().catch(console.error).finally(() => process.exit());
