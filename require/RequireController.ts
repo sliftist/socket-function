@@ -8,6 +8,7 @@ import zlib from "zlib";
 import { cacheLimited, lazy } from "../src/caching";
 import { formatNumber } from "../src/formatting/format";
 import { requireMain } from "./require";
+import path from "path";
 
 const COMPRESS_CACHE_SIZE = 1024 * 1024 * 128;
 
@@ -136,6 +137,11 @@ class RequireControllerBase {
         requireCalls?: string[];
         cacheTime?: number;
     }) {
+        if (!this.rootResolvePath) {
+            let dir = path.resolve(".");
+            dir = dir.replaceAll("\\", "/");
+            this.rootResolvePath = dir;
+        }
         let { requireCalls, cacheTime } = config || {};
         let result = resolvedHTMLFile();
         if (beforeEntryText.length > 0) {
@@ -405,8 +411,14 @@ declare global {
 }
 
 let baseController = new RequireControllerBase();
-export function setRequireBootRequire(path: string) {
-    baseController.rootResolvePath = path;
+/** @deprecated, not needed, as this defaults to ".", which is a lot easier to reason about anyways. */
+export function setRequireBootRequire(dir: string) {
+    dir = path.resolve(dir);
+    dir = dir.replaceAll("\\", "/");
+    if (!dir.endsWith("/")) {
+        dir += "/";
+    }
+    baseController.rootResolvePath = dir;
 }
 
 export const RequireController = SocketFunction.register(
