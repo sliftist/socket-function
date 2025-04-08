@@ -261,6 +261,11 @@ export async function startSocketServer(
         socket.on("error", (e) => {
             console.error(`TCP socket error for ${debug}, ${e.stack}`);
         });
+        socket.on("close", () => {
+            if (!SocketFunction.silent) {
+                console.log(`TCP socket closed for ${debug}`);
+            }
+        });
     });
 
 

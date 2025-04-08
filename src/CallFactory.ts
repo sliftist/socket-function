@@ -486,7 +486,7 @@ export async function createCallFactory(
             }
             if (SocketFunction.logMessages) {
                 let call = callbackObj.call;
-                console.log(`SIZE\t${(formatNumberSuffixed(resultSize) + "B").padEnd(4, " ")}\tRETURN\t${call.classGuid}.${call.functionName} at ${Date.now()}`);
+                console.log(`SIZE\t${(formatNumberSuffixed(resultSize) + "B").padEnd(4, " ")}\tRETURN\t${call.classGuid}.${call.functionName} at ${Date.now()}, (${nodeId} / ${localNodeId})`);
             }
             if (call.isResultCompressed) {
                 call.result = await decompressObj(call.result as Buffer);
@@ -565,11 +565,15 @@ export async function createCallFactory(
                     - The upgrade request finishes, at least once: Received websocket upgrade
                         - AND, we are receiving some calls, so... that appears to work.
                         - Maybe the time calls never finish?
+                            - We added logging for when calls finish as well, so we can tell if all the TimeController calls timed out
+                            - ALSO, added more logging to see if the calls were from the same client (which WOULD be a bug, because
+                                the client shouldn't be calling us so often), or, different clients.
+                        - We DO receive more connections than http connections closed. But not that many more...
                 */
                 console.log(red(`Call to ${call.classGuid}.${call.functionName} at ${Date.now()}`));
             }
             if (SocketFunction.logMessages) {
-                console.log(`SIZE\t${(formatNumberSuffixed(resultSize) + "B").padEnd(4, " ")}\tEVALUATE\t${call.classGuid}.${call.functionName} at ${Date.now()}`);
+                console.log(`SIZE\t${(formatNumberSuffixed(resultSize) + "B").padEnd(4, " ")}\tEVALUATE\t${call.classGuid}.${call.functionName} at ${Date.now()}, (${nodeId} / ${localNodeId})`);
             }
             if (time > SocketFunction.WIRE_WARN_TIME) {
                 console.log(red(`Slow parse, took ${time}ms to parse ${resultSize} bytes, for call to ${call.classGuid}.${call.functionName}`));
@@ -586,7 +590,7 @@ export async function createCallFactory(
                 };
                 if (SocketFunction.logMessages) {
                     time = Date.now() - time;
-                    console.log(`DUR\t${(formatTime(time)).padEnd(6, " ")}\tFINISH\t${call.classGuid}.${call.functionName} at ${Date.now()}`);
+                    console.log(`DUR\t${(formatTime(time)).padEnd(6, " ")}\tFINISH\t${call.classGuid}.${call.functionName} at ${Date.now()}, (${nodeId} / ${localNodeId})`);
                 }
                 if (shouldCompressCall(call)) {
                     response.result = await compressObj(response.result) as any;
