@@ -80,6 +80,8 @@ export async function startSocketServer(
             };
             if (!httpsServerLast) {
                 httpsServerLast = https.createServer(lastOptions);
+                // We REALLY don't want keep alive, at all, as keep alives break so many things.
+                httpsServerLast.keepAliveTimeout = 0;
             } else {
                 httpsServerLast.setSecureContext(lastOptions);
             }
