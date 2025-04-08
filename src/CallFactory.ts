@@ -499,6 +499,73 @@ export async function createCallFactory(
                 call.isArgsCompressed = false;
             }
             if (call.functionName === "changeIdentity") {
+                /*
+                    TODO: Sometimes calls don't get through, even though we know the client made the call. Here are the logs from a failing case:
+                        Exposing Controller ServerController-17ea53da-bbef-4c8b-9eb0-99e263464c6f
+                        Exposing Controller HotReloadController-032b2250-3aac-4187-8c95-75412742b8f5
+                        Exposing Controller TimeController-ddf4753e-fc8a-413f-8cc2-b927dd449976
+                        Updating websocket server options
+                        Updating websocket server trusted certificates
+                        Updating websocket server options
+                        Updating websocket server trusted certificates
+                        Updating websocket server options
+                        Updating websocket server trusted certificates
+                        Trying to listening on 127.0.0.1:4231
+                        Started Listening on planquickly.com:4231 (127.0.0.1) after 5.54s
+                        Mounted on 127-0-0-1.planquickly.com:4231
+                        Exposing Controller RequireController-e2f811f3-14b8-4759-b0d6-73f14516cf1d
+                        Received TCP connection from 127.0.0.1:42105
+                        Received TCP header packet from 127.0.0.1:42105, have 1894 bytes so far, 1 packets
+                        Received TCP connection with SNI "127-0-0-1.planquickly.com". Have handlers for: planquickly.com, 127-0-0-1.planquickly.com
+                        HTTP server connection established 127.0.0.1:42105
+                        HTTP request (GET) https://127-0-0-1.planquickly.com:4231/?hot
+                        HTTP response  106KB  (GET) https://127-0-0-1.planquickly.com:4231/?hot
+                        HTTP server socket closed for 127.0.0.1:42105
+                        Received TCP connection from 127.0.0.1:42106
+                        Received TCP header packet from 127.0.0.1:42106, have 1862 bytes so far, 1 packets
+                        Received TCP connection with SNI "127-0-0-1.planquickly.com". Have handlers for: planquickly.com, 127-0-0-1.planquickly.com
+                        HTTP server connection established 127.0.0.1:42106
+                        HTTP request (GET) https://127-0-0-1.planquickly.com:4231/?classGuid=RequireController-e2f811f3-14b8-4759-b0d6-73f14516cf1d&functionName=getModules&args=%5B%5B%22.%2Fsite%2FsiteMain%22%5D%2Cnull%5D
+                        HTTP response  10.8MB  (GET) https://127-0-0-1.planquickly.com:4231/?classGuid=RequireController-e2f811f3-14b8-4759-b0d6-73f14516cf1d&functionName=getModules&args=%5B%5B%22.%2Fsite%2FsiteMain%22%5D%2Cnull%5D
+                        Received TCP connection from 127.0.0.1:42107
+                        Received TCP header packet from 127.0.0.1:42107, have 1894 bytes so far, 1 packets
+                        Received TCP connection with SNI "127-0-0-1.planquickly.com". Have handlers for: planquickly.com, 127-0-0-1.planquickly.com
+                        HTTP server connection established 127.0.0.1:42107
+                        HTTP server socket closed for 127.0.0.1:42106
+                        HTTP server socket closed for 127.0.0.1:42107
+                        Received TCP connection from 127.0.0.1:42108
+                        Received TCP header packet from 127.0.0.1:42108, have 1830 bytes so far, 1 packets
+                        Received TCP connection with SNI "127-0-0-1.planquickly.com". Have handlers for: planquickly.com, 127-0-0-1.planquickly.com
+                        HTTP server connection established 127.0.0.1:42108
+                        HTTP request (GET) https://127-0-0-1.planquickly.com:4231/node.cjs.map
+                        HTTP response  106KB  (GET) https://127-0-0-1.planquickly.com:4231/node.cjs.map
+                        HTTP server socket closed for 127.0.0.1:42108
+                        Received TCP connection from 127.0.0.1:42110
+                        Received TCP header packet from 127.0.0.1:42110, have 1818 bytes so far, 1 packets
+                        Received TCP connection with SNI "127-0-0-1.planquickly.com". Have handlers for: planquickly.com, 127-0-0-1.planquickly.com
+                        HTTP server connection established 127.0.0.1:42110
+                        Received TCP connection from 127.0.0.1:42111
+                        Received TCP header packet from 127.0.0.1:42111, have 1830 bytes so far, 1 packets
+                        Received TCP connection with SNI "127-0-0-1.planquickly.com". Have handlers for: planquickly.com, 127-0-0-1.planquickly.com
+                        HTTP server connection established 127.0.0.1:42111
+                        Received websocket upgrade request for 127.0.0.1:42110
+                        Connection established to client:127.0.0.1:1744150129862.296:0.4118126921519041
+                        HTTP request (GET) https://127-0-0-1.planquickly.com:4231/?classGuid=RequireController-e2f811f3-14b8-4759-b0d6-73f14516cf1d&functionName=getModules&args=%5B%5B%22D%3A%2Frepos%2Fperspectanalytics%2Fai3%2Fnode_modules%2Fsocket-function%2Ftime%2FtrueTimeShim.ts%22%5D%2C%7B%22requireSeqNumProcessId%22%3A%22requireSeqNumProcessId_1744150120269_0.5550074391586426%22%2C%22seqNumRanges%22%3A%5B%7B%22s%22%3A1%2C%22e%22%3A892%7D%5D%7D%5D
+                        HTTP response  31.1KB  (GET) https://127-0-0-1.planquickly.com:4231/?classGuid=RequireController-e2f811f3-14b8-4759-b0d6-73f14516cf1d&functionName=getModules&args=%5B%5B%22D%3A%2Frepos%2Fperspectanalytics%2Fai3%2Fnode_modules%2Fsocket-function%2Ftime%2FtrueTimeShim.ts%22%5D%2C%7B%22requireSeqNumProcessId%22%3A%22requireSeqNumProcessId_1744150120269_0.5550074391586426%22%2C%22seqNumRanges%22%3A%5B%7B%22s%22%3A1%2C%22e%22%3A892%7D%5D%7D%5D
+                        SIZE    171B    EVALUATE        HotReloadController-032b2250-3aac-4187-8c95-75412742b8f5.watchFiles at 1744150129869.296
+                        SIZE    174B    EVALUATE        ServerController-17ea53da-bbef-4c8b-9eb0-99e263464c6f.testSiteFunction at 1744150129872.296
+                        HTTP server socket closed for 127.0.0.1:42111
+                        SIZE    167B    EVALUATE        TimeController-ddf4753e-fc8a-413f-8cc2-b927dd449976.getTrueTime at 1744150129893.296
+                        SIZE    167B    EVALUATE        TimeController-ddf4753e-fc8a-413f-8cc2-b927dd449976.getTrueTime at 1744150129897.296
+                        SIZE    167B    EVALUATE        TimeController-ddf4753e-fc8a-413f-8cc2-b927dd449976.getTrueTime at 1744150129899.296
+                        SIZE    167B    EVALUATE        TimeController-ddf4753e-fc8a-413f-8cc2-b927dd449976.getTrueTime at 1744150139907.0776
+                        SIZE    167B    EVALUATE        TimeController-ddf4753e-fc8a-413f-8cc2-b927dd449976.getTrueTime at 1744150139909.0776
+                        SIZE    167B    EVALUATE        TimeController-ddf4753e-fc8a-413f-8cc2-b927dd449976.getTrueTime at 1744150139911.0776
+                        Hot reloading due to change: D:/repos/perspectanalytics/ai3/node_modules/socket-function/src/webSocketServer.ts
+                    - The upgrade request finishes, at least once: Received websocket upgrade
+                        - AND, we are receiving some calls, so... that appears to work.
+                        - Maybe the time calls never finish?
+                */
                 console.log(red(`Call to ${call.classGuid}.${call.functionName} at ${Date.now()}`));
             }
             if (SocketFunction.logMessages) {
@@ -510,12 +577,17 @@ export async function createCallFactory(
 
             let response: InternalReturnType;
             try {
+                let time = Date.now();
                 let result = await performLocalCall({ call, caller: callerContext });
                 response = {
                     isReturn: true,
                     result,
                     seqNum: call.seqNum,
                 };
+                if (SocketFunction.logMessages) {
+                    time = Date.now() - time;
+                    console.log(`DUR\t${(formatTime(time)).padEnd(6, " ")}\tFINISH\t${call.classGuid}.${call.functionName} at ${Date.now()}`);
+                }
                 if (shouldCompressCall(call)) {
                     response.result = await compressObj(response.result) as any;
                     response.isResultCompressed = true;
