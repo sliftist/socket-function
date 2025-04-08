@@ -407,3 +407,41 @@ export function removeFromSortedList<T>(list: T[], map: (val: T) => string | num
     if (index < 0) return;
     list.splice(index, 1);
 }
+
+
+
+export function timeoutToError<T>(time: number, p: Promise<T>, err: () => Error) {
+    return new Promise<T>((resolve, reject) => {
+        let timeout = setTimeout(() => reject(err()), time);
+        p.then(resolve, reject).finally(() => clearTimeout(timeout));
+    });
+}
+
+// NOTE: Both errors and timeouts are converted to undefined
+export function timeoutToUndefined<T>(time: number, p: Promise<T>) {
+    return new Promise<T | undefined>((resolve, reject) => {
+        let timeout = setTimeout(() => {
+            console.error(`timeoutToUndefined timed out after ${time}`);
+            resolve(undefined);
+        }, time);
+        p.then(resolve,
+            (err) => {
+                console.error(`timeoutToUndefined error: ${err.stack}`);
+                resolve(undefined);
+            }
+        ).finally(() => clearTimeout(timeout));
+    });
+}
+export function timeoutToUndefinedSilent<T>(time: number, p: Promise<T>) {
+    return new Promise<T | undefined>((resolve, reject) => {
+        let timeout = setTimeout(() => {
+            resolve(undefined);
+        }, time);
+        p.then(
+            resolve,
+            (err) => {
+                resolve(undefined);
+            }
+        ).finally(() => clearTimeout(timeout));
+    });
+}
