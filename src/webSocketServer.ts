@@ -80,7 +80,8 @@ export async function startSocketServer(
             };
             if (!httpsServerLast) {
                 httpsServerLast = https.createServer(lastOptions);
-                // We REALLY don't want keep alive, at all, as keep alives break so many things.
+                // NOTE: This MIGHT be different than the keep alive option? Probably not, but also...
+                //  something weird is happening with connections...
                 httpsServerLast.keepAliveTimeout = 0;
             } else {
                 httpsServerLast.setSecureContext(lastOptions);
@@ -167,6 +168,8 @@ export async function startSocketServer(
         //  our websockets, so... we really don't need to keep alive our HTTP requests
         //  (and our images go through cloudflare, so we don't even need keep alive for that)
         keepAlive: false,
+        keepAliveInitialDelay: 0,
+        noDelay: true,
     };
     if (!config.cert) {
         throw new Error("No cert specified");
@@ -181,7 +184,7 @@ export async function startSocketServer(
         sniServers.set(domain, await setupHTTPSServer(obj));
     }
 
-    let httpServer = http.createServer({}, async function (req, res) {
+    let httpServer = http.createServer({ keepAlive: false, }, async function (req, res) {
         let url = new URL("http://" + req.headers.host + req.url);
         url.protocol = "https:";
         //url.hostname = opts.hostname;
@@ -189,6 +192,7 @@ export async function startSocketServer(
         res.writeHead(301, { Location: url + "" });
         res.end();
     });
+    httpServer.keepAliveTimeout = 0;
     httpServer.on("error", e => {
         console.error(`HTTP error ${e.stack}`);
     });
