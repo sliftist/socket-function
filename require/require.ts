@@ -171,7 +171,7 @@ export function requireMain() {
     }} */
     let serializedModules: { [id: string]: SerializedModule | undefined } = Object.create(null);
 
-    type ModuleType = {
+    type ModuleType = NodeJS.Module & {
         id: string;
         filename: string;
         exports: unknown;
@@ -181,10 +181,12 @@ export function requireMain() {
         loaded: boolean;
         isPreloading: boolean;
         evalStartTime: number;
-        evalEndTime: number;
+        evalEndTime: number | undefined;
+        evaluateStarted: boolean;
         source: string;
         allowclient: boolean;
         size: number;
+        import: (request: string, asyncIsFine?: boolean) => unknown;
     };
 
     let moduleCache: { [id: string]: ModuleType } = Object.create(null);
@@ -660,9 +662,9 @@ export function requireMain() {
 
     let currentModuleEvaluationStack: string[] = [];
     // See https://nodejs.org/api/modules.html
-    function getModule(resolvedId: string, preload?: "preload") {
+    function getModule(resolvedId: string, preload?: "preload"): ModuleType {
         if (resolvedId === "") {
-            return {};
+            return {} as ModuleType;
         }
         if (resolvedId in moduleCache) {
             let module = moduleCache[resolvedId];
@@ -685,16 +687,17 @@ export function requireMain() {
             console.warn(`Failed to find module ${resolvedId}. The server should have given an error about this.`, serializedModules);
         }
 
-        let module = Object.create(null);
+        let module = Object.create(null) as ModuleType;
         moduleCache[resolvedId] = module;
         module.id = resolvedId;
-        module.filename = serializedModule?.filename;
+        module.filename = serializedModule?.filename || "";
         module.exports = {};
-        module.exports.default = module.exports;
+        // Default default of exports to the exports itself
+        (module.exports as any).default = module.exports;
         module.children = [];
         for (let key in serializedModule?.flags || {}) {
             if (key === "loaded") continue;
-            module[key] = true;
+            (module as any)[key] = true;
         }
 
         module.load = load;
@@ -717,10 +720,11 @@ export function requireMain() {
             const serializedModule = serializedModules[resolvedId];
             if (!serializedModule) return;
             if (!module.loaded) {
+                module.evaluateStarted = false;
                 if (alreadyHave) {
                     delete alreadyHave.seqNums[serializedModule.seqNum];
                 }
-                // NOTE: There is almost never recovery from module downloading errors, so just don't catch them
+                // NOTE: There is almost never a way to recover from module downloading errors, so just don't catch them
                 return Promise.resolve()
                     .then(() => rootRequire(resolvedId, true))
                     .then(async () => {
@@ -729,8 +733,11 @@ export function requireMain() {
                     });
             }
 
+            // Skip double loads
+            if (module.evaluateStarted) return;
+
             module.requires = serializedModule.requests;
-            module.require = createRequire(module, serializedModule);
+            module.require = createRequire(module, serializedModule) as any;
             // TODO: Once typescript supports dynamic import, map import() to importDynamic, so it
             //  uses our import function, instead of the built in one.
             //  (As apparently we can't just override import on a per module basis, because
@@ -763,6 +770,7 @@ export function requireMain() {
             let time = Date.now();
             currentModuleEvaluationStack.push(module.filename);
             try {
+                module.evaluateStarted = true;
                 module.isPreloading = true;
                 module.evalStartTime = nextTime();
                 module.evalEndTime = undefined;

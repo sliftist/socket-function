@@ -445,3 +445,10 @@ export function timeoutToUndefinedSilent<T>(time: number, p: Promise<T>) {
         ).finally(() => clearTimeout(timeout));
     });
 }
+
+export function errorToWarning<T>(promise: Promise<T>): Promise<T | undefined> {
+    return promise.catch(e => {
+        console.warn(e.stack);
+        return undefined as any;
+    });
+}

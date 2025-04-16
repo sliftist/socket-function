@@ -441,8 +441,12 @@ export class SocketFunction {
     }
 }
 
+declare global {
+    var BOOTED_EDGE_NODE: { host: string } | undefined;
+}
+
 function getBootedEdgeNode() {
-    return (globalThis as any).BOOTED_EDGE_NODE as { host: string } | undefined;
+    return BOOTED_EDGE_NODE as { host: string } | undefined;
 }
 
 
