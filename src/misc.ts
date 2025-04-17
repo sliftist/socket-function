@@ -446,9 +446,11 @@ export function timeoutToUndefinedSilent<T>(time: number, p: Promise<T>) {
     });
 }
 
-export function errorToWarning<T>(promise: Promise<T>): Promise<T | undefined> {
+export function errorToWarning<T>(promise: Promise<T>): void {
+    // Return the promise, so they can wait if they want, but have the return type be void,
+    //  so that they don't have to await it.
     return promise.catch(e => {
         console.warn(e.stack);
         return undefined as any;
-    });
+    }) as any;
 }
