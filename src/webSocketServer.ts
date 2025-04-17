@@ -45,6 +45,8 @@ export type SocketServerConfig = (
         // For example, to allow "letx.ca" to access the server (when the hosted domain
         //  may be, "querysub.com", for example), use ["letx.ca"]
         allowHostnames?: string[];
+        // If a hostname is in allowHostnames or allowHostnameFnc returns true, it is allowed
+        allowHostnameFnc?: (hostname: string) => boolean;
 
         /** If the SNI matches this domain, we use a different key/cert.
          *      We remove subdomains until we find a match
@@ -138,7 +140,11 @@ export async function startSocketServer(
                 try {
                     let host = getRootDomain(new URL("ws://" + request.headers["host"]).hostname);
                     let origin = getRootDomain(new URL(originHeader).hostname);
-                    if (host !== origin && !allowedHostnames.has(origin)) {
+                    let allowed = host === origin || allowedHostnames.has(origin);
+                    if (!allowed && config.allowHostnameFnc) {
+                        allowed = config.allowHostnameFnc(origin);
+                    }
+                    if (!allowed) {
                         throw new Error(`Invalid cross domain request, ${JSON.stringify(host)} !== ${JSON.stringify(origin)} (also not in config.allowedHostnames ${JSON.stringify(config.allowHostnames)})`);
                     }
                 } catch (e) {
