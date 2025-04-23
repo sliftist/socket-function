@@ -1,6 +1,6 @@
 {
 	"name": "socket-function",
-	"version": "0.111.0",
+	"version": "0.112.0",
 	"main": "index.js",
 	"license": "MIT",
 	"dependencies": {
@@ -20,7 +20,7 @@
 	},
 	"devDependencies": {
 		"@types/cookie": "^0.5.1",
-		"debugbreak": "^0.6.5",
+		"debugbreak": "^0.11.0",
 		"pegjs": "^0.10.0",
 		"typedev": "^0.1.3"
 	}
