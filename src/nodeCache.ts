@@ -87,6 +87,12 @@ export function getCallFactory(nodeId: string): MaybePromise<CallFactory | undef
     return nodeCache.get(nodeId);
 }
 
+export function resetAllNodeCallFactories() {
+    // Needs to be done if you want to reset authentication. Outstanding calls still work,
+    //  but new calls use new factories (and connections).
+    nodeCache.clear();
+}
+
 const startCleanupLoop = lazy(() => {
     (async () => {
         while (true) {

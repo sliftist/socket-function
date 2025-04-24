@@ -38,13 +38,13 @@ export async function performLocalCall(
     }
 
     if (!exposedClasses.has(call.classGuid)) {
-        throw new Error(`Class ${call.classGuid} not exposed, exposed classes: ${Array.from(exposedClasses).join(", ")}`);
+        throw new Error(`Class ${call.classGuid} not exposed. Call SocketFunction.expose (serverside) with this class. Exposed classes: ${Array.from(exposedClasses).join(", ")}`);
     }
 
     let controller = classDef.controller;
     let functionShape = classDef.shape[call.functionName];
     if (!functionShape) {
-        throw new Error(`Function ${call.functionName} not exposed`);
+        throw new Error(`Function ${call.functionName} not exposed in ${call.classGuid}. Add it to the 3rd argument of SocketFunction.expose.`);
     }
 
     if (!controller[call.functionName]) {

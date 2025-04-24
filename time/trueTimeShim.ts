@@ -57,7 +57,10 @@ export function getTrueTimeOffset() {
 export function waitForFirstTimeSync() {
     return firstTimeSyncPromise;
 }
+let shimmed = false;
 export function shimDateNow() {
+    if (shimmed) return;
+    shimmed = true;
     Date.now = getTrueTime;
 }
 export function getBrowserTime() {

@@ -18,12 +18,6 @@ import { setFlag } from "./require/compileFlags";
 import { isNode } from "./src/misc";
 import { getPendingCallCount, harvestCallTimes, harvestFailedCallCount } from "./src/CallFactory";
 
-/** Always shim Date.now(), because we usually DO want an accurate time... */
-setImmediate(async () => {
-    const { shimDateNow } = await import("./time/trueTimeShim");
-    shimDateNow();
-});
-
 setFlag(require, "cbor-x", "allowclient", true);
 let cborxInstance = new cborx.Encoder({ structuredClone: true });
 if (isNode()) {
@@ -378,7 +372,8 @@ export class SocketFunction {
             this.mountedIP = config.ip;
         }
 
-        const { waitForFirstTimeSync } = await import("./time/trueTimeShim");
+        const { waitForFirstTimeSync, shimDateNow } = await import("./time/trueTimeShim");
+        shimDateNow();
         await waitForFirstTimeSync();
 
         // Wait for any additionals functions to expose themselves
