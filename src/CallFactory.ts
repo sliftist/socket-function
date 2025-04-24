@@ -470,15 +470,15 @@ export async function createCallFactory(
             resultSize = currentBuffers.map(x => x.length).reduce((a, b) => a + b, 0);
             call = await SocketFunction.WIRE_SERIALIZER.deserialize(currentBuffers) as InternalCallType | InternalReturnType;
         }
-        time = Date.now() - time;
+        let parseTime = Date.now() - time;
         for (let callback of SocketFunction.trackMessageSizes.download) {
             callback(resultSize);
         }
 
         if (call.isReturn) {
             let callbackObj = pendingCalls.get(call.seqNum);
-            if (time > SocketFunction.WIRE_WARN_TIME) {
-                console.log(red(`Slow parse, took ${time}ms to parse ${resultSize} bytes, for receiving result of call to ${callbackObj?.call.classGuid}.${callbackObj?.call.functionName}`));
+            if (parseTime > SocketFunction.WIRE_WARN_TIME) {
+                console.log(red(`Slow parse, took ${parseTime}ms to parse ${resultSize} bytes, for receiving result of call to ${callbackObj?.call.classGuid}.${callbackObj?.call.functionName}`));
             }
             if (!callbackObj) {
                 console.log(`Got return for unknown call ${call.seqNum} (created at time ${new Date(call.seqNum)})`);
@@ -581,7 +581,6 @@ export async function createCallFactory(
 
             let response: InternalReturnType;
             try {
-                let time = Date.now();
                 let result = await performLocalCall({ call, caller: callerContext });
                 response = {
                     isReturn: true,
@@ -589,8 +588,8 @@ export async function createCallFactory(
                     seqNum: call.seqNum,
                 };
                 if (SocketFunction.logMessages) {
-                    time = Date.now() - time;
-                    console.log(`DUR\t${(formatTime(time)).padEnd(6, " ")}\tFINISH\t${call.classGuid}.${call.functionName} at ${Date.now()}, (${nodeId} / ${localNodeId})`);
+                    let timeTaken = Date.now() - time;
+                    console.log(`DUR\t${(formatTime(timeTaken)).padEnd(6, " ")}\tFINISH\t${call.classGuid}.${call.functionName} at ${Date.now()}, (${nodeId} / ${localNodeId})`);
                 }
                 if (shouldCompressCall(call)) {
                     response.result = await compressObj(response.result) as any;
@@ -603,6 +602,13 @@ export async function createCallFactory(
                     seqNum: call.seqNum,
                     error: e.stack,
                 };
+            }
+            {
+                let start = time;
+                let end = Date.now();
+                for (let fnc of SocketFunction.trackMessageSizes.callTimes) {
+                    fnc({ start, end });
+                }
             }
 
             if (response.result instanceof Buffer) {

@@ -93,6 +93,10 @@ export function resetAllNodeCallFactories() {
     nodeCache.clear();
 }
 
+export function countOpenConnections() {
+    return Array.from(nodeCache.values()).filter(factory => factory instanceof Promise ? false : factory.isConnected).length;
+}
+
 const startCleanupLoop = lazy(() => {
     (async () => {
         while (true) {

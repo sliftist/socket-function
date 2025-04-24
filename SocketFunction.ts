@@ -50,6 +50,7 @@ export class SocketFunction {
     public static trackMessageSizes = {
         upload: [] as ((size: number) => void)[],
         download: [] as ((size: number) => void)[],
+        callTimes: [] as ((obj: { start: number; end: number; }) => void)[],
     };
 
     public static MAX_MESSAGE_SIZE = 1024 * 1024 * 32;
