@@ -575,8 +575,8 @@ export async function createCallFactory(
             if (SocketFunction.logMessages) {
                 console.log(`SIZE\t${(formatNumberSuffixed(resultSize) + "B").padEnd(4, " ")}\tEVALUATE\t${call.classGuid}.${call.functionName} at ${Date.now()}, (${nodeId} / ${localNodeId})`);
             }
-            if (time > SocketFunction.WIRE_WARN_TIME) {
-                console.log(red(`Slow parse, took ${time}ms to parse ${resultSize} bytes, for call to ${call.classGuid}.${call.functionName}`));
+            if (parseTime > SocketFunction.WIRE_WARN_TIME) {
+                console.log(red(`Slow parse, took ${parseTime}ms to parse ${resultSize} bytes, for call to ${call.classGuid}.${call.functionName}`));
             }
 
             let response: InternalReturnType;
