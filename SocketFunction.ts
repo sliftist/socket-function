@@ -129,7 +129,7 @@ export class SocketFunction {
         Statics
     >(
         classGuid: string,
-        instance: ClassInstance,
+        instance: ClassInstance | (() => ClassInstance),
         shapeFnc: () => Shape,
         defaultHooksFnc?: () => SocketExposedShape[""] & {
             onMount?: () => MaybePromise<void>;
@@ -147,6 +147,7 @@ export class SocketFunction {
             noFunctionMeasure?: boolean;
         }
     ): SocketRegistered<ExtractShape<ClassInstance, Shape>> & Statics {
+        let instanceFnc = lazy(typeof instance === "function" ? instance : () => instance);
         void Promise.resolve().then(() => {
             let onMount = getDefaultHooks?.().onMount;
             if (onMount) {
@@ -183,7 +184,7 @@ export class SocketFunction {
         //  by now. This is IMPORTANT, as it allows permissions functions to be moved
         //  to a common module, instead of all being inline.
         void Promise.resolve().then(() => {
-            registerClass(classGuid, instance as SocketExposedInterface, getShape(), {
+            registerClass(classGuid, instanceFnc() as SocketExposedInterface, getShape(), {
                 noFunctionMeasure: config?.noFunctionMeasure,
             });
         });
