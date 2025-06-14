@@ -51,7 +51,7 @@ export function arrayEqual(a: { [key: number]: unknown; length: number }, b: { [
     return true;
 }
 export function isNode() {
-    return typeof document === "undefined";
+    return typeof document === "undefined" && typeof (globalThis as any).WorkerGlobalScope === "undefined";
 }
 
 export function isNodeTrue() {

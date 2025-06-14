@@ -1046,10 +1046,10 @@ typedev@^0.4.0:
     debugbreak "^0.11.0"
     eslint "^8.18.0"
 
-typenode@^5.10.0:
-  version "5.10.0"
-  resolved "https://registry.yarnpkg.com/typenode/-/typenode-5.10.0.tgz#86e97b8ed6f1672e6ebed5ea061d4dbcd3587fc0"
-  integrity sha512-y6cYXPfCAT45c7tfca8TZZuWG2dZ4jJGYjrTGPV7ihWdsUXXczjBRgd3cqBEBuNUkCOyMfn0CaGETMoOkEyXPQ==
+typenode@^5.12.0:
+  version "5.12.0"
+  resolved "https://registry.yarnpkg.com/typenode/-/typenode-5.12.0.tgz#e9b8429d6df119a2bdfe29f8c7369160534fbbda"
+  integrity sha512-VlRlaAejyx96Z09YpcrhEyuQwAusJLog2/iTcBuVZOJsnOofZA6zz3rwFwi1FbrtcTPnt8WDyJ6r+ECWr49fhA==
   dependencies:
     "@types/pegjs" "^0.10.3"
     source-map-support "https://github.com/7rulnik/node-source-map-support"

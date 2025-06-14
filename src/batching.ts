@@ -1,6 +1,6 @@
-import { isNode } from "./misc";
+import { PromiseObj, isNode, timeoutToError } from "./misc";
 import { measureWrap } from "./profiling/measure";
-import { MaybePromise } from "./types";
+import { Args, MaybePromise } from "./types";
 
 /*
     "numbers" use setTimeout
@@ -195,6 +195,54 @@ export function runInSerial<T extends (...args: any[]) => Promise<any>>(fnc: T):
             updateQueue[0]?.resolve();
         }
     }) as T;
+}
+
+
+export function runInParallel<T extends (...args: any[]) => Promise<any>>(
+    config: {
+        parallelCount: number;
+        callTimeout?: number;
+    },
+    fnc: T
+): T {
+    let queued: {
+        parameters: Args<T>;
+        result: PromiseObj<ReturnType<T>>;
+    }[] = [];
+    let runningCount = 0;
+
+    function runIfNeeded() {
+        if (runningCount >= config.parallelCount) {
+            return;
+        }
+        const queuedObj = queued.shift();
+        if (!queuedObj) return;
+
+        queuedObj.result.resolve((async () => {
+            runningCount++;
+            try {
+                if (config.callTimeout) {
+                    return await timeoutToError(config.callTimeout, fnc(...queuedObj.parameters), () => new Error(`Parallel call timed out for fnc ${fnc.name}`));
+                } else {
+                    return await fnc(...queuedObj.parameters);
+                }
+            } finally {
+                runningCount--;
+                runIfNeeded();
+            }
+        })());
+    }
+
+    function parallelCall(...args: Args<T>) {
+        queued.push({
+            parameters: args,
+            result: new PromiseObj<ReturnType<T>>(),
+        });
+        let queuedObj = queued[queued.length - 1];
+        runIfNeeded();
+        return queuedObj.result.promise;
+    }
+    return parallelCall as T;
 }
 
 export function runInfinitePoll(
