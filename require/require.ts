@@ -1,4 +1,4 @@
-import { GetModulesArgs, SerializedModule } from "./RequireController";
+import { GetModulesArgs } from "./RequireController";
 
 
 declare global {
@@ -186,6 +186,7 @@ export function requireMain() {
         source: string;
         allowclient: boolean;
         size: number;
+        original: SerializedModule;
         import: (request: string, asyncIsFine?: boolean) => unknown;
     };
 
@@ -735,6 +736,8 @@ export function requireMain() {
 
             // Skip double loads
             if (module.evaluateStarted) return;
+
+            module.original = serializedModule;
 
             module.requires = serializedModule.requests;
             module.require = createRequire(module, serializedModule) as any;
