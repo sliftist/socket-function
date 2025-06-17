@@ -5,10 +5,12 @@ module.allowclient = true;
 import { SocketFunction } from "../SocketFunction";
 import { cache, lazy } from "../src/caching";
 import * as fs from "fs";
+import crypto from "crypto";
 import debugbreak from "debugbreak";
 import { isNode } from "../src/misc";
 import { magenta, red } from "../src/formatting/logColors";
 import { formatTime } from "../src/formatting/format";
+import { batchFunction } from "../src/batching";
 
 /** Enables some hot reload functionality.
  *      - Triggers a refresh clientside
@@ -46,6 +48,8 @@ declare global {
              *  - Also useful if you want files to hotreload clientside, but not serverside.
              */
             noserverhotreload?: boolean;
+
+            watchAdditionalFiles?: string[];
         }
     }
     var isHotReloading: (() => boolean) | undefined;
@@ -75,9 +79,41 @@ const hotReloadModule = cache((module: NodeJS.Module) => {
         interval = 10;
         fast = true;
     }
-    fs.watchFile(module.filename, { persistent: false, interval }, (curr, prev) => {
-        if (curr.mtime.getTime() === prev.mtime.getTime()) return;
-        console.log(`Hot reloading due to change: ${module.filename}`);
+
+    let lastHashes = new Map<string, string>();
+    function getHash(path: string) {
+        try {
+            let contents = fs.readFileSync(path, "utf8");
+            return crypto.createHash("sha256").update(contents).digest("hex");
+        } catch {
+            return "";
+        }
+    }
+
+    watchFile(module.filename);
+    for (let path of module.watchAdditionalFiles || []) {
+        watchFile(path);
+    }
+
+    function watchFile(path: string) {
+        lastHashes.set(path, getHash(path));
+        fs.watchFile(path, { persistent: false, interval }, (curr, prev) => {
+            let newHash = getHash(path);
+            if (newHash === lastHashes.get(path)) return;
+            lastHashes.set(path, newHash);
+            if (path === module.filename) {
+                console.log(`Hot reloading ${module.filename} due to change`);
+            } else {
+                console.log(`Hot reloading ${module.filename} due to change in ${path}`);
+            }
+            doHotReload(curr.mtimeMs);
+        });
+    }
+
+
+
+    // IMPORTANT! changeTime is for benchmarking how long we took to hotreload (and nothing else)
+    function doHotReload(changeTime: number) {
         module.updateContents?.();
         if (isNode() && !module.noserverhotreload) {
             if (
@@ -104,34 +140,44 @@ const hotReloadModule = cache((module: NodeJS.Module) => {
                 callback([module]);
             }
         }
+        //module.sourceSHA256;
+        // crypto.createHash("sha256").update(contents).digest("hex")
         if (module.allowclient) {
             triggerClientSideReload({
                 files: [module.filename],
-                changeTime: curr.mtimeMs,
+                changeTime,
                 fast,
             });
         }
-    });
+    }
 });
 let reloadTriggering = false;
 let clientWatcherNodes = new Set<string>();
+let pendingTriggerFiles = new Set<string>();
 function triggerClientSideReload(config: {
     files: string[];
     changeTime: number;
     fast?: boolean;
 }) {
+    for (let file of config.files) {
+        pendingTriggerFiles.add(file);
+    }
     if (reloadTriggering) return;
     reloadTriggering = true;
     setTimeout(async () => {
         reloadTriggering = false;
+        let files = Array.from(pendingTriggerFiles);
+        pendingTriggerFiles.clear();
         for (let clientNodeId of clientWatcherNodes) {
-            console.log(`Notifying client of hot reload: ${clientNodeId}`);
-            HotReloadController.nodes[clientNodeId].fileUpdated(config.files, config.changeTime).catch(() => {
+            console.log(`Notifying client of hot reload: ${clientNodeId}`, files);
+            HotReloadController.nodes[clientNodeId].fileUpdated(files, config.changeTime).catch(() => {
                 console.log(`Removing erroring client: ${clientNodeId}`);
                 clientWatcherNodes.delete(clientNodeId);
             });
         }
-    }, config.fast ? 10 : 300);
+        // We need to wait, otherwise batched updates fail, WHICH, can result in updates while reloading,
+        //  which causes missed updates.
+    }, config.fast ? 50 : 300);
 }
 
 class HotReloadControllerBase {
