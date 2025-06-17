@@ -5,7 +5,7 @@ export { };
 declare global {
     namespace NodeJS {
         interface Module {
-            original: SerializedModule;
+            original?: SerializedModule;
         }
     }
     interface SerializedModule {
