@@ -64,7 +64,7 @@ export async function httpCallHandler(request: http.IncomingMessage, response: h
         // CORS bs (due to having to explictly allow subdomains)
         {
             response.setHeader("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload");
-            response.setHeader("Cross-Origin-Opener-Policy", "same-origin-allow-popups");
+            response.setHeader("Cross-Origin-Opener-Policy", SocketFunction.COOP);
             response.setHeader("Cross-Origin-Embedder-Policy", SocketFunction.COEP);
 
             let origin = request.headers.origin || request.headers.referer;

@@ -3,7 +3,7 @@ import { isNode } from "../misc";
 // TODO: We could probably make this an optional / dev dependency, to allow
 //  for use on machines without the ability to compile?
 //import { now } from "rdtsc-now";
-let now = () => Date.now();
+let now = () => performance.now();
 if (isNode()) {
     now = () => performance.now();
 }

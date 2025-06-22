@@ -201,7 +201,7 @@ export function logMeasureTable(
         process.stdout.write(`\x1b]0;${title}\x07`);
     }
     let pid = isNode() ? `(${process.pid}) ` : "";
-    let title = yellow(`${pid}Profiled ${formatTime(totalTime)} (${percent(fraction)} CPU)${extraInfos.map(x => x ? ` (${x})` : "")} (logged at ${new Date().toISOString()}, profile for ${formatTime(timeRunFor)})`);
+    let title = yellow(`${pid}Profiled ${formatTime(totalTime)} (${percent(fraction)} CPU)${extraInfos.map(x => x ? ` (${x})` : "").filter(x => x).join(" |")} (logged at ${new Date().toISOString()}, profile for ${formatTime(timeRunFor)})`);
     if (name) {
         title = `(${blue(name)}) ${title}`;
     }
