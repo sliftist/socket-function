@@ -63,6 +63,7 @@ export class SocketFunction {
     // If you have HTTP resources that require cookies you might to set `SocketFunction.COEP = "require-corp"`
     //  - Cross-origin-resource-policy.
     public static COEP = "credentialless";
+    // NOTE: This COOP and COEP defaults are required so window.crossOriginIsolated will be true.
     public static COOP = "same-origin";
 
     // In retrospect... dynamically changing the wire serializer is a BAD idea. If any calls happen
