@@ -4,9 +4,6 @@ import { isNode } from "../misc";
 //  for use on machines without the ability to compile?
 //import { now } from "rdtsc-now";
 let now = () => performance.now();
-if (isNode()) {
-    now = () => performance.now();
-}
 
 export type OwnTimeObj = {
     name: string;

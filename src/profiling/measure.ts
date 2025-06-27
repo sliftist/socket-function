@@ -86,6 +86,9 @@ export function registerMeasureInfo(getInfo: () => string | undefined) {
     extraInfoGetters.push(getInfo);
 }
 
+/** IMPORTANT! Always finish the profile! If you don't, you will leak A LOT of memory
+ *      (you leak all future measures, PER unfinished profile)!
+ */
 export function startMeasure(): {
     finish: () => MeasureProfile;
 } {
@@ -101,6 +104,9 @@ export function startMeasure(): {
     let openAtStart = new Set(getOpenTimesBase());
 
     outstandingProfiles.push(profile);
+    if (outstandingProfiles.length > 1000) {
+        console.warn(red(`You have ${outstandingProfiles.length} outstanding startMeasure calls. You are probably leaking them!`));
+    }
     return {
         finish() {
             let pending = getOpenTimesBase();
@@ -349,6 +355,7 @@ interface ProfileEntry {
 let measurementsEnabled = true;
 
 let outstandingProfiles: MeasureProfile[] = [];
+(globalThis as any).outstandingProfiles = outstandingProfiles;
 function recordOwnTime(ownTimeObj: OwnTimeObj) {
     if (outstandingProfiles.length === 0) return;
     for (let i = 0; i < outstandingProfiles.length; i++) {
