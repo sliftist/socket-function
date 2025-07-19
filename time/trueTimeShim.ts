@@ -54,7 +54,8 @@ export function getTrueTime() {
 export function getTrueTimeOffset() {
     return trueTimeOffset;
 }
-export function waitForFirstTimeSync() {
+export function waitForFirstTimeSync(): Promise<void> | undefined {
+    if (didFirstTimeSync) return undefined;
     return firstTimeSyncPromise;
 }
 let shimmed = false;

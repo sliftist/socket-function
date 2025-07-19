@@ -97,10 +97,13 @@ export function batchFunction<Arg, Result = void>(
          */
         throttleWindow?: number;
         name?: string;
+        noMeasure?: boolean;
     },
     fnc: (arg: Arg[]) => (Promise<Result> | Result)
 ): (arg: Arg) => Promise<Result> {
-    fnc = measureWrap(fnc, config.name);
+    if (!config.noMeasure) {
+        fnc = measureWrap(fnc, config.name);
+    }
 
     let prevPromise: Promise<Result> | undefined;
     let batching: {
@@ -171,7 +174,7 @@ export function batchFunction<Arg, Result = void>(
 export function runInSerial<T extends (...args: any[]) => Promise<any>>(fnc: T): T {
     let updateQueue: { promise: Promise<void>; resolve: () => void; }[] = [];
 
-    return (async (...args: any[]) => {
+    return (async function runInSerial(...args: any[]) {
         let promise = {
             promise: null as any as Promise<void>,
             resolve: () => { },

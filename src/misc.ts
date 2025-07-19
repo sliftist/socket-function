@@ -196,7 +196,6 @@ export function promiseObj<T = void>(): PromiseObj<T> {
     return new PromiseObj<T>();
 }
 
-
 // Allows an immediate call, then delays the next call until the first call finishes + delay
 //  - Drops all but the latest call, but only resolves the promises return to all
 //      calls once the latest call finishes.
@@ -347,7 +346,8 @@ export function binarySearchBasic<T, V>(array: T[], getVal: (val: T) => V, searc
  *      NOTE: If there are duplicates, returns the first match.
  * 
  *      NOTE: If the value can't be found, returns the bitwise negation of the index where it should be inserted.
- *          - If you just want the index which is >=, use `if(index < 0) index = ~index;`
+ * 
+ *      NOTE: With `if (index < 0) index = ~index;` you will get an index of the value >= the target value.
  */
 export function binarySearchIndex(listCount: number, compare: (lhsIndex: number) => number): number {
     if (listCount === 0) {

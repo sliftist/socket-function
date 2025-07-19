@@ -263,7 +263,7 @@ export function cacheArgsEqual<Fnc extends AnyFunction>(
     fnc: Fnc,
     limit = 10
 ): Fnc & { clear(...args: Args<Fnc>): void } {
-    let cache = cacheArrayEqual((args: unknown[]) => {
+    let cache = cacheArrayEqual(function cacheArgsEqual(args: unknown[]) {
         return fnc(...args);
     }, limit);
     return Object.assign(

@@ -84,6 +84,8 @@ export type ClientHookContext = {
     overrideResult?: unknown;
     // Is called on a result, even if it is from overrideResult
     onResult: ((result: unknown) => MaybePromise<void>)[];
+    // IMPORTANT! This is a unique object per connection, reused within the connection. This
+    //  is allows it to be used as a cache key for connection related info (in a WeakMap).
     connectionId: { nodeId: string };
 };
 export interface SocketFunctionClientHook {

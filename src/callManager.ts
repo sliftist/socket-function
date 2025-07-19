@@ -3,7 +3,7 @@ import { CallerContext, CallType, ClientHookContext, FullCallType, FunctionFlags
 import { _setSocketContext } from "../SocketFunction";
 import { entries, isNode } from "./misc";
 import debugbreak from "debugbreak";
-import { measureWrap } from "./profiling/measure";
+import { measureBlock, measureWrap } from "./profiling/measure";
 import { formatTime } from "./formatting/format";
 
 let classes: {
@@ -146,7 +146,9 @@ export const runClientHooks = measureWrap(async function runClientHooks(
     }
     for (let hook of clientHooks) {
         let time = Date.now();
-        await hook(context);
+        await measureBlock(async () => {
+            await hook(context);
+        }, `clientHook|${hook.name || hook.toString().slice(0, 100)}`);
         time = Date.now() - time;
         if (time > 500) {
             console.warn(`Slow (${formatTime(time)}) client hook: ${JSON.stringify(hook.name || hook.toString().slice(0, 100))} for ${callType.classGuid}.${callType.functionName}(...)`);

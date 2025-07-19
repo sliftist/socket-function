@@ -163,8 +163,8 @@ export function logMeasureTable(
     config?: LogMeasureTableConfig
 ): FormattedMeasureTable | undefined {
     let { useTotalTime, name } = config || {};
-    const thresholdInTable = config?.thresholdInTable ?? 0.05;
-    let minTimeToLog = config?.minTimeToLog ?? 50;
+    const thresholdInTable = config?.thresholdInTable ?? 0.02;
+    let minTimeToLog = config?.minTimeToLog ?? 20;
     const maxTableEntries = config?.maxTableEntries ?? 10;
 
     function getTime(entry: ProfileEntry) {
