@@ -248,18 +248,18 @@ export function runInParallel<T extends (...args: any[]) => Promise<any>>(
     return parallelCall as T;
 }
 
+let pollingRunning = true;
+let pendingPolls = new Set<Promise<unknown>>();
+
 export function runInfinitePoll(
     delayTime: number,
     fnc: () => Promise<void> | void
 ) {
     void (async () => {
-        while (true) {
+        while (pollingRunning) {
             await delay(delayTime);
-            try {
-                await fnc();
-            } catch (e: any) {
-                console.error(`Error in infinite poll ${fnc.name || fnc.toString().slice(0, 100).split("\n").slice(0, 2).join("\n")} (continuing poll loop)\n${e.stack}`);
-            }
+            if (!pollingRunning) break;
+            await runPollFnc(fnc);
         }
     })();
 }
@@ -274,12 +274,28 @@ export async function runInfinitePollCallAtStart(
         void (async () => {
             while (true) {
                 await delay(delayTime);
-                try {
-                    await fnc();
-                } catch (e: any) {
-                    console.error(`Error in infinite poll ${fnc.name || fnc.toString().slice(0, 100)} (continuing poll loop)\n${e.stack}`);
-                }
+                if (!pollingRunning) break;
+                await runPollFnc(fnc);
             }
         })();
     }
+}
+
+async function runPollFnc(fnc: () => Promise<void> | void) {
+    let promise = (async () => {
+        try {
+            return await fnc();
+        } catch (e: any) {
+            console.error(`Error in infinite poll ${fnc.name || fnc.toString().slice(0, 100)} (continuing poll loop)\n${e.stack}`);
+        }
+    })();
+    pendingPolls.add(promise);
+    await promise;
+    pendingPolls.delete(promise);
+}
+
+/** Disables polling, called on shutdown. Blocks until all pending poll loops finish */
+export async function shutdownPolling() {
+    pollingRunning = false;
+    await Promise.all(Array.from(pendingPolls));
 }
