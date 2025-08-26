@@ -36,8 +36,8 @@ if (isNode()) {
 module.allowclient = true;
 
 type ExtractShape<ClassType, Shape> = {
-    [key in keyof Shape]: (
-        key extends keyof ClassType
+    [key in keyof ClassType]: (
+        key extends keyof Shape
         ? ClassType[key] extends SocketExposedInterface[""]
         ? ClassType[key]
         : ClassType[key] extends Function ? "All exposed function must be async (or return a Promise)" : never
