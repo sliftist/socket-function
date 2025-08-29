@@ -480,6 +480,10 @@ export function requireMain() {
 
     function createRequire(module: ModuleType, serializedModule: SerializedModule, asyncIsFineOuter?: boolean) {
         require.cache = moduleCache;
+        // Dynamically get folder, incase our filename changes
+        function getModuleFolder() {
+            return module.filename.replace(/\\/g, "/").split("/").slice(0, -1).join("/") + "/";
+        }
         function resolve(request: string) {
             let requests = serializedModule.requests;
             if (request in requests) {
@@ -487,7 +491,7 @@ export function requireMain() {
             }
             let absolutePath = request;
             if (absolutePath.startsWith("./") || absolutePath.startsWith("../")) {
-                let folderParts = moduleFolder.split("/");
+                let folderParts = getModuleFolder().split("/");
                 while (absolutePath.startsWith("./") || absolutePath.startsWith("../")) {
                     if (absolutePath.startsWith("./")) {
                         absolutePath = absolutePath.slice("./".length);
@@ -505,7 +509,6 @@ export function requireMain() {
             return absolutePath;
         }
         require.resolve = resolve;
-        let moduleFolder = module.filename.replace(/\\/g, "/").split("/").slice(0, -1).join("/") + "/";
         return require;
         function require(request: string, asyncIsFine?: boolean) {
             if (asyncIsFineOuter) {
@@ -792,6 +795,7 @@ export function requireMain() {
                         },
                     },
                     module.exports,
+                    // eslint-disable-next-line @typescript-eslint/unbound-method
                     module.require,
                     module,
                     module.filename,
