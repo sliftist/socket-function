@@ -12,6 +12,7 @@ export function httpsRequest(
     sendSessionCookies = true,
     config?: {
         headers?: { [key: string]: string | undefined },
+        cancel?: Promise<void>;
     }
 ): Promise<Buffer> {
     if (isNode()) {
@@ -52,6 +53,11 @@ export function httpsRequest(
                         }
                     }
                 );
+                if (config?.cancel) {
+                    void config.cancel.finally(() => {
+                        httpRequest.destroy();
+                    });
+                }
                 httpRequest.on("error", reject);
 
                 if (payload) {
@@ -72,6 +78,11 @@ export function httpsRequest(
                 if (value === undefined) continue;
                 request.setRequestHeader(key, value);
             }
+        }
+        if (config?.cancel) {
+            void config.cancel.finally(() => {
+                request.abort();
+            });
         }
         request.responseType = "arraybuffer";
         request.withCredentials = sendSessionCookies;
