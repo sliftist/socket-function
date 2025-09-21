@@ -98,8 +98,7 @@ export async function startSocketServer(
         }
 
         watchTrustedCertificates(() => {
-            // NOTE: If this is called a lot... STOP CALLING IT A LOT! Calling setSecureContext
-            //  so frequently likely leaks memory!
+            // NOTE: If this is called a lot... STOP CALLING IT A LOT! Calling setSecureContext frequently leaks memory! (As in, once a minute is maybe too much, once a second is definitely too much)
             console.log(`Updating websocket server trusted certificates`);
             lastOptions.ca = getTrustedCertificates();
             httpsServer.setSecureContext(lastOptions);

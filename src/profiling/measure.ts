@@ -40,11 +40,11 @@ const noDiskLogPrefix = "█ ";
 export function measureFnc(target: any, propertyKey: string, descriptor: PropertyDescriptor) {
     let name = propertyKey;
     if (target.name) {
-        name = `${target.name}.${name}`;
+        name = `${target.name}|${name}`;
     } else {
         let constructorName = target.constructor.name;
         if (constructorName) {
-            name = `${constructorName}().${name}`;
+            name = `${constructorName}()|${name}`;
         }
     }
     if (descriptor.value instanceof AsyncFunction) {

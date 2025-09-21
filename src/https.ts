@@ -96,7 +96,7 @@ export function httpsRequest(
         }
         return new Promise((resolve, reject) => {
             request.onload = () => {
-                if (request.status !== 200) {
+                if (!request.status.toString().startsWith("2")) {
                     try {
                         // It should be an error.stack. But if it isn't... just throw the status text...
                         let responseText = textDecoder.decode(request.response);

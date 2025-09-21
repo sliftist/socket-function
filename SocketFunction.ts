@@ -26,10 +26,10 @@ if (isNode()) {
     //  not a good alternative to proper error log and notifications. Do you guys
     //  not get automated emails when unexpected errors are logged? I do.
     process.on("unhandledRejection", (e) => {
-        console.error("Unhandled rejection", e);
+        console.error("Unhandled rejection" + ((e as any)?.stack || e));
     });
     process.on("uncaughtException", (e) => {
-        console.error("Uncaught exception", e);
+        console.error("Uncaught exception" + ((e as any)?.stack || e));
     });
 }
 
