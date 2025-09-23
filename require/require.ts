@@ -362,9 +362,8 @@ export function requireMain() {
         };
         try {
             resultObj = JSON.parse(rawText);
-        } catch (e) {
-            console.log(rawText);
-            throw e;
+        } catch (e: any) {
+            throw new Error(`require(${JSON.stringify(requests)}). Likely a permissions error, possibly fixed by restarting the local http server. Start of response was: ${JSON.stringify(rawText.slice(0, 100))}. Error is: ${e.stack}`);
         }
         let { modules, requestsResolvedPaths, requireSeqNumProcessId, error } = resultObj;
 

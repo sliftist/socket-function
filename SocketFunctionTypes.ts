@@ -117,8 +117,11 @@ export type CallerContext = Readonly<CallerContextBase>;
 export type CallerContextBase = {
     // IMPORTANT! Do not pass nodeId to other nodes with the intention of having
     //  them call functions directly using nodeId. Instead pass location, and have them use connect.
-    //  - nodeId will be unique per thread, so is only useful for temporary communcation. If you want
+    //  - nodeId will be unique per thread, so is only useful for temporary communication. If you want
     //      a more permanent identity, you must derive it from certInfo yourself.
+    // ALSO IMPORTANT! DO NOT CHANGE THIS! Even though you might have a better id (a real domain name), and this might be a a weird id (`client:127.0.0.1:1758627917980.2603:0.08946007605096495`), IF you change this, it will break things.
+    //      1) It will break checks for client connections. This is used for security purposes. We do less security checks if WE established the connection, so if this is changed and it now looks like it is not a client, then it can create security vulnerabilities.
+    //      2) It will cause a connection to no longer appear to be === to it's past self.
     nodeId: string;
 
     // The nodeId they contacted. This is useful to determine their intention (otherwise

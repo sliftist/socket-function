@@ -2,6 +2,8 @@ import { SocketFunction } from "../SocketFunction";
 import { blue, green, red, yellow } from "../src/formatting/logColors";
 import { isNode } from "../src/misc";
 
+// IMPOTRANT! We don't ensure that the times of return are unique. We cannot ensure they are unique because the amount of precision is only about ten thousand date times per millisecond, Which would mean if the calling code called date.now frequently enough, which doesn't even have to be that frequent, it could slowly drift farther and farther ahead of the real time, which would be really bad.
+
 module.allowclient = true;
 
 const UPDATE_INTERVAL = 1000 * 60 * 10;

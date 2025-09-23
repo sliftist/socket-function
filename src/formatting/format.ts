@@ -230,6 +230,95 @@ export function formatDateTime(time: number) {
     return date.getFullYear() + "/" + p(date.getMonth() + 1) + "/" + p(date.getDate()) + " " + strTime;
 }
 
+export function formatDateTimeDetailed(time: number) {
+    function p(s: number) {
+        return s.toString().padStart(2, "0");
+    }
+    let date = new Date(time);
+    let hours = date.getHours();
+    let minutes = date.getMinutes();
+    let seconds = date.getSeconds();
+    let milliseconds = date.getMilliseconds();
+    let millisecondsString = milliseconds.toString().padStart(3, "0");
+
+    let timeString = time.toString();
+    let decimalIndex = timeString.indexOf(".");
+    if (decimalIndex !== -1) {
+        let fractionalPart = timeString.substring(decimalIndex + 1);
+        millisecondsString += fractionalPart;
+    }
+
+    let ampm = hours >= 12 ? "PM" : "AM";
+    hours = hours % 12;
+    hours = hours ? hours : 12; // the hour '0' should be '12'
+    let strTime = p(hours) + ":" + p(minutes) + ":" + p(seconds) + "." + millisecondsString + " " + ampm;
+    return date.getFullYear() + "/" + p(date.getMonth() + 1) + "/" + p(date.getDate()) + " " + strTime;
+}
+
+
+// Lookup table for common timezone abbreviations by UTC offset (in minutes)
+const timezoneAbbreviations: { [offsetMinutes: string]: string } = {
+    // UTC and GMT
+    "0": "UTC",
+
+    // US/Canada timezones
+    "300": "EST",     // UTC-5 (Eastern Standard Time)
+    "240": "EDT",     // UTC-4 (Eastern Daylight Time)
+    "360": "CST",     // UTC-6 (Central Standard Time) 
+    "420": "MST",     // UTC-7 (Mountain Standard Time)
+    "480": "PST",     // UTC-8 (Pacific Standard Time)
+
+    // European timezones
+    "-60": "CET",     // UTC+1 (Central European Time)
+    "-120": "CEST",   // UTC+2 (Central European Summer Time)
+
+    // Other common timezones
+    "-480": "CST",    // UTC+8 (China Standard Time)
+    "-540": "JST",    // UTC+9 (Japan Standard Time)
+    "-330": "IST",    // UTC+5:30 (India Standard Time)
+    "-570": "ACST",   // UTC+9:30 (Australian Central Standard Time)
+    "-600": "AEST",   // UTC+10 (Australian Eastern Standard Time)
+};
+
+
+// YYYY-MM-DD_HH-MM-SS.mmm TIMEZONE
+export function formatFileTimestampLocal(time: number): string {
+    function p(s: number) {
+        return s.toString().padStart(2, "0");
+    }
+
+    let date = new Date(time);
+    let year = date.getFullYear();
+    let month = p(date.getMonth() + 1);
+    let day = p(date.getDate());
+    let hours = p(date.getHours());
+    let minutes = p(date.getMinutes());
+    let seconds = p(date.getSeconds());
+    let milliseconds = date.getMilliseconds();
+    let millisecondsString = milliseconds.toString().padStart(3, "0");
+
+    let timeString = time.toString();
+    let decimalIndex = timeString.indexOf(".");
+    if (decimalIndex !== -1) {
+        let fractionalPart = timeString.substring(decimalIndex + 1);
+        millisecondsString += fractionalPart;
+    }
+    // Get timezone offset in minutes (negative of getTimezoneOffset because it returns opposite sign)
+    let timezoneOffsetMinutes = date.getTimezoneOffset();
+
+    // Look up the abbreviation or fallback to numeric format
+    let timezoneString = timezoneAbbreviations[timezoneOffsetMinutes.toString()];
+    if (!timezoneString) {
+        // Fallback: format as ±HHMM
+        let offsetSign = timezoneOffsetMinutes >= 0 ? "+" : "-";
+        let offsetHours = p(Math.floor(Math.abs(timezoneOffsetMinutes) / 60));
+        let offsetMins = p(Math.abs(timezoneOffsetMinutes) % 60);
+        timezoneString = `${offsetSign}${offsetHours}${offsetMins}`;
+    }
+
+    return `${year}-${month}-${day}_${hours}-${minutes}-${seconds}.${millisecondsString}_${timezoneString}`;
+}
+
 /** 2024 January 1, Monday, 12:53:02pm */
 export function formatNiceDateTime(time: number) {
     function p(s: number) {
