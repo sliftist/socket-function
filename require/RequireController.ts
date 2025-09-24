@@ -9,6 +9,7 @@ import { cacheLimited, lazy } from "../src/caching";
 import { formatNumber } from "../src/formatting/format";
 import { requireMain } from "./require";
 import path from "path";
+import { getContentTypeFromBuffer, getExtContentType } from "./extMapper";
 
 const COMPRESS_CACHE_SIZE = 1024 * 1024 * 128;
 
@@ -89,6 +90,10 @@ let beforeEntryText: (string | (() => Promise<string>))[] = [];
 function injectHTMLBeforeStartup(text: string | (() => Promise<string>)) {
     beforeEntryText.push(text);
 }
+let staticRoots: string[] = [];
+function addStaticRoot(root: string) {
+    staticRoots.push(root);
+}
 
 type GetModulesResult = ReturnType<RequireControllerBase["getModules"]> extends Promise<infer T> ? T : never;
 export type GetModulesArgs = Parameters<RequireControllerBase["getModules"]>;
@@ -106,12 +111,49 @@ class RequireControllerBase {
         requireCalls?: string[];
         cacheTime?: number;
     }) {
+        let { requireCalls, cacheTime } = config || {};
+        let httpRequest = getCurrentHTTPRequest();
+        let headers: Record<string, string> = {
+            "Content-Type": "text/html"
+        };
+        if (cacheTime) {
+            headers["Cache-Control"] = `max-age=${Math.floor(cacheTime / 1000)}`;
+        }
+        if (httpRequest) {
+            let urlObj = new URL("https://" + httpRequest.headers.host + httpRequest.url);
+            if (urlObj.pathname !== "/" && !requireCalls?.length) {
+                if (urlObj.pathname.includes("..")) {
+                    throw new Error(`Invalid path, may not have ".." in the path, ${urlObj.pathname}`);
+                }
+
+
+                let result: Buffer | undefined;
+                for (let root of staticRoots) {
+                    let resolved = root + urlObj.pathname;
+                    if (fs.existsSync(resolved)) {
+                        result = await fs.promises.readFile(resolved);
+                        break;
+                    }
+                }
+                if (result) {
+                    let contentType = getContentTypeFromBuffer(result);
+                    if (!contentType) {
+                        let ext = path.extname(urlObj.pathname);
+                        contentType = getExtContentType(ext);
+                    }
+                    headers["Content-Type"] = contentType;
+                    return setHTTPResultHeaders(result, headers);
+                }
+
+                throw new Error(`Static file not found, ${urlObj.pathname}, have static roots: ${JSON.stringify(staticRoots)}`);
+            }
+
+        }
         if (!this.rootResolvePath) {
             let dir = path.resolve(".");
             dir = dir.replaceAll("\\", "/");
             this.rootResolvePath = dir;
         }
-        let { requireCalls, cacheTime } = config || {};
         let result = resolvedHTMLFile();
         if (beforeEntryText.length > 0) {
             let resolved: string[] = [];
@@ -141,12 +183,6 @@ class RequireControllerBase {
             result = result.replace(ENTRY_TEMPLATE, `<script>\n(${requireAll.toString()})(${JSON.stringify(requireCalls)});\n</script>`);
         } else {
             result = result.replace(ENTRY_TEMPLATE, "");
-        }
-        let headers: Record<string, string> = {
-            "Content-Type": "text/html"
-        };
-        if (cacheTime) {
-            headers["Cache-Control"] = `max-age=${Math.floor(cacheTime / 1000)}`;
         }
         return setHTTPResultHeaders(Buffer.from(result), headers);
     }
@@ -405,6 +441,7 @@ export const RequireController = SocketFunction.register(
         statics: {
             injectHTMLBeforeStartup,
             addMapGetModules,
+            addStaticRoot,
         }
     }
 );

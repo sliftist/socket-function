@@ -431,6 +431,9 @@ export class SocketFunction {
         }
         return SocketFunction.connect({ address: location.hostname, port: +location.port || 443 });
     }
+    public static getBrowserNodeId() {
+        return this.browserNodeId();
+    }
 
     public static addGlobalHook(hook: SocketFunctionHook) {
         registerGlobalHook(hook as SocketFunctionHook);

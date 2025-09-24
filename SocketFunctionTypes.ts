@@ -54,6 +54,7 @@ export interface CallType<FncT extends FncType = FncType, FncName extends string
     functionName: FncName;
     args: unknown[];
 }
+// NOTE: If you are in an HTTP call, and want the request, use getCurrentHTTPRequest at the start of your endpoint.
 export interface FullCallType<FncT extends FncType = FncType, FncName extends string = string> extends CallType<FncT, FncName> {
     nodeId: string;
 }

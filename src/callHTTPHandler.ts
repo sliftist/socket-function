@@ -109,10 +109,6 @@ export async function httpCallHandler(request: http.IncomingMessage, response: h
         if (!urlBase) {
             throw new Error("Missing URL");
         }
-        if (urlBase === "/favicon.ico") {
-            response.end();
-            return;
-        }
 
         let protocol = "https";
         let url = protocol + "://" + request.headers.host + request.url;
