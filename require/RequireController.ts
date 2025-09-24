@@ -92,6 +92,9 @@ function injectHTMLBeforeStartup(text: string | (() => Promise<string>)) {
 }
 let staticRoots: string[] = [];
 function addStaticRoot(root: string) {
+    if (!root.endsWith("/")) {
+        root += "/";
+    }
     staticRoots.push(root);
 }
 
@@ -131,6 +134,11 @@ class RequireControllerBase {
                 for (let root of staticRoots) {
                     let resolved = root + urlObj.pathname;
                     if (fs.existsSync(resolved)) {
+                        let rootResolved = path.resolve(resolved);
+                        let finalResolved = path.resolve(rootResolved);
+                        if (!finalResolved.startsWith(root)) {
+                            throw new Error(`Invalid access, did not stay in namespace: ${JSON.stringify(root)}, but escaped: ${JSON.stringify(finalResolved)}`);
+                        }
                         result = await fs.promises.readFile(resolved);
                         break;
                     }
