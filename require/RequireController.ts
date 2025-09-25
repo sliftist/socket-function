@@ -153,7 +153,7 @@ class RequireControllerBase {
                     return setHTTPResultHeaders(result, headers);
                 }
 
-                throw new Error(`Static file not found, ${urlObj.pathname}, have static roots: ${JSON.stringify(staticRoots)}`);
+                return setHTTPResultHeaders(Buffer.from(`Static file not found, ${urlObj.pathname}, have static roots: ${JSON.stringify(staticRoots)}`), headers);
             }
 
         }
