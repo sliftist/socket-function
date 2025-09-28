@@ -255,7 +255,7 @@ class RequireControllerBase {
                 originalId: module.id,
                 filename: module.filename,
                 // NOTE: Due to recursive sets of allowclient, it is very possible for allowclient && serveronly to be set.
-                allowclient: module.allowclient && !module.serveronly,
+                allowclient: getIsAllowClient(module),
                 serveronly: module.serveronly,
                 requests: Object.create(null),
                 seqNum: module.requireControllerSeqNum,
