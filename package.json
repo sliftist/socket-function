@@ -1,6 +1,6 @@
 {
 	"name": "socket-function",
-	"version": "0.147.0",
+	"version": "0.148.0",
 	"main": "index.js",
 	"license": "MIT",
 	"dependencies": {
