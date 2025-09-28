@@ -419,12 +419,12 @@ async function compressCached(bufferKey: string, buffer: () => Buffer): Promise<
 }
 
 export function getIsAllowClient(module: NodeJS.Module) {
-    // TODO: Support blacklisting private modules. 
-    if (module.filename.includes("node_modules")) {
-        // The packages are public anyway, so we might as well allow serving them client-side. They still need to be included server side, so this doesn't create any vulnerabilities.
+    if (module.serveronly) return false;
+    // IMPORTANT! We do not allow everything in node modules by default, as most things in node modules, you don't want to import client-side, and it will break if you import it client-side. Many of these are imported, but will never end up being called client-side, so it's fine to exclude them.
+    if (allowAllNodeModulesFlag && module.filename.includes("node_modules")) {
         return true;
     }
-    return module.allowclient && !module.serveronly;
+    return module.allowclient;
 }
 
 type ClientRemapCallback = (args: GetModulesArgs) => Promise<GetModulesArgs>;
@@ -445,6 +445,11 @@ export function setRequireBootRequire(dir: string) {
     baseController.rootResolvePath = dir;
 }
 
+let allowAllNodeModulesFlag = false;
+export function allowAllNodeModules() {
+    allowAllNodeModulesFlag = true;
+}
+
 export const RequireController = SocketFunction.register(
     "RequireController-e2f811f3-14b8-4759-b0d6-73f14516cf1d",
     baseController,
@@ -461,6 +466,7 @@ export const RequireController = SocketFunction.register(
             injectHTMLBeforeStartup,
             addMapGetModules,
             addStaticRoot,
+            allowAllNodeModules,
         }
     }
 );

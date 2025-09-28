@@ -1,4 +1,3 @@
-import ws from "ws";
 import tls from "tls";
 import { isNode } from "./misc";
 import { SenderInterface } from "./CallFactory";
@@ -6,6 +5,7 @@ import { getTrustedCertificates } from "./certStore";
 import { getNodeIdLocation } from "./nodeCache";
 import debugbreak from "debugbreak";
 import { SocketFunction } from "../SocketFunction";
+import type * as ws from "ws";
 
 export function getTLSSocket(webSocket: ws.WebSocket) {
     return (webSocket as any)._socket as tls.TLSSocket;
@@ -36,6 +36,7 @@ export function createWebsocketFactory(): (nodeId: string) => SenderInterface {
             if (!SocketFunction.silent) {
                 console.log(`Connecting to ${address}:${port}`);
             }
+            const ws = require("ws") as typeof import("ws");
             let webSocket = new ws.WebSocket(`wss://${address}:${port}`, undefined, {
                 ca: getTrustedCertificates(),
             });

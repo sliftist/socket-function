@@ -2,7 +2,6 @@ import https from "https";
 import http from "http";
 import net from "net";
 import tls from "tls";
-import * as ws from "ws";
 import { getNodeIdsFromRequest, httpCallHandler } from "./callHTTPHandler";
 import { SocketFunction } from "../SocketFunction";
 import { getTrustedCertificates, watchTrustedCertificates } from "./certStore";
@@ -60,6 +59,7 @@ export type SocketServerConfig = (
 export async function startSocketServer(
     config: SocketServerConfig
 ): Promise<string> {
+    const ws = await import("ws");
 
     const webSocketServer = new ws.Server({
         noServer: true,
