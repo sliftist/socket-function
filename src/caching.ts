@@ -304,7 +304,7 @@ export function cacheShallowConfigArgEqual<Fnc extends AnyFunction>(
     fnc: Fnc,
     limit = 10
 ): Fnc & {
-    clear(...args: Args<Fnc>): void;
+    clear(configObj: Args<Fnc>[0]): void;
     clearAll(): void;
 } {
     let cache = cacheArrayEqual((kvpsFlat: unknown[]) => {
