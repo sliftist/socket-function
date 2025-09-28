@@ -18,7 +18,9 @@ module.allowclient = true;
 declare global {
     namespace NodeJS {
         interface Module {
-            /** Indicates the module is allowed clientside. */
+            /** Indicates the module is allowed clientside.
+             *  NOTE: Set with `module.allowclient = true`. HOWEVER, access via getIsAllowClient, which will check 
+             */
             allowclient?: boolean;
 
             /** Causes the module to not preload, requiring `await import()` for it to load correctly
@@ -136,8 +138,8 @@ class RequireControllerBase {
                     if (fs.existsSync(resolved)) {
                         let rootResolved = path.resolve(resolved);
                         let finalResolved = path.resolve(rootResolved);
-                        if (!finalResolved.startsWith(root)) {
-                            throw new Error(`Invalid access, did not stay in namespace: ${JSON.stringify(root)}, but escaped: ${JSON.stringify(finalResolved)}`);
+                        if (!finalResolved.startsWith(rootResolved)) {
+                            throw new Error(`Invalid access, did not stay in namespace: ${JSON.stringify(rootResolved)}, but escaped: ${JSON.stringify(finalResolved)}`);
                         }
                         result = await fs.promises.readFile(resolved);
                         break;
@@ -414,6 +416,15 @@ async function compressCached(bufferKey: string, buffer: () => Buffer): Promise<
         compressCache.set(bufferKey, cached);
     }
     return cached;
+}
+
+export function getIsAllowClient(module: NodeJS.Module) {
+    // TODO: Support blacklisting private modules. 
+    if (module.filename.includes("node_modules")) {
+        // The packages are public anyway, so we might as well allow serving them client-side. They still need to be included server side, so this doesn't create any vulnerabilities.
+        return true;
+    }
+    return module.allowclient && !module.serveronly;
 }
 
 type ClientRemapCallback = (args: GetModulesArgs) => Promise<GetModulesArgs>;

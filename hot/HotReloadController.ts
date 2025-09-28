@@ -11,6 +11,7 @@ import { isNode } from "../src/misc";
 import { magenta, red } from "../src/formatting/logColors";
 import { formatTime } from "../src/formatting/format";
 import { batchFunction } from "../src/batching";
+import { getIsAllowClient } from "../require/RequireController";
 
 /** Enables some hot reload functionality.
  *      - Triggers a refresh clientside
@@ -142,7 +143,7 @@ const hotReloadModule = cache((module: NodeJS.Module) => {
         }
         //module.sourceSHA256;
         // crypto.createHash("sha256").update(contents).digest("hex")
-        if (module.allowclient) {
+        if (getIsAllowClient(module)) {
             triggerClientSideReload({
                 files: [module.filename],
                 changeTime,
