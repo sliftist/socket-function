@@ -1,6 +1,6 @@
 import { PromiseObj, isNode, timeoutToError } from "./misc";
 import { measureWrap } from "./profiling/measure";
-import { Args, MaybePromise } from "./types";
+import { AnyFunction, Args, MaybePromise } from "./types";
 
 /*
     "numbers" use setTimeout
@@ -298,4 +298,35 @@ async function runPollFnc(fnc: () => Promise<void> | void) {
 export async function shutdownPolling() {
     pollingRunning = false;
     await Promise.all(Array.from(pendingPolls));
+}
+
+
+const DEFAULT_RETRY_DELAY = 5000;
+const DEFAULT_MAX_RETRIES = 3;
+export function retryFunctional<T extends AnyFunction>(fnc: T, config?: {
+    maxRetries?: number;
+    shouldRetry?: (message: string) => boolean;
+    minDelay?: number;
+    maxDelay?: number;
+}): T {
+    let { maxRetries = DEFAULT_MAX_RETRIES, shouldRetry, minDelay = DEFAULT_RETRY_DELAY, maxDelay = DEFAULT_RETRY_DELAY } = config || {};
+    let expFactor = Math.max(1, Math.log(maxDelay / minDelay) / Math.log(Math.max(maxRetries, 2)));
+    async function runFnc(args: any[], retries: number): Promise<ReturnType<T>> {
+        try {
+            return await (fnc as any)(...args);
+        } catch (e: any) {
+            if (shouldRetry && !shouldRetry(String(e.stack))) {
+                throw e;
+            }
+            if (retries < 0) throw e;
+            console.warn(`Retrying ${fnc.name}, due to error ${String(e.stack)}`);
+            retries--;
+            let curCount = maxRetries - retries;
+            await delay(minDelay * expFactor ** curCount);
+            return runFnc(args, retries);
+        }
+    }
+    return async function (...args: any[]) {
+        return await runFnc(args, maxRetries);
+    } as any;
 }

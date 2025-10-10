@@ -11,7 +11,9 @@ export async function runPromise(command: string, config?: {
     detach?: boolean;
 }) {
     return new Promise<string>((resolve, reject) => {
-        console.log(">" + blue(command));
+        if (!config?.quiet) {
+            console.log(">" + blue(command));
+        }
         const childProc = child_process.spawn(command, {
             shell: true,
             cwd: config?.cwd,

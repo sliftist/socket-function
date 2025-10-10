@@ -77,6 +77,7 @@ export function recursiveFreeze<T>(obj: T): T {
         if (!canHaveChildren(obj)) return;
         if (visited.has(obj)) return;
         visited.add(obj);
+        if (ArrayBuffer.isView(obj)) return;
         Object.freeze(obj);
         let keys = getKeys(obj);
         for (let key of keys) {
@@ -337,6 +338,9 @@ export class QueueLimited<T> {
 
 export function binarySearchBasic<T, V>(array: T[], getVal: (val: T) => V, searchValue: V): number {
     return binarySearchIndex(array.length, i => compare(getVal(array[i]), searchValue));
+}
+export function binarySearchBasic2<T, V>(array: T[], getVal: (val: T) => V, searchValue: T): number {
+    return binarySearchIndex(array.length, i => compare(getVal(array[i]), getVal(searchValue)));
 }
 
 /**
