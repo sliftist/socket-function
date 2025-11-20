@@ -132,6 +132,8 @@ export function formatNumber(count: number | undefined, maxAbsoluteValue?: numbe
 
     maxAbsoluteValue = maxAbsoluteValue ?? Math.abs(count);
 
+    let maxDecimals = 3;
+
     // NOTE: We don't switch units as soon as we possible can, because...
     //  3.594 vs 3.584 is harder to quickly distinguish compared to 3594 and 3584,
     //  the decimal simply makes it harder to read, and larger.
@@ -144,7 +146,23 @@ export function formatNumber(count: number | undefined, maxAbsoluteValue?: numbe
     let divisor = 1;
     let suffix = "";
     let currencyDecimalsNeeded = false;
-    if (maxAbsoluteValue < 1000 * extraFactor) {
+    if (maxAbsoluteValue < 0.00000001) {
+        maxDecimals = 12;
+    } else if (maxAbsoluteValue < 0.0000001) {
+        maxDecimals = 11;
+    } else if (maxAbsoluteValue < 0.000001) {
+        maxDecimals = 10;
+    } else if (maxAbsoluteValue < 0.00001) {
+        maxDecimals = 9;
+    } else if (maxAbsoluteValue < 0.0001) {
+        maxDecimals = 8;
+    } else if (maxAbsoluteValue < 0.001) {
+        maxDecimals = 7;
+    } else if (maxAbsoluteValue < 0.01) {
+        maxDecimals = 6;
+    } else if (maxAbsoluteValue < 0.1) {
+        maxDecimals = 5;
+    } else if (maxAbsoluteValue < 1000 * extraFactor) {
         if (specialCurrency) {
             currencyDecimalsNeeded = true;
         }
@@ -166,8 +184,9 @@ export function formatNumber(count: number | undefined, maxAbsoluteValue?: numbe
     }
     count /= divisor;
     maxAbsoluteValue /= divisor;
-
-    let maxDecimals = noDecimal ? 0 : 3;
+    if (noDecimal) {
+        maxDecimals = 0;
+    }
 
     return formatMaxDecimals(count, maxDecimals, maxAbsoluteValue, currencyDecimalsNeeded ? 2 : undefined) + suffix;
 }
