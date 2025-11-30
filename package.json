@@ -1,6 +1,6 @@
 {
 	"name": "socket-function",
-	"version": "0.155.0",
+	"version": "0.156.0",
 	"main": "index.js",
 	"license": "MIT",
 	"dependencies": {
@@ -17,6 +17,9 @@
 	"scripts": {
 		"test": "yarn typenode ./test/server.ts",
 		"type": "yarn tsc --noEmit",
+		"emit-dts": "yarn tsc --project tsconfig.declarations.json || exit 0",
+		"generate-index-dts": "node ./generateIndexDts.js",
+		"update-typings": "yarn generate-index-dts && yarn emit-dts",
 		"testsni": "yarn typenode ./src/sniTest.ts"
 	},
 	"devDependencies": {
