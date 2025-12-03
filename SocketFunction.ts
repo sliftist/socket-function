@@ -41,7 +41,7 @@ type ExtractShape<ClassType, Shape> = {
         ? ClassType[key] extends SocketExposedInterface[""]
         ? ClassType[key]
         : ClassType[key] extends Function ? "All exposed function must be async (or return a Promise)" : never
-        : "Function is in shape, but not in class"
+        : "Function has implementation but is not exposed in the SocketFunction.register call"
     );
 };
 

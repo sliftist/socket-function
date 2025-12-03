@@ -188,6 +188,8 @@ class HotReloadControllerBase {
         let callerId = SocketFunction.getCaller().nodeId;
         clientWatcherNodes.add(callerId);
     }
+    // TODO: This is actually broken related to lazy loaded and server-only code, as the server will tell us a file changed, and then we'll see that we don't have it loaded, and so we will try to refresh.
+    //      - The reason we refresh is because it might be a new file. I don't know how we could check to see if it was lazy loaded. Maybe we just shouldn't refresh ever if we can't find the module? We'll see how much we run into the extra refresh due to lazy loading...
     async fileUpdated(files: string[], changeTime: number) {
         try {
             console.groupCollapsed(magenta(`Trigger hotreload for files ${formatTime(Date.now() - changeTime)} after file change`));
