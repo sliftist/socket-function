@@ -6,7 +6,7 @@ import { SocketServerConfig } from "./src/webSocketServer";
 import { Args, MaybePromise } from "./src/types";
 import "./SetProcessVariables";
 type ExtractShape<ClassType, Shape> = {
-    [key in keyof ClassType]: (key extends keyof Shape ? ClassType[key] extends SocketExposedInterface[""] ? ClassType[key] : ClassType[key] extends Function ? "All exposed function must be async (or return a Promise)" : never : "Function is in shape, but not in class");
+    [key in keyof ClassType]: (key extends keyof Shape ? ClassType[key] extends SocketExposedInterface[""] ? ClassType[key] : ClassType[key] extends Function ? "All exposed function must be async (or return a Promise)" : never : "Function has implementation but is not exposed in the SocketFunction.register call");
 };
 export declare class SocketFunction {
     static logMessages: boolean;
