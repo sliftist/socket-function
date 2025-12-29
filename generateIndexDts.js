@@ -26,11 +26,11 @@ function generateIndexDts() {
 
     const modules = dtsFiles
         .filter(filePath => {
-            // Exclude SocketFunction.d.ts from being wrapped in a module declaration
+            // Exclude SocketFunction.d.ts and index.d.ts from being wrapped in a module declaration
             const relativePath = path.relative(renderUtilsPath, filePath);
             const withoutExt = relativePath.replace(/\.d\.ts$/, "");
             const modulePath = "socket-function/" + withoutExt.replace(/\\/g, "/");
-            return modulePath !== "socket-function/SocketFunction";
+            return modulePath !== "socket-function/SocketFunction" && modulePath !== "socket-function/index";
         })
         .map(filePath => {
             const relativePath = path.relative(renderUtilsPath, filePath);

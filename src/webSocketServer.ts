@@ -255,6 +255,9 @@ export async function startSocketServer(
             //  we pipe. This should be very efficient, as pipe has insane throughput
             //  (100s of MB/s, easily, even on a terrible machine).
             socket.once("data", buffer => {
+                if (typeof buffer === "string") {
+                    buffer = Buffer.from(buffer);
+                }
                 buffers.push(buffer);
                 let result = handleTLSHello(Buffer.concat(buffers), buffers.length);
                 if (result === "more") {

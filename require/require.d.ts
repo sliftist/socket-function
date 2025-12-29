@@ -1,4 +1,4 @@
-/// <reference path="../index.d.ts" />
+/// <reference path="../src/src.d.ts" />
 declare global {
     var onProgressHandler: undefined | ((progress: {
         type: string;

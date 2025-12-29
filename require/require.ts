@@ -1,4 +1,4 @@
-/// <reference path="../index.d.ts" />
+/// <reference path="../src/src.d.ts" />
 
 import { GetModulesArgs } from "./RequireController";
 
