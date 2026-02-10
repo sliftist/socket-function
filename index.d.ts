@@ -6,10 +6,118 @@ declare module "socket-function/SetProcessVariables" {
 
 }
 
+declare module "socket-function/SocketFunction" {
+    /// <reference path="require/RequireController.d.ts" />
+    /// <reference types="node" />
+    /// <reference types="node" />
+    import { SocketExposedInterface, SocketFunctionHook, SocketFunctionClientHook, SocketExposedShape, SocketRegistered, CallerContext, FullCallType, SocketRegisterType } from "socket-function/SocketFunctionTypes";
+    import { SocketServerConfig } from "socket-function/src/webSocketServer";
+    import { Args, MaybePromise } from "socket-function/src/types";
+    import "./SetProcessVariables";
+    type ExtractShape<ClassType, Shape> = {
+        [key in keyof ClassType]: (key extends keyof Shape ? ClassType[key] extends SocketExposedInterface[""] ? ClassType[key] : ClassType[key] extends Function ? "All exposed function must be async (or return a Promise)" : never : "Function has implementation but is not exposed in the SocketFunction.register call");
+    };
+    export declare class SocketFunction {
+        static logMessages: boolean;
+        static trackMessageSizes: {
+            upload: ((size: number) => void)[];
+            download: ((size: number) => void)[];
+            callTimes: ((obj: {
+                start: number;
+                end: number;
+            }) => void)[];
+        };
+        static MAX_MESSAGE_SIZE: number;
+        static HTTP_ETAG_CACHE: boolean;
+        static silent: boolean;
+        static HTTP_COMPRESS: boolean;
+        static COEP: string;
+        static COOP: string;
+        static readonly WIRE_SERIALIZER: {
+            serialize: (obj: unknown) => MaybePromise<Buffer[]>;
+            deserialize: (buffers: Buffer[]) => MaybePromise<unknown>;
+        };
+        static WIRE_WARN_TIME: number;
+        private static onMountCallbacks;
+        static exposedClasses: Set<string>;
+        static callerContext: CallerContext | undefined;
+        static getCaller(): CallerContext;
+        static harvestFailedCallCount: () => number;
+        static getPendingCallCount: () => number;
+        static harvestCallTimes: () => {
+            start: number;
+            end: number;
+        }[];
+        static register<ClassInstance extends object, Shape extends SocketExposedShape<{
+            [key in keyof ClassInstance]: (...args: any[]) => Promise<unknown>;
+        }>, Statics>(classGuid: string, instance: ClassInstance | (() => ClassInstance), shapeFnc: () => Shape, defaultHooksFnc?: () => SocketExposedShape[""] & {
+            onMount?: () => MaybePromise<void>;
+        }, config?: {
+            /** @noAutoExpose If true SocketFunction.expose(Controller) must be called explicitly. */
+            noAutoExpose?: boolean;
+            statics?: Statics;
+            /** Skip timing functions calls. Useful if a lot of functions have wait time that
+                    is unrelated to processing, and therefore their timings won't be useful.
+                    - Also useful if our auto function wrapping code is breaking functionality,
+                        such as if you have a singleton function which you compare with ===,
+                        which will breaks because we replaced it with a wrapped measure function.
+            */
+            noFunctionMeasure?: boolean;
+        }): SocketRegistered<ExtractShape<ClassInstance, Shape>> & Statics;
+        private static socketCache;
+        static rehydrateSocketCaller<Controller>(socketRegistered: SocketRegisterType<Controller>, shapeFnc?: () => SocketExposedShape): SocketRegistered<Controller>;
+        private static callFromGuid;
+        static onNextDisconnect(nodeId: string, callback: () => void): void;
+        static getLastDisconnectTime(nodeId: string): number | undefined;
+        static isNodeConnected(nodeId: string): boolean;
+        /** NOTE: Only works if the nodeIs used is from SocketFunction.connect (we can't convert arbitrary nodeIds into urls,
+         *      as we have no way of knowing how to contain a nodeId).
+         *  */
+        static getHTTPCallLink(call: FullCallType): string;
+        private static ignoreExposeCount;
+        static ignoreExposeCalls<T>(code: () => Promise<T>): Promise<T>;
+        /** Expose should be called before your mounting occurs. It mostly just exists to ensure you include the class type,
+         *      so the class type's module construction runs, which should trigger register. Otherwise you would have
+         *      to add additional imports to ensure the register call runs.
+         */
+        static expose(socketRegistered: SocketRegistered): void;
+        static mountedNodeId: string;
+        static isMounted(): boolean;
+        static mountedIP: string;
+        private static hasMounted;
+        private static onMountCallback;
+        static mountPromise: Promise<void>;
+        static mount(config: SocketServerConfig): Promise<string>;
+        /** Sets the default call when an http request is made, but no classGuid is set.
+         *      NOTE: All other calls should be endpoint calls, even if those endpoints return a static file with an HTML content type.
+         *          - However, to load new content, you should probably just use `require("./example.ts")`, which works on any files
+         *              clientside that have also been required serverside (and whitelisted with module.allowclient = true,
+         *              or with an `allowclient.flag` file in the directory or parent directory).
+        */
+        static setDefaultHTTPCall<Registered extends SocketRegistered, FunctionName extends keyof Registered["nodes"][""] & string>(registered: Registered, functionName: FunctionName, ...args: Args<Registered["nodes"][""][FunctionName]>): void;
+        static connect(location: {
+            address: string;
+            port: number;
+        }): string;
+        static browserNodeId(): string;
+        static getBrowserNodeId(): string;
+        static addGlobalHook(hook: SocketFunctionHook): void;
+        static addGlobalClientHook(hook: SocketFunctionClientHook): void;
+    }
+    declare global {
+        var BOOTED_EDGE_NODE: {
+            host: string;
+        } | undefined;
+    }
+    export declare function _setSocketContext<T>(caller: CallerContext, code: () => T): T;
+    export {};
+
+}
+
 declare module "socket-function/SocketFunctionTypes" {
     /// <reference path="require/RequireController.d.ts" />
-    import { getCallObj } from "./src/nodeProxy";
-    import { Args, MaybePromise } from "./src/types";
+    import { getCallObj } from "socket-function/src/nodeProxy";
+    import { Args, MaybePromise } from "socket-function/src/types";
     export declare const socket: unique symbol;
     export type SocketExposedInterface = {
         [functionName: string]: (...args: any[]) => Promise<unknown>;
@@ -127,7 +235,7 @@ declare module "socket-function/hot/HotReloadController" {
     export declare function hotReloadingGuard(): true;
     export declare function setExternalHotReloading(value: boolean): void;
     export declare function onHotReload(callback: (modules: NodeJS.Module[]) => void): void;
-    export declare const HotReloadController: import("../SocketFunctionTypes").SocketRegistered<{
+    export declare const HotReloadController: import("socket-function/SocketFunctionTypes").SocketRegistered<{
         watchFiles: () => Promise<void>;
         fileUpdated: (files: string[], changeTime: number) => Promise<void>;
     }>;
@@ -191,6 +299,117 @@ declare module "socket-function/require/CSSShim" {
 
 }
 
+declare module "socket-function/require/RequireController" {
+    /// <reference path="../../typenode/index.d.ts" />
+    /// <reference types="node" />
+    /// <reference types="node" />
+    declare global {
+        namespace NodeJS {
+            interface Module {
+                /** Indicates the module is allowed clientside.
+                 *  NOTE: Set with `module.allowclient = true`. HOWEVER, access via getIsAllowClient, which will check
+                 */
+                allowclient?: boolean;
+                /** Causes the module to not preload, requiring `await import()` for it to load correctly
+                 *      - Shouldn't be set recursively, otherwise nested packages will break.
+                 */
+                lazyload?: boolean;
+                /** Indicates the module is definitely not allowed clientside */
+                serveronly?: boolean;
+                /** Used internally by RequireController */
+                requireControllerSeqNum?: number;
+                evalStartTime?: number;
+                evalEndTime?: number;
+                /** (Presently only called by require.js)
+                 *      Called on require calls, to allow providers to create custom exports depending on the caller.
+                 *          - Mostly used to allow functions to know the calling module.
+                 */
+                remapExports?: (exports: {
+                    [key: string]: unknown;
+                }, callerModule: NodeJS.Module) => {
+                    [key: string]: unknown;
+                };
+                /** Only set if clientside (and allowed clientside) */
+                source?: string;
+            }
+        }
+        interface Window {
+            clientsideBootTime: number;
+        }
+        var suppressUnexpectedModuleWarning: number | undefined;
+    }
+    /** Imports it, serverside, delayed. For dynamic imports, which we need to include once, but don't want to include
+     *      immediately (due to cyclic issues), and isn't included initially.
+     */
+    export declare function lazyImport(getModule: () => Promise<unknown>): void;
+    declare const requireSeqNumProcessId: string;
+    declare function injectHTMLBeforeStartup(text: string | (() => Promise<string>)): void;
+    declare function addStaticRoot(root: string): void;
+    type GetModulesResult = ReturnType<RequireControllerBase["getModules"]> extends Promise<infer T> ? T : never;
+    export type GetModulesArgs = Parameters<RequireControllerBase["getModules"]>;
+    declare let mapGetModules: {
+        remap(result: GetModulesResult, args: GetModulesArgs): Promise<GetModulesResult>;
+    }[];
+    declare function addMapGetModules(remap: typeof mapGetModules[number]["remap"]): void;
+    declare class RequireControllerBase {
+        rootResolvePath: string;
+        requireHTML(config?: {
+            requireCalls?: string[];
+            cacheTime?: number;
+        }): Promise<Buffer>;
+        getModules(pathRequests: string[], alreadyHave?: {
+            requireSeqNumProcessId: string;
+            seqNumRanges: {
+                s: number;
+                e?: number;
+            }[];
+        }, config?: {}): Promise<{
+            requestsResolvedPaths: string[];
+            modules: {
+                [resolvedPath: string]: SerializedModule;
+            };
+            requireSeqNumProcessId: string;
+        }>;
+    }
+    export declare function getIsAllowClient(module: NodeJS.Module): boolean | undefined;
+    type ClientRemapCallback = (args: GetModulesArgs) => Promise<GetModulesArgs>;
+    declare global {
+        /** Must be set clientside BEFORE requests are made (so you likely want to use RequireController.addMapGetModules
+         *      to inject code that will use this) */
+        var remapImportRequestsClientside: undefined | ClientRemapCallback[];
+    }
+    /** @deprecated, not needed, as this defaults to ".", which is a lot easier to reason about anyways. */
+    export declare function setRequireBootRequire(dir: string): void;
+    export declare function allowAllNodeModules(): void;
+    export declare const RequireController: import("socket-function/SocketFunctionTypes").SocketRegistered<{
+        rootResolvePath: "Function has implementation but is not exposed in the SocketFunction.register call";
+        requireHTML: (config?: {
+            requireCalls?: string[];
+            cacheTime?: number;
+        }) => Promise<Buffer>;
+        getModules: (pathRequests: string[], alreadyHave?: {
+            requireSeqNumProcessId: string;
+            seqNumRanges: {
+                s: number;
+                e?: number;
+            }[];
+        }, config?: {}) => Promise<{
+            requestsResolvedPaths: string[];
+            modules: {
+                [resolvedPath: string]: SerializedModule;
+            };
+            requireSeqNumProcessId: string;
+        }>;
+    }> & {
+        injectHTMLBeforeStartup: typeof injectHTMLBeforeStartup;
+        addMapGetModules: typeof addMapGetModules;
+        addStaticRoot: typeof addStaticRoot;
+        allowAllNodeModules: typeof allowAllNodeModules;
+    };
+    export {};
+
+}
+
 declare module "socket-function/require/compileFlags" {
     /// <reference path="RequireController.d.ts" />
     /// <reference types="node" />
@@ -236,7 +455,7 @@ declare module "socket-function/src/CallFactory" {
     /// <reference types="node" />
     /// <reference types="node" />
     /// <reference types="node" />
-    import { CallType } from "../SocketFunctionTypes";
+    import { CallType } from "socket-function/SocketFunctionTypes";
     import * as ws from "ws";
     import * as tls from "tls";
     export interface CallFactory {
@@ -323,7 +542,7 @@ declare module "socket-function/src/args" {
 }
 
 declare module "socket-function/src/batching" {
-    import { AnyFunction } from "./types";
+    import { AnyFunction } from "socket-function/src/types";
     export type DelayType = (number | "afterio" | "immediate" | "afterpromises" | "paintLoop" | "afterPaint");
     export declare function delay(delayTime: DelayType, immediateShortDelays?: "immediateShortDelays"): Promise<void>;
     export declare function batchFunctionNone<Arg, Result = void>(config: unknown, fnc: (arg: Arg[]) => (Promise<Result> | Result)): (arg: Arg) => Promise<Result>;
@@ -358,7 +577,7 @@ declare module "socket-function/src/batching" {
 }
 
 declare module "socket-function/src/caching" {
-    import { AnyFunction, Args } from "./types";
+    import { AnyFunction, Args } from "socket-function/src/types";
     export declare function lazy<T>(factory: () => T): {
         (): T;
         reset(): void;
@@ -425,7 +644,7 @@ declare module "socket-function/src/callHTTPHandler" {
     /// <reference types="node" />
     /// <reference types="node" />
     import http from "http";
-    import { CallType } from "../SocketFunctionTypes";
+    import { CallType } from "socket-function/SocketFunctionTypes";
     export declare function setDefaultHTTPCall(call: CallType): void;
     export declare function getServerLocationFromRequest(request: http.IncomingMessage): {
         address: string;
@@ -452,7 +671,7 @@ declare module "socket-function/src/callHTTPHandler" {
 
 declare module "socket-function/src/callManager" {
     /// <reference path="../hot/HotReloadController.d.ts" />
-    import { CallerContext, CallType, ClientHookContext, FullCallType, FunctionFlags, HookContext, SocketExposedInterface, SocketExposedShape, SocketFunctionClientHook, SocketFunctionHook, SocketRegistered } from "../SocketFunctionTypes";
+    import { CallerContext, CallType, ClientHookContext, FullCallType, FunctionFlags, HookContext, SocketExposedInterface, SocketExposedShape, SocketFunctionClientHook, SocketFunctionHook, SocketRegistered } from "socket-function/SocketFunctionTypes";
     export declare function getCallFlags(call: CallType): FunctionFlags | undefined;
     export declare function shouldCompressCall(call: CallType): boolean;
     export declare function performLocalCall(config: {
@@ -604,7 +823,7 @@ declare module "socket-function/src/https" {
 declare module "socket-function/src/misc" {
     /// <reference types="node" />
     /// <reference types="node" />
-    import { MaybePromise } from "./types";
+    import { MaybePromise } from "socket-function/src/types";
     export declare const timeInSecond = 1000;
     export declare const timeInMinute: number;
     export declare const timeInHour: number;
@@ -719,8 +938,8 @@ declare module "socket-function/src/networking" {
 }
 
 declare module "socket-function/src/nodeCache" {
-    import { CallFactory } from "./CallFactory";
-    import { MaybePromise } from "./types";
+    import { CallFactory } from "socket-function/src/CallFactory";
+    import { MaybePromise } from "socket-function/src/types";
     export declare function getNodeId(domain: string, port: number): string;
     /** @deprecated, call getBrowserUrlNode instead, which does important additional checks. */
     export declare function getNodeIdFromLocation(): string;
@@ -747,7 +966,7 @@ declare module "socket-function/src/nodeCache" {
 }
 
 declare module "socket-function/src/nodeProxy" {
-    import { FullCallType, SocketInternalInterface } from "../SocketFunctionTypes";
+    import { FullCallType, SocketInternalInterface } from "socket-function/SocketFunctionTypes";
     type CallProxyType = {
         [nodeId: string]: SocketInternalInterface;
     };
@@ -774,7 +993,7 @@ declare module "socket-function/src/profiling/getOwnTime" {
 }
 
 declare module "socket-function/src/profiling/measure" {
-    import { StatsValue } from "./stats";
+    import { StatsValue } from "socket-function/src/profiling/stats";
     /** NOTE: Must be called BEFORE anything else is imported!
      *      NOTE: Measurements on on by default now, so this doesn't really need to be called...
     */
@@ -895,7 +1114,7 @@ declare module "socket-function/src/profiling/stats" {
 }
 
 declare module "socket-function/src/profiling/statsFormat" {
-    import { StatsValue } from "./stats";
+    import { StatsValue } from "socket-function/src/profiling/stats";
     export declare function percent(value: number): string;
     export declare function formatStats(stats: StatsValue, config?: {
         noColor?: boolean;
@@ -1042,7 +1261,7 @@ declare module "socket-function/src/webSocketServer" {
     /// <reference types="node" />
     /// <reference types="node" />
     import https from "https";
-    import { Watchable } from "./misc";
+    import { Watchable } from "socket-function/src/misc";
     export type SocketServerConfig = (https.ServerOptions & {
         key: string | Buffer;
         cert: string | Buffer;
@@ -1074,7 +1293,7 @@ declare module "socket-function/src/webSocketServer" {
 declare module "socket-function/src/websocketFactory" {
     /// <reference types="node" />
     import tls from "tls";
-    import { SenderInterface } from "./CallFactory";
+    import { SenderInterface } from "socket-function/src/CallFactory";
     import type * as ws from "ws";
     export declare function getTLSSocket(webSocket: ws.WebSocket): tls.TLSSocket;
     /** NOTE: We create a factory, which embeds the key/cert information. Otherwise retries might use

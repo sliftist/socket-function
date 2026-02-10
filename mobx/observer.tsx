@@ -2,13 +2,14 @@ import type preact from "preact";
 import { setFlag } from "../require/compileFlags";
 
 import { observable, Reaction } from "mobx";
+import { measureBlock } from "socket-function/src/profiling/measure";
 
 setFlag(require, "mobx", "allowclient", true);
 setFlag(require, "preact", "allowclient", true);
 
 let globalConstructOrder = 0;
 
-export function observer<
+/** @deprecated Use the version from sliftutils instead. */export function observer<
     T extends {
         new(...args: any[]): {
             render(): preact.ComponentChild;
@@ -42,7 +43,9 @@ export function observer<
         render() {
             let output: preact.ComponentChild;
             this.reaction.track(() => {
-                output = super.render();
+                measureBlock(() => {
+                    output = super.render();
+                }, `${name}|render`);
             });
             return output;
         }

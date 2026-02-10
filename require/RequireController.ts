@@ -115,7 +115,7 @@ class RequireControllerBase {
     public async requireHTML(config?: {
         requireCalls?: string[];
         cacheTime?: number;
-    }) {
+    }): Promise<Buffer> {
         let { requireCalls, cacheTime } = config || {};
         let httpRequest = getCurrentHTTPRequest();
         let headers: Record<string, string> = {
@@ -126,7 +126,7 @@ class RequireControllerBase {
         }
         if (httpRequest) {
             let urlObj = new URL("https://" + httpRequest.headers.host + httpRequest.url);
-            if (urlObj.pathname !== "/" && !requireCalls?.length) {
+            if (urlObj.pathname !== "/" && staticRoots.length > 0) {
                 if (urlObj.pathname.includes("..")) {
                     throw new Error(`Invalid path, may not have ".." in the path, ${urlObj.pathname}`);
                 }

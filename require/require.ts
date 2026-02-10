@@ -659,7 +659,7 @@ export function requireMain() {
         // NOTE: All on one line, so we don't break sourcemaps by TOO much. We could also parse
         //  the sourcemap and adjust it, but... it is much easier to just not change the line counts.
         return eval(
-            `(function ${debugName}(exports, require, module, __filename, __dirname, importDynamic) {${contents}\n })`
+            `(function ${debugName}(exports, require, module, __filename, __dirname, importDynamic) {"use strict";${contents}\n })`
         );
     }
 

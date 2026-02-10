@@ -24,20 +24,36 @@ function generateIndexDts() {
     const renderUtilsPath = __dirname;
     const dtsFiles = getAllDtsFiles(renderUtilsPath);
 
+    const excludedModules = ["socket-function/index"];
+
     const modules = dtsFiles
-        .filter(filePath => {
-            // Exclude SocketFunction.d.ts and index.d.ts from being wrapped in a module declaration
-            const relativePath = path.relative(renderUtilsPath, filePath);
-            const withoutExt = relativePath.replace(/\.d\.ts$/, "");
-            const modulePath = "socket-function/" + withoutExt.replace(/\\/g, "/");
-            return modulePath !== "socket-function/SocketFunction" && modulePath !== "socket-function/index";
-        })
         .map(filePath => {
             const relativePath = path.relative(renderUtilsPath, filePath);
             const withoutExt = relativePath.replace(/\.d\.ts$/, "");
             const modulePath = "socket-function/" + withoutExt.replace(/\\/g, "/");
+            if (excludedModules.includes(modulePath)) return undefined;
 
-            const content = fs.readFileSync(filePath, "utf8");
+            let content = fs.readFileSync(filePath, "utf8");
+
+            // Resolve relative imports to absolute module paths
+            const moduleDir = path.dirname(modulePath);
+            content = content.replace(
+                /(import|export)\s+([^"']*)\s+from\s+["'](\.[^"']+)["']/g,
+                (match, keyword, imported, relativeImport) => {
+                    const absoluteModulePath = path.join(moduleDir, relativeImport).replace(/\\/g, "/");
+                    return `${keyword} ${imported} from "${absoluteModulePath}"`;
+                }
+            );
+
+            // Resolve dynamic imports like import("../path")
+            content = content.replace(
+                /import\(["'](\.[^"']+)["']\)/g,
+                (match, relativeImport) => {
+                    const absoluteModulePath = path.join(moduleDir, relativeImport).replace(/\\/g, "/");
+                    return `import("${absoluteModulePath}")`;
+                }
+            );
+
             const indentedContent = content
                 .split("\n")
                 .map(line => line ? "    " + line : line)
@@ -45,6 +61,7 @@ function generateIndexDts() {
 
             return `declare module "${modulePath}" {\n${indentedContent}\n}`;
         })
+        .filter(x => x)
         .sort()
         .join("\n\n");
 
