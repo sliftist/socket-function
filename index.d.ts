@@ -529,7 +529,6 @@ declare module "socket-function/src/JSONLACKS/JSONLACKS.generated.js" {
 }
 
 declare module "socket-function/src/Zip" {
-    /// <reference path="../index.d.ts" />
     /// <reference types="node" />
     /// <reference types="node" />
     import { MaybePromise } from "socket-function/src/types";

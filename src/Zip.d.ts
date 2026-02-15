@@ -1,7 +1,6 @@
-/// <reference path="../index.d.ts" />
 /// <reference types="node" />
 /// <reference types="node" />
-import { MaybePromise } from "socket-function/src/types";
+import { MaybePromise } from "./types";
 export declare class Zip {
     static gzip(buffer: Buffer, level?: number): Promise<Buffer>;
     static gzipSync(buffer: Buffer, level?: number): Buffer;
