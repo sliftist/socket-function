@@ -87,12 +87,8 @@ export function registerClass(classGuid: string, controller: SocketExposedInterf
     }
 
     if (!config?.noFunctionMeasure) {
-        let keys = new Set([
-            ...Object.keys(controller),
-            ...Object.getOwnPropertyNames(controller.__proto__ || {}),
-        ]);
         let niceClassName = controller.constructor.name || classGuid;
-        for (let functionName of keys) {
+        for (let functionName of Object.keys(shape)) {
             if (functionName === "constructor") continue;
             let fnc = controller[functionName];
             if (typeof fnc !== "function") continue;

@@ -537,10 +537,10 @@ declare module "socket-function/src/Zip" {
         static gzipSync(buffer: Buffer, level?: number): Buffer;
         static gunzip(buffer: Buffer): MaybePromise<Buffer>;
         static gunzipAsyncBase(buffer: Buffer): Promise<Buffer>;
-        static gunzipUntracked(buffer: Buffer): Promise<Buffer>;
         static gunzipSync(buffer: Buffer): Buffer;
-        private static gunzipUntrackedSync;
         static gunzipBatch(buffers: Buffer[]): Promise<Buffer[]>;
+        static gunzipUntracked(buffer: Buffer): MaybePromise<Buffer>;
+        private static gunzipUntrackedSync;
     }
 
 }
