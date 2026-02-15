@@ -47,6 +47,7 @@ export interface MeasureProfile {
     entries: {
         [name: string]: ProfileEntry;
     };
+    creator: string;
 }
 export declare function createMeasureProfile(): MeasureProfile;
 export declare function addToMeasureProfile(base: MeasureProfile, other: MeasureProfile): void;

@@ -1,6 +1,6 @@
 import type preact from "preact";
 import { Reaction } from "mobx";
-export declare function observer<T extends {
+/** @deprecated Use the version from sliftutils instead. */ export declare function observer<T extends {
     new (...args: any[]): {
         render(): preact.ComponentChild;
         forceUpdate(callback?: () => void): void;

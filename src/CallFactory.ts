@@ -15,8 +15,9 @@ import { formatNumber, formatTime } from "./formatting/format";
 import zlib from "zlib";
 import pako from "pako";
 import { setFlag } from "../require/compileFlags";
-import { measureFnc, measureWrap } from "./profiling/measure";
+import { measureFnc, measureWrap, registerMeasureInfo } from "./profiling/measure";
 import { MaybePromise } from "./types";
+import { Zip } from "./Zip";
 setFlag(require, "pako", "allowclient", true);
 
 // NOTE: If it is too low, and too many servers disconnect, we can easily spend 100% of our time
@@ -158,9 +159,13 @@ export async function createCallFactory(
             let data: Buffer[];
             let originalArgs = call.args;
             let time = Date.now();
+            let sendStats: CompressionStats = {
+                uncompressedSize: 0,
+                compressedSize: 0,
+            };
             try {
                 if (shouldCompressCall(fullCall)) {
-                    fullCall.args = await compressObj(fullCall.args) as any;
+                    fullCall.args = await compressObj(fullCall.args, sendStats) as any;
                     fullCall.isArgsCompressed = true;
                 }
                 let dataMaybePromise = SocketFunction.WIRE_SERIALIZER.serialize(fullCall);
@@ -169,6 +174,15 @@ export async function createCallFactory(
                 } else {
                     data = dataMaybePromise;
                 }
+                if (!sendStats.compressedSize) {
+                    let totalSize = 0;
+                    for (let d of data) {
+                        totalSize += d.length;
+                    }
+                    sendStats.uncompressedSize = totalSize;
+                    sendStats.compressedSize = totalSize;
+                }
+                addSendStats(sendStats);
             } catch (e: any) {
                 throw new Error(`Error serializing data for call ${call.classGuid}.${call.functionName}\n${e.stack}`);
             }
@@ -475,6 +489,15 @@ export async function createCallFactory(
             callback(resultSize);
         }
 
+        let receiveStats: CompressionStats = {
+            uncompressedSize: resultSize,
+            compressedSize: resultSize,
+        };
+        let sendStats: CompressionStats = {
+            uncompressedSize: 0,
+            compressedSize: 0,
+        };
+
         if (call.isReturn) {
             let callbackObj = pendingCalls.get(call.seqNum);
             if (parseTime > SocketFunction.WIRE_WARN_TIME) {
@@ -489,13 +512,13 @@ export async function createCallFactory(
                 console.log(`SIZE\t${(formatNumberSuffixed(resultSize) + "B").padEnd(4, " ")}\tRETURN\t${call.classGuid}.${call.functionName} at ${Date.now()}, (${nodeId} / ${localNodeId})`);
             }
             if (call.isResultCompressed) {
-                call.result = await decompressObj(call.result as Buffer);
+                call.result = await decompressObj(call.result as Buffer, receiveStats);
                 call.isResultCompressed = false;
             }
             callbackObj.callback(call);
         } else {
             if (call.isArgsCompressed) {
-                call.args = await decompressObj(call.args as any as Buffer) as any;
+                call.args = await decompressObj(call.args as any as Buffer, sendStats) as any;
                 call.isArgsCompressed = false;
             }
             if (call.functionName === "changeIdentity") {
@@ -592,7 +615,7 @@ export async function createCallFactory(
                     console.log(`DUR\t${(formatTime(timeTaken)).padEnd(6, " ")}\tFINISH\t${call.classGuid}.${call.functionName} at ${Date.now()}, (${nodeId} / ${localNodeId})`);
                 }
                 if (shouldCompressCall(call)) {
-                    response.result = await compressObj(response.result) as any;
+                    response.result = await compressObj(response.result, sendStats) as any;
                     response.isResultCompressed = true;
                 }
             } catch (e: any) {
@@ -611,11 +634,17 @@ export async function createCallFactory(
                 }
             }
 
+            let size = 0;
+
             if (response.result instanceof Buffer) {
                 let { result, ...remaining } = response;
+                size = result.length;
                 await sendWithHeader([result], { type: "Buffer", bufferCount: 1, metadata: remaining });
             } else if (Array.isArray(response.result) && response.result.every(x => x instanceof Buffer)) {
                 let { result, ...remaining } = response;
+                for (let r of result) {
+                    size += r.length;
+                }
                 await sendWithHeader(result, { type: "Buffer[]", bufferCount: result.length, metadata: remaining });
             } else {
                 const LIMIT = getCallFlags(call)?.responseLimit || SocketFunction.MAX_MESSAGE_SIZE * 1.5;
@@ -630,9 +659,21 @@ export async function createCallFactory(
                     };
                     result = await SocketFunction.WIRE_SERIALIZER.serialize(response);
                 }
+                for (let r of result) {
+                    size += r.length;
+                }
                 await send(result);
             }
+
+            // If we have no size, then it's probably uncompressed
+            if (!sendStats.compressedSize) {
+                sendStats.compressedSize = size;
+                sendStats.uncompressedSize = size;
+            }
         }
+
+        addSendStats(sendStats);
+        addReceiveStats(receiveStats);
     }
 
     let clientsideSerial = runInSerial(async <T>(val: Promise<T>) => val);
@@ -717,63 +758,49 @@ export async function createCallFactory(
     return callFactory;
 }
 
-async function doStream(stream: GenericTransformStream, buffer: Buffer): Promise<Buffer> {
-    let reader = stream.readable.getReader();
-    let writer = stream.writable.getWriter();
-    let writePromise = writer.write(buffer);
-    let closePromise = writer.close();
 
-    let outputBuffers: Buffer[] = [];
-    while (true) {
-        let { value, done } = await reader.read();
-        if (done) {
-            await writePromise;
-            await closePromise;
-            return Buffer.concat(outputBuffers);
-        }
-        outputBuffers.push(Buffer.from(value));
-    }
-}
-async function unzipBase(buffer: Buffer): Promise<Buffer> {
-    if (isNode()) {
-        return new Promise((resolve, reject) => {
-            zlib.gunzip(buffer, (err: any, result: Buffer) => {
-                if (err) reject(err);
-                else resolve(result);
-            });
-        });
-    } else {
-        // NOTE: pako seems to be faster, at least clientside.
-        // TIMING: 700ms vs 1200ms
-        //  - This might just be faster for small files.
-        return Buffer.from(pako.inflate(buffer));
-        // @ts-ignore
-        // return await doStream(new DecompressionStream("gzip"), buffer);
-    }
-}
-async function zipBase(buffer: Buffer, level?: number): Promise<Buffer> {
-    if (isNode()) {
-        return new Promise((resolve, reject) => {
-            zlib.gzip(buffer, { level }, (err: any, result: Buffer) => {
-                if (err) reject(err);
-                else resolve(result);
-            });
-        });
-    } else {
-        // @ts-ignore
-        return await doStream(new CompressionStream("gzip"), buffer);
-    }
-}
 
-const compressObj = measureWrap(async function wireCallCompress(obj: unknown): Promise<Buffer> {
+let uncompressedSent = 0;
+let compressedSent = 0;
+let uncompressedReceived = 0;
+let compressedReceived = 0;
+
+let sendCount = 0;
+let receiveCount = 0;
+
+function addSendStats(stats: CompressionStats) {
+    uncompressedSent += stats.uncompressedSize;
+    compressedSent += stats.compressedSize;
+    sendCount++;
+}
+function addReceiveStats(stats: CompressionStats) {
+    uncompressedReceived += stats.uncompressedSize;
+    compressedReceived += stats.compressedSize;
+    receiveCount++;
+}
+// Register this late as I don't want it to appear before the memory register info, which is use more useful than the network one. 
+setImmediate(() => {
+    registerMeasureInfo(() => `NET => ${formatNumber(compressedSent)}B (${formatNumber(uncompressedSent)}B/${formatNumber(sendCount)}) / <= ${formatNumber(compressedReceived)}B (${formatNumber(uncompressedReceived)}B/${formatNumber(receiveCount)})`);
+});
+
+type CompressionStats = {
+    uncompressedSize: number;
+    compressedSize: number;
+};
+
+const compressObj = measureWrap(async function wireCallCompress(obj: unknown, stats: CompressionStats): Promise<Buffer> {
     let buffers = await SocketFunction.WIRE_SERIALIZER.serialize(obj);
     let lengthBuffer = Buffer.from((new Float64Array(buffers.map(x => x.length))).buffer);
     let buffer = Buffer.concat([lengthBuffer, ...buffers]);
-    let result = await zipBase(buffer);
+    stats.uncompressedSize += buffer.length;
+    let result = await Zip.gzip(buffer);
+    stats.compressedSize += result.length;
     return result;
 });
-const decompressObj = measureWrap(async function wireCallDecompress(obj: Buffer): Promise<unknown> {
-    let buffer = await unzipBase(obj);
+// Assumes the caller already added the obj.length to both the uncompressedSize and compressedSize, and is just looking to update the uncompressedSize to be larger according to the size after we uncompress
+const decompressObj = measureWrap(async function wireCallDecompress(obj: Buffer, stats: CompressionStats): Promise<unknown> {
+    let buffer = await Zip.gunzip(obj);
+    stats.uncompressedSize += buffer.length - obj.length;
     let lengthBuffer = buffer.slice(0, 8);
     let lengths = new Float64Array(lengthBuffer.buffer, lengthBuffer.byteOffset, lengthBuffer.byteLength / 8);
     let buffers: Buffer[] = [];
@@ -782,5 +809,6 @@ const decompressObj = measureWrap(async function wireCallDecompress(obj: Buffer)
         buffers.push(buffer.slice(offset, offset + length));
         offset += length;
     }
-    return await SocketFunction.WIRE_SERIALIZER.deserialize(buffers);
+    let result = await SocketFunction.WIRE_SERIALIZER.deserialize(buffers);
+    return result;
 });

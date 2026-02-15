@@ -262,7 +262,7 @@ declare module "socket-function/mobx/UrlParam" {
 declare module "socket-function/mobx/observer" {
     import type preact from "preact";
     import { Reaction } from "mobx";
-    export declare function observer<T extends {
+    /** @deprecated Use the version from sliftutils instead. */ export declare function observer<T extends {
         new (...args: any[]): {
             render(): preact.ComponentChild;
             forceUpdate(callback?: () => void): void;
@@ -526,6 +526,24 @@ declare module "socket-function/src/JSONLACKS/JSONLACKS" {
 
 declare module "socket-function/src/JSONLACKS/JSONLACKS.generated.js" {
     export function parse(text: string): unknown;
+}
+
+declare module "socket-function/src/Zip" {
+    /// <reference path="../index.d.ts" />
+    /// <reference types="node" />
+    /// <reference types="node" />
+    import { MaybePromise } from "socket-function/src/types";
+    export declare class Zip {
+        static gzip(buffer: Buffer, level?: number): Promise<Buffer>;
+        static gzipSync(buffer: Buffer, level?: number): Buffer;
+        static gunzip(buffer: Buffer): MaybePromise<Buffer>;
+        static gunzipAsyncBase(buffer: Buffer): Promise<Buffer>;
+        static gunzipUntracked(buffer: Buffer): Promise<Buffer>;
+        static gunzipSync(buffer: Buffer): Buffer;
+        private static gunzipUntrackedSync;
+        static gunzipBatch(buffers: Buffer[]): Promise<Buffer[]>;
+    }
+
 }
 
 declare module "socket-function/src/args" {
@@ -1042,6 +1060,7 @@ declare module "socket-function/src/profiling/measure" {
         entries: {
             [name: string]: ProfileEntry;
         };
+        creator: string;
     }
     export declare function createMeasureProfile(): MeasureProfile;
     export declare function addToMeasureProfile(base: MeasureProfile, other: MeasureProfile): void;

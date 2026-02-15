@@ -100,6 +100,7 @@ export function startMeasure(): {
         startTime: now,
         endTime: now,
         entries: Object.create(null),
+        creator: new Error().stack || "",
     };
     let openAtStart = new Set(getOpenTimesBase());
 
@@ -316,6 +317,7 @@ export interface MeasureProfile {
     entries: {
         [name: string]: ProfileEntry;
     };
+    creator: string;
 }
 export function createMeasureProfile(): MeasureProfile {
     let now = Date.now();
@@ -323,6 +325,7 @@ export function createMeasureProfile(): MeasureProfile {
         startTime: now,
         endTime: now,
         entries: Object.create(null),
+        creator: new Error().stack || "",
     };
 }
 
