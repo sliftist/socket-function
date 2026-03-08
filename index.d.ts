@@ -31,12 +31,17 @@ declare module "socket-function/SocketFunction" {
         static HTTP_ETAG_CACHE: boolean;
         static silent: boolean;
         static HTTP_COMPRESS: boolean;
+        static LEGACY_INITIALIZE: boolean;
         static COEP: string;
         static COOP: string;
         static readonly WIRE_SERIALIZER: {
             serialize: (obj: unknown) => MaybePromise<Buffer[]>;
             deserialize: (buffers: Buffer[]) => MaybePromise<unknown>;
         };
+        /** We will try the alternate node IDs first, however, if they fail, we will go through all of them and then eventually try the original node ID.
+         *      VERY useful, allowing us to change global ips to local ones, which short-circuits the router, massively increasing bandwidth and decreasing latency.
+         */
+        static GET_ALTERNATE_NODE_IDS: (nodeId: string) => MaybePromise<string[] | undefined>;
         static WIRE_WARN_TIME: number;
         private static onMountCallbacks;
         static exposedClasses: Set<string>;
@@ -133,7 +138,7 @@ declare module "socket-function/SocketFunctionTypes" {
         prototype: unknown;
     };
     export type FunctionFlags = {
-        compress?: boolean;
+        compress?: boolean | "LZ4";
         /** Indicates with the same input, we give the same output, forever,
          *      independent of code changes. This only works for data storage.
          */
@@ -463,6 +468,7 @@ declare module "socket-function/src/CallFactory" {
         lastClosed: number;
         closedForever?: boolean;
         isConnected?: boolean;
+        receivedInitializeState?: InitializeState;
         performCall(call: CallType): Promise<unknown>;
         onNextDisconnect(callback: () => void): void;
         connectionId: {
@@ -482,6 +488,9 @@ declare module "socket-function/src/CallFactory" {
         readyState: number;
         ping?(): void;
     }
+    type InitializeState = {
+        supportsLZ4?: boolean;
+    };
     export declare function harvestFailedCallCount(): number;
     export declare function getPendingCallCount(): number;
     export declare function harvestCallTimes(): {
@@ -489,6 +498,7 @@ declare module "socket-function/src/CallFactory" {
         end: number;
     }[];
     export declare function createCallFactory(webSocketBase: SenderInterface | undefined, nodeId: string, localNodeId?: string): Promise<CallFactory>;
+    export {};
 
 }
 
@@ -559,7 +569,7 @@ declare module "socket-function/src/args" {
 }
 
 declare module "socket-function/src/batching" {
-    import { AnyFunction } from "socket-function/src/types";
+    import { AnyFunction, MaybePromise } from "socket-function/src/types";
     export type DelayType = (number | "afterio" | "immediate" | "afterpromises" | "paintLoop" | "afterPaint");
     export declare function delay(delayTime: DelayType, immediateShortDelays?: "immediateShortDelays"): Promise<void>;
     export declare function batchFunctionNone<Arg, Result = void>(config: unknown, fnc: (arg: Arg[]) => (Promise<Result> | Result)): (arg: Arg) => Promise<Result>;
@@ -590,6 +600,13 @@ declare module "socket-function/src/batching" {
         minDelay?: number;
         maxDelay?: number;
     }): T;
+    export declare const safeLoop: typeof unblockLoop;
+    export declare const throttledLoop: typeof unblockLoop;
+    export declare function unblockLoop<T, R>(config: {
+        data: T[];
+        maxBlockingTime?: number;
+        backOffTime?: number;
+    } | T[], fnc: (item: T) => MaybePromise<R>): Promise<R[]>;
 
 }
 
@@ -690,7 +707,7 @@ declare module "socket-function/src/callManager" {
     /// <reference path="../hot/HotReloadController.d.ts" />
     import { CallerContext, CallType, ClientHookContext, FullCallType, FunctionFlags, HookContext, SocketExposedInterface, SocketExposedShape, SocketFunctionClientHook, SocketFunctionHook, SocketRegistered } from "socket-function/SocketFunctionTypes";
     export declare function getCallFlags(call: CallType): FunctionFlags | undefined;
-    export declare function shouldCompressCall(call: CallType): boolean;
+    export declare function shouldCompressCall(call: CallType): boolean | "LZ4" | undefined;
     export declare function performLocalCall(config: {
         call: FullCallType;
         caller: CallerContext;
@@ -834,6 +851,74 @@ declare module "socket-function/src/https" {
         };
         cancel?: Promise<void>;
     }): Promise<Buffer>;
+
+}
+
+declare module "socket-function/src/lz4/LZ4" {
+    /// <reference types="node" />
+    /// <reference types="node" />
+    export declare class LZ4 {
+        static compress(data: Buffer): Buffer;
+        static compressUntracked(data: Buffer): Buffer;
+        static decompress(data: Buffer): Buffer;
+    }
+
+}
+
+declare module "socket-function/src/lz4/lz4_wasm_nodejs" {
+    /* tslint:disable */
+    /* eslint-disable */
+
+    /**
+     * Streaming LZ4 compressor (frame format with linked blocks).
+     * Concatenate all output chunks to form a complete LZ4 frame.
+     */
+    export class Lz4StreamCompressor {
+        free(): void;
+        [Symbol.dispose](): void;
+        compress(input: Uint8Array): Uint8Array;
+        constructor();
+    }
+
+    /**
+     * One-shot block compression with size prepended.
+     */
+    export function compress(input: Uint8Array): Uint8Array;
+
+    /**
+     * One-shot block decompression with size prepended.
+     */
+    export function decompress(input: Uint8Array): Uint8Array;
+
+    /**
+     * Decompress an LZ4 stream (frame format).
+     * Auto-injects end marker if missing. On error, returns partial data and sets a warning.
+     */
+    export function decompress_stream(input: Uint8Array): Uint8Array;
+
+    /**
+     * Get and clear the last warning from decompression.
+     */
+    export function get_last_warning(): string | undefined;
+
+}
+
+declare module "socket-function/src/lz4/lz4_wasm_nodejs_bg.wasm" {
+    /* tslint:disable */
+    /* eslint-disable */
+    export const memory: WebAssembly.Memory;
+    export const __wbg_lz4streamcompressor_free: (a: number, b: number) => void;
+    export const compress: (a: number, b: number) => [number, number];
+    export const decompress: (a: number, b: number) => [number, number, number, number];
+    export const decompress_stream: (a: number, b: number) => [number, number];
+    export const get_last_warning: () => [number, number];
+    export const lz4streamcompressor_compress: (a: number, b: number, c: number) => [number, number];
+    export const lz4streamcompressor_new: () => number;
+    export const __wbindgen_externrefs: WebAssembly.Table;
+    export const __wbindgen_malloc: (a: number, b: number) => number;
+    export const __wbindgen_free: (a: number, b: number, c: number) => void;
+    export const __externref_table_dealloc: (a: number) => void;
+    export const __wbindgen_start: () => void;
 
 }
 

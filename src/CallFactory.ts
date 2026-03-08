@@ -8,7 +8,7 @@ import * as tls from "tls";
 import { getClientNodeId, getNodeIdLocation, registerNodeClient } from "./nodeCache";
 import debugbreak from "debugbreak";
 import { lazy } from "./caching";
-import { red, yellow } from "./formatting/logColors";
+import { blue, green, red, yellow } from "./formatting/logColors";
 import { isSplitableArray, markArrayAsSplitable } from "./fixLargeNetworkCalls";
 import { delay, runInfinitePoll, runInSerial } from "./batching";
 import { formatNumber, formatTime } from "./formatting/format";
@@ -18,6 +18,8 @@ import { setFlag } from "../require/compileFlags";
 import { measureFnc, measureWrap, registerMeasureInfo } from "./profiling/measure";
 import { MaybePromise } from "./types";
 import { Zip } from "./Zip";
+import { LZ4 } from "./lz4/LZ4";
+
 setFlag(require, "pako", "allowclient", true);
 
 // NOTE: If it is too low, and too many servers disconnect, we can easily spend 100% of our time
@@ -28,7 +30,7 @@ const MIN_RETRY_DELAY = 5000;
 type InternalCallType = FullCallType & {
     seqNum: number;
     isReturn: false;
-    isArgsCompressed?: boolean;
+    isArgsCompressed?: boolean | "LZ4" | "zip";
 }
 
 type InternalReturnType = {
@@ -36,7 +38,7 @@ type InternalReturnType = {
     result: unknown;
     error?: string;
     seqNum: number;
-    isResultCompressed?: boolean;
+    isResultCompressed?: boolean | "LZ4" | "zip";
 };
 
 
@@ -45,6 +47,7 @@ export interface CallFactory {
     lastClosed: number;
     closedForever?: boolean;
     isConnected?: boolean;
+    receivedInitializeState?: InitializeState;
     // NOTE: May or may not have reconnection or retry logic inside of performCall.
     //  Trigger performLocalCall on the other side of the connection
     performCall(call: CallType): Promise<unknown>;
@@ -68,6 +71,12 @@ export interface SenderInterface {
 
     ping?(): void;
 }
+
+type InitializeState = {
+    supportsLZ4?: boolean;
+};
+
+const INITIALIZE_STATE_SEQ_NUM = -1;
 
 let pendingCallCount = 0;
 let harvestableFailedCalls = 0;
@@ -145,6 +154,7 @@ export async function createCallFactory(
         nodeId,
         lastClosed: 0,
         connectionId: { nodeId },
+        receivedInitializeState: undefined,
         onNextDisconnect,
         async performCall(call: CallType) {
             let seqNum = nextSeqNum++;
@@ -164,9 +174,18 @@ export async function createCallFactory(
                 compressedSize: 0,
             };
             try {
-                if (shouldCompressCall(fullCall)) {
-                    fullCall.args = await compressObj(fullCall.args, sendStats) as any;
-                    fullCall.isArgsCompressed = true;
+                if (callFactory.receivedInitializeState?.supportsLZ4) {
+                    let compressMode = shouldCompressCall(fullCall);
+                    // If it's undefined, then we compress it. We basically always want to compress from now on, because LZ4 is so fast. 
+                    if (compressMode !== false) {
+                        fullCall.args = await compressObjLZ4(fullCall.args, sendStats) as any;
+                        fullCall.isArgsCompressed = "LZ4";
+                    }
+                } else {
+                    if (shouldCompressCall(fullCall)) {
+                        fullCall.args = await compressObj(fullCall.args, sendStats) as any;
+                        fullCall.isArgsCompressed = "zip";
+                    }
                 }
                 let dataMaybePromise = SocketFunction.WIRE_SERIALIZER.serialize(fullCall);
                 if (dataMaybePromise instanceof Promise) {
@@ -248,7 +267,7 @@ export async function createCallFactory(
                         let arg = originalArgs[0] as any;
                         fncHack = `.${arg.DomainName}.${arg.ModuleId}.${arg.FunctionId}`;
                     }
-                    console.log(`SIZE\t${(formatNumberSuffixed(resultSize) + "B").padEnd(4, " ")}\tREMOTE CALL\t${call.classGuid}.${call.functionName}${fncHack} at ${Date.now()}`);
+                    console.log(`SIZE\t${(formatNumberSuffixed(resultSize) + `B`).padEnd(4, " ")}\t${formatNumber(data.length)} buffers\tREMOTE CALL\t${call.classGuid}.${call.functionName}${fncHack} at ${Date.now()}`);
                 }
             }
             // If sending OR resultPromise throws, we want to error out. This solves some issues with resultPromise
@@ -261,15 +280,22 @@ export async function createCallFactory(
     };
 
     let webSocketPromise: Promise<SenderInterface> | undefined;
+    let hasEverConnected = false;
     if (webSocketBase) {
         webSocketPromise = Promise.resolve(webSocketBase);
         await initializeWebsocket(webSocketBase);
     }
 
-    async function initializeWebsocket(newWebSocket: SenderInterface) {
+    async function initializeWebsocket(newWebSocket: SenderInterface, skipCloseHandling = false) {
         registerOnce();
+        callFactory.receivedInitializeState = undefined;
 
         function onClose(error: string) {
+            // We try various connections, and if they fail, we will just try other node IDs until we finally do connect, and then we stick with that nodeId, and when it disconnects we need to handle disconnections normally.
+            if (skipCloseHandling && !hasEverConnected) {
+                return;
+            }
+
             callFactory.connectionId = { nodeId };
             callFactory.lastClosed = Date.now();
             callFactory.isConnected = false;
@@ -319,6 +345,7 @@ export async function createCallFactory(
                         console.log(`Connection established to ${niceConnectionName}`);
                     }
                     callFactory.isConnected = true;
+                    hasEverConnected = true;
                     resolve();
                 });
                 newWebSocket.addEventListener("close", () => resolve());
@@ -326,6 +353,7 @@ export async function createCallFactory(
             });
         } else if (newWebSocket.readyState === 1 /* OPEN */) {
             callFactory.isConnected = true;
+            hasEverConnected = true;
         } else {
             onClose(new Error(`Websocket received in closed state`).stack!);
         }
@@ -419,6 +447,23 @@ export async function createCallFactory(
         }
         lastConnectionAttempt = Date.now();
 
+        // Try alternates, and if any work, use them
+        try {
+            let alternates = await SocketFunction.GET_ALTERNATE_NODE_IDS(nodeId);
+            if (alternates) {
+                for (let alternateNodeId of alternates) {
+                    let newWebSocket = createWebsocket(alternateNodeId);
+                    await initializeWebsocket(newWebSocket, true);
+
+                    if (callFactory.isConnected) {
+                        return newWebSocket;
+                    }
+                }
+            }
+        } catch (e) {
+            console.error("Error getting alternate node IDs", e);
+        }
+
         let newWebSocket = createWebsocket(nodeId);
         await initializeWebsocket(newWebSocket);
 
@@ -427,6 +472,7 @@ export async function createCallFactory(
 
     let pendingCall: MessageHeader & {
         buffers: Buffer[];
+        firstReceivedTime?: number;
     } | undefined;
 
     async function processPendingCall() {
@@ -499,101 +545,37 @@ export async function createCallFactory(
         };
 
         if (call.isReturn) {
+            if (!SocketFunction.LEGACY_INITIALIZE && call.seqNum === INITIALIZE_STATE_SEQ_NUM) {
+                callFactory.receivedInitializeState = call.result as InitializeState;
+                return;
+            }
             let callbackObj = pendingCalls.get(call.seqNum);
             if (parseTime > SocketFunction.WIRE_WARN_TIME) {
                 console.log(red(`Slow parse, took ${parseTime}ms to parse ${resultSize} bytes, for receiving result of call to ${callbackObj?.call.classGuid}.${callbackObj?.call.functionName}`));
             }
             if (!callbackObj) {
-                console.log(`Got return for unknown call ${call.seqNum} (created at time ${new Date(call.seqNum)})`);
+                console.log(blue(`Got return for unknown call ${call.seqNum} (created at time ${new Date(call.seqNum)}), ${nodeId} / ${localNodeId}`));
                 return;
             }
             if (SocketFunction.logMessages) {
                 let call = callbackObj.call;
-                console.log(`SIZE\t${(formatNumberSuffixed(resultSize) + "B").padEnd(4, " ")}\tRETURN\t${call.classGuid}.${call.functionName} at ${Date.now()}, (${nodeId} / ${localNodeId})`);
+                console.log(`SIZE\t${(formatNumberSuffixed(resultSize) + "B").padEnd(4, " ")}\t${formatNumber(currentBuffers.length)} buffers\tRETURN\t${call.classGuid}.${call.functionName} at ${Date.now()}, (${nodeId} / ${localNodeId})`);
             }
-            if (call.isResultCompressed) {
+            if (call.isResultCompressed === "LZ4") {
+                call.result = await decompressObjLZ4(call.result as Buffer[], receiveStats);
+                call.isResultCompressed = undefined;
+            } else if (call.isResultCompressed === "zip" || call.isResultCompressed === true) {
                 call.result = await decompressObj(call.result as Buffer, receiveStats);
-                call.isResultCompressed = false;
+                call.isResultCompressed = undefined;
             }
             callbackObj.callback(call);
         } else {
-            if (call.isArgsCompressed) {
+            if (call.isArgsCompressed === "LZ4") {
+                call.args = await decompressObjLZ4(call.args as any as Buffer[], sendStats) as any;
+                call.isArgsCompressed = undefined;
+            } else if (call.isArgsCompressed === "zip" || call.isArgsCompressed === true) {
                 call.args = await decompressObj(call.args as any as Buffer, sendStats) as any;
-                call.isArgsCompressed = false;
-            }
-            if (call.functionName === "changeIdentity") {
-                /*
-                    TODO: Sometimes calls don't get through, even though we know the client made the call. Here are the logs from a failing case:
-                        Exposing Controller ServerController-17ea53da-bbef-4c8b-9eb0-99e263464c6f
-                        Exposing Controller HotReloadController-032b2250-3aac-4187-8c95-75412742b8f5
-                        Exposing Controller TimeController-ddf4753e-fc8a-413f-8cc2-b927dd449976
-                        Updating websocket server options
-                        Updating websocket server trusted certificates
-                        Updating websocket server options
-                        Updating websocket server trusted certificates
-                        Updating websocket server options
-                        Updating websocket server trusted certificates
-                        Trying to listening on 127.0.0.1:4231
-                        Started Listening on planquickly.com:4231 (127.0.0.1) after 5.54s
-                        Mounted on 127-0-0-1.planquickly.com:4231
-                        Exposing Controller RequireController-e2f811f3-14b8-4759-b0d6-73f14516cf1d
-                        Received TCP connection from 127.0.0.1:42105
-                        Received TCP header packet from 127.0.0.1:42105, have 1894 bytes so far, 1 packets
-                        Received TCP connection with SNI "127-0-0-1.planquickly.com". Have handlers for: planquickly.com, 127-0-0-1.planquickly.com
-                        HTTP server connection established 127.0.0.1:42105
-                        HTTP request (GET) https://127-0-0-1.planquickly.com:4231/?hot
-                        HTTP response  106KB  (GET) https://127-0-0-1.planquickly.com:4231/?hot
-                        HTTP server socket closed for 127.0.0.1:42105
-                        Received TCP connection from 127.0.0.1:42106
-                        Received TCP header packet from 127.0.0.1:42106, have 1862 bytes so far, 1 packets
-                        Received TCP connection with SNI "127-0-0-1.planquickly.com". Have handlers for: planquickly.com, 127-0-0-1.planquickly.com
-                        HTTP server connection established 127.0.0.1:42106
-                        HTTP request (GET) https://127-0-0-1.planquickly.com:4231/?classGuid=RequireController-e2f811f3-14b8-4759-b0d6-73f14516cf1d&functionName=getModules&args=%5B%5B%22.%2Fsite%2FsiteMain%22%5D%2Cnull%5D
-                        HTTP response  10.8MB  (GET) https://127-0-0-1.planquickly.com:4231/?classGuid=RequireController-e2f811f3-14b8-4759-b0d6-73f14516cf1d&functionName=getModules&args=%5B%5B%22.%2Fsite%2FsiteMain%22%5D%2Cnull%5D
-                        Received TCP connection from 127.0.0.1:42107
-                        Received TCP header packet from 127.0.0.1:42107, have 1894 bytes so far, 1 packets
-                        Received TCP connection with SNI "127-0-0-1.planquickly.com". Have handlers for: planquickly.com, 127-0-0-1.planquickly.com
-                        HTTP server connection established 127.0.0.1:42107
-                        HTTP server socket closed for 127.0.0.1:42106
-                        HTTP server socket closed for 127.0.0.1:42107
-                        Received TCP connection from 127.0.0.1:42108
-                        Received TCP header packet from 127.0.0.1:42108, have 1830 bytes so far, 1 packets
-                        Received TCP connection with SNI "127-0-0-1.planquickly.com". Have handlers for: planquickly.com, 127-0-0-1.planquickly.com
-                        HTTP server connection established 127.0.0.1:42108
-                        HTTP request (GET) https://127-0-0-1.planquickly.com:4231/node.cjs.map
-                        HTTP response  106KB  (GET) https://127-0-0-1.planquickly.com:4231/node.cjs.map
-                        HTTP server socket closed for 127.0.0.1:42108
-                        Received TCP connection from 127.0.0.1:42110
-                        Received TCP header packet from 127.0.0.1:42110, have 1818 bytes so far, 1 packets
-                        Received TCP connection with SNI "127-0-0-1.planquickly.com". Have handlers for: planquickly.com, 127-0-0-1.planquickly.com
-                        HTTP server connection established 127.0.0.1:42110
-                        Received TCP connection from 127.0.0.1:42111
-                        Received TCP header packet from 127.0.0.1:42111, have 1830 bytes so far, 1 packets
-                        Received TCP connection with SNI "127-0-0-1.planquickly.com". Have handlers for: planquickly.com, 127-0-0-1.planquickly.com
-                        HTTP server connection established 127.0.0.1:42111
-                        Received websocket upgrade request for 127.0.0.1:42110
-                        Connection established to client:127.0.0.1:1744150129862.296:0.4118126921519041
-                        HTTP request (GET) https://127-0-0-1.planquickly.com:4231/?classGuid=RequireController-e2f811f3-14b8-4759-b0d6-73f14516cf1d&functionName=getModules&args=%5B%5B%22D%3A%2Frepos%2Fperspectanalytics%2Fai3%2Fnode_modules%2Fsocket-function%2Ftime%2FtrueTimeShim.ts%22%5D%2C%7B%22requireSeqNumProcessId%22%3A%22requireSeqNumProcessId_1744150120269_0.5550074391586426%22%2C%22seqNumRanges%22%3A%5B%7B%22s%22%3A1%2C%22e%22%3A892%7D%5D%7D%5D
-                        HTTP response  31.1KB  (GET) https://127-0-0-1.planquickly.com:4231/?classGuid=RequireController-e2f811f3-14b8-4759-b0d6-73f14516cf1d&functionName=getModules&args=%5B%5B%22D%3A%2Frepos%2Fperspectanalytics%2Fai3%2Fnode_modules%2Fsocket-function%2Ftime%2FtrueTimeShim.ts%22%5D%2C%7B%22requireSeqNumProcessId%22%3A%22requireSeqNumProcessId_1744150120269_0.5550074391586426%22%2C%22seqNumRanges%22%3A%5B%7B%22s%22%3A1%2C%22e%22%3A892%7D%5D%7D%5D
-                        SIZE    171B    EVALUATE        HotReloadController-032b2250-3aac-4187-8c95-75412742b8f5.watchFiles at 1744150129869.296
-                        SIZE    174B    EVALUATE        ServerController-17ea53da-bbef-4c8b-9eb0-99e263464c6f.testSiteFunction at 1744150129872.296
-                        HTTP server socket closed for 127.0.0.1:42111
-                        SIZE    167B    EVALUATE        TimeController-ddf4753e-fc8a-413f-8cc2-b927dd449976.getTrueTime at 1744150129893.296
-                        SIZE    167B    EVALUATE        TimeController-ddf4753e-fc8a-413f-8cc2-b927dd449976.getTrueTime at 1744150129897.296
-                        SIZE    167B    EVALUATE        TimeController-ddf4753e-fc8a-413f-8cc2-b927dd449976.getTrueTime at 1744150129899.296
-                        SIZE    167B    EVALUATE        TimeController-ddf4753e-fc8a-413f-8cc2-b927dd449976.getTrueTime at 1744150139907.0776
-                        SIZE    167B    EVALUATE        TimeController-ddf4753e-fc8a-413f-8cc2-b927dd449976.getTrueTime at 1744150139909.0776
-                        SIZE    167B    EVALUATE        TimeController-ddf4753e-fc8a-413f-8cc2-b927dd449976.getTrueTime at 1744150139911.0776
-                        Hot reloading due to change: D:/repos/perspectanalytics/ai3/node_modules/socket-function/src/webSocketServer.ts
-                    - The upgrade request finishes, at least once: Received websocket upgrade
-                        - AND, we are receiving some calls, so... that appears to work.
-                        - Maybe the time calls never finish?
-                            - We added logging for when calls finish as well, so we can tell if all the TimeController calls timed out
-                            - ALSO, added more logging to see if the calls were from the same client (which WOULD be a bug, because
-                                the client shouldn't be calling us so often), or, different clients.
-                        - We DO receive more connections than http connections closed. But not that many more...
-                */
-                console.log(red(`Call to ${call.classGuid}.${call.functionName} at ${Date.now()}`));
+                call.isArgsCompressed = undefined;
             }
             if (SocketFunction.logMessages) {
                 console.log(`SIZE\t${(formatNumberSuffixed(resultSize) + "B").padEnd(4, " ")}\tEVALUATE\t${call.classGuid}.${call.functionName} at ${Date.now()}, (${nodeId} / ${localNodeId})`);
@@ -614,9 +596,17 @@ export async function createCallFactory(
                     let timeTaken = Date.now() - time;
                     console.log(`DUR\t${(formatTime(timeTaken)).padEnd(6, " ")}\tFINISH\t${call.classGuid}.${call.functionName} at ${Date.now()}, (${nodeId} / ${localNodeId})`);
                 }
-                if (shouldCompressCall(call)) {
-                    response.result = await compressObj(response.result, sendStats) as any;
-                    response.isResultCompressed = true;
+                if (callFactory.receivedInitializeState?.supportsLZ4) {
+                    let compressMode = shouldCompressCall(call);
+                    if (compressMode !== false) {
+                        response.result = await compressObjLZ4(response.result, sendStats);
+                        response.isResultCompressed = "LZ4";
+                    }
+                } else {
+                    if (shouldCompressCall(call)) {
+                        response.result = await compressObj(response.result, sendStats);
+                        response.isResultCompressed = "zip";
+                    }
                 }
             } catch (e: any) {
                 response = {
@@ -726,11 +716,19 @@ export async function createCallFactory(
                 return;
             }
             if (message instanceof Buffer) {
-                if (message.byteLength > 1000 * 1000 * 10) {
-                    console.log(`Received large packet ${formatNumber(message.byteLength)}B at ${Date.now()}`);
-                }
                 if (!pendingCall) {
-                    throw new Error(`Received data without size`);
+                    throw new Error(`Received data without size ${message.byteLength}B, first 100 bytes: ${message.slice(0, 100).toString("hex")}`);
+                }
+                if (message.byteLength > 1000 * 1000 * 10 || pendingCall.bufferCount > 1000 && (pendingCall.buffers.length % 100 === 0)) {
+                    if (pendingCall.buffers.length === 0) {
+                        console.log(`Received large/many packets ${formatNumber(message.byteLength)}B (${pendingCall.buffers.length} / ${pendingCall.bufferCount}) at ${Date.now()}`);
+                    } else {
+                        let elapsed = Date.now() - (pendingCall.firstReceivedTime || 0);
+                        console.log(`Received large/many packets ${formatNumber(message.byteLength)}B (${pendingCall.buffers.length} / ${pendingCall.bufferCount}) after ${formatTime(elapsed)}`);
+                    }
+                }
+                if (pendingCall.buffers.length === 0) {
+                    pendingCall.firstReceivedTime = Date.now();
                 }
                 pendingCall.buffers.push(message);
                 if (pendingCall.buffers.length !== pendingCall.bufferCount) {
@@ -753,6 +751,20 @@ export async function createCallFactory(
                 console.error(e.stack);
             }
         }
+    }
+
+
+    if (!SocketFunction.LEGACY_INITIALIZE) {
+        let initState: InitializeState = {
+            supportsLZ4: true,
+        };
+        let initReturn: InternalReturnType = {
+            isReturn: true,
+            result: initState,
+            seqNum: INITIALIZE_STATE_SEQ_NUM,
+        };
+        let data = await SocketFunction.WIRE_SERIALIZER.serialize(initReturn);
+        await send(data);
     }
 
     return callFactory;
@@ -790,6 +802,9 @@ type CompressionStats = {
 
 const compressObj = measureWrap(async function wireCallCompress(obj: unknown, stats: CompressionStats): Promise<Buffer> {
     let buffers = await SocketFunction.WIRE_SERIALIZER.serialize(obj);
+    if (buffers.length > 1) {
+        throw new Error("Legacy CompressObj only supports single buffer");
+    }
     let lengthBuffer = Buffer.from((new Float64Array(buffers.map(x => x.length))).buffer);
     let buffer = Buffer.concat([lengthBuffer, ...buffers]);
     stats.uncompressedSize += buffer.length;
@@ -811,4 +826,179 @@ const decompressObj = measureWrap(async function wireCallDecompress(obj: Buffer,
     }
     let result = await SocketFunction.WIRE_SERIALIZER.deserialize(buffers);
     return result;
+});
+
+const compressObjLZ4 = measureWrap(async function wireCallCompressLZ4(obj: unknown, stats: CompressionStats): Promise<Buffer[]> {
+    let headerParts: number[];
+    let dataBuffers: Buffer[];
+
+    if (obj instanceof Buffer) {
+        headerParts = [1];
+        dataBuffers = [obj];
+    } else if (Array.isArray(obj) && obj.every((x: any) => x instanceof Buffer)) {
+        let bufferArray = obj as Buffer[];
+        const TARGET_SIZE = 50 * 1024 * 1024;
+        const MIN_INDIVIDUAL_SIZE = 10 * 1024 * 1024;
+        const MAX_UNSPLIT_SIZE = 100 * 1024 * 1024;
+
+        let outputBuffers: Buffer[] = [];
+        let outputDescriptors: number[][] = [];
+        let currentGroup: Buffer[] = [];
+        let currentGroupSize = 0;
+
+        function flushCurrentGroup() {
+            if (currentGroup.length > 0) {
+                outputBuffers.push(Buffer.concat(currentGroup));
+                outputDescriptors.push(currentGroup.map(b => b.length));
+                currentGroup = [];
+                currentGroupSize = 0;
+            }
+        }
+
+        for (let buf of bufferArray) {
+            if (buf.length >= MIN_INDIVIDUAL_SIZE) {
+                flushCurrentGroup();
+
+                if (buf.length > MAX_UNSPLIT_SIZE) {
+                    let offset = 0;
+                    while (offset < buf.length) {
+                        let chunkSize = Math.min(TARGET_SIZE, buf.length - offset);
+                        outputBuffers.push(buf.slice(offset, offset + chunkSize));
+                        outputDescriptors.push([chunkSize]);
+                        offset += chunkSize;
+                    }
+                } else {
+                    outputBuffers.push(buf);
+                    outputDescriptors.push([buf.length]);
+                }
+            } else {
+                currentGroup.push(buf);
+                currentGroupSize += buf.length;
+
+                if (currentGroupSize >= TARGET_SIZE) {
+                    flushCurrentGroup();
+                }
+            }
+        }
+
+        flushCurrentGroup();
+
+        headerParts = [2, outputBuffers.length];
+        for (let descriptor of outputDescriptors) {
+            headerParts.push(descriptor.length, ...descriptor);
+        }
+        dataBuffers = outputBuffers;
+    } else {
+        let buffers = await SocketFunction.WIRE_SERIALIZER.serialize(obj);
+        headerParts = [3, buffers.length];
+        dataBuffers = buffers;
+    }
+
+    let headerBuffer = Buffer.from((new Float64Array(headerParts)).buffer);
+    let allBuffers = [headerBuffer, ...dataBuffers];
+
+    stats.uncompressedSize += allBuffers.reduce((sum, buf) => sum + buf.length, 0);
+
+    let compressed: Buffer[] = [];
+    let startTime = Date.now();
+    let lastWarnTime = startTime;
+    let currentUncompressedSize = 0;
+    let currentCompressedSize = 0;
+
+    function logIfSlow(i: number) {
+        let now = Date.now();
+        if (now - lastWarnTime > 500) {
+            let elapsed = now - startTime;
+            console.log(`Slow LZ4 compress (${formatTime(elapsed)}: ${i + 1}/${allBuffers.length} buffers, ${formatNumber(currentUncompressedSize)}B => ${formatNumber(currentCompressedSize)}B`);
+            lastWarnTime = now;
+        }
+    }
+
+    for (let i = 0; i < allBuffers.length; i++) {
+        let buf = allBuffers[i];
+        currentUncompressedSize += buf.length;
+        let compressedBuf = LZ4.compress(buf);
+        compressed.push(compressedBuf);
+        currentCompressedSize += compressedBuf.length;
+
+        logIfSlow(i);
+    }
+    logIfSlow(allBuffers.length);
+
+    stats.compressedSize += currentCompressedSize;
+
+    return compressed;
+});
+
+const decompressObjLZ4 = measureWrap(async function wireCallDecompressLZ4(obj: Buffer[], stats: CompressionStats): Promise<unknown> {
+    stats.compressedSize += obj.reduce((sum, buf) => sum + buf.length, 0);
+
+    let decompressed: Buffer[] = [];
+    let startTime = Date.now();
+    let lastWarnTime = startTime;
+    let currentCompressedSize = 0;
+    let currentUncompressedSize = 0;
+    function logIfSlow(i: number) {
+        let now = Date.now();
+        if (now - lastWarnTime > 500) {
+            let elapsed = now - startTime;
+            console.log(`Slow LZ4 decompress (${formatTime(elapsed)}): ${i + 1}/${obj.length} buffers, ${formatNumber(currentCompressedSize)}B => ${formatNumber(currentUncompressedSize)}B`);
+            lastWarnTime = now;
+        }
+    }
+
+    for (let i = 0; i < obj.length; i++) {
+        let buf = obj[i];
+        currentCompressedSize += buf.length;
+        let decompressedBuf = LZ4.decompress(buf);
+        decompressed.push(decompressedBuf);
+        currentUncompressedSize += decompressedBuf.length;
+
+        logIfSlow(i);
+    }
+    logIfSlow(obj.length);
+
+    stats.uncompressedSize += currentUncompressedSize;
+
+    let headerBuffer = decompressed[0];
+    let dataBuffers = decompressed.slice(1);
+
+    let typeBuffer = headerBuffer.slice(0, 8);
+    let type = new Float64Array(typeBuffer.buffer, typeBuffer.byteOffset, 1)[0];
+
+    if (type === 1) {
+        return dataBuffers[0];
+    }
+
+    if (type === 2) {
+        let headerData = new Float64Array(headerBuffer.buffer, headerBuffer.byteOffset, headerBuffer.byteLength / 8);
+        let outputBufferCount = headerData[1];
+
+        let buffers: Buffer[] = [];
+        let headerIndex = 2;
+
+        for (let i = 0; i < outputBufferCount; i++) {
+            let inputBufferCount = headerData[headerIndex++];
+            let sizes: number[] = [];
+            for (let j = 0; j < inputBufferCount; j++) {
+                sizes.push(headerData[headerIndex++]);
+            }
+
+            let outputBuffer = dataBuffers[i];
+            let offset = 0;
+            for (let size of sizes) {
+                buffers.push(outputBuffer.slice(offset, offset + size));
+                offset += size;
+            }
+        }
+
+        return buffers;
+    }
+
+    if (type === 3) {
+        let result = await SocketFunction.WIRE_SERIALIZER.deserialize(dataBuffers);
+        return result;
+    }
+
+    throw new Error(`Unknown compression type ${type}`);
 });

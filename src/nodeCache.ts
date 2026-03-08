@@ -49,6 +49,8 @@ export function getNodeIdLocation(nodeId: string): { address: string, port: numb
     return { address, port: parseInt(port) };
 }
 
+// NOTE: This returns the full domain.
+//  - It didn't used to, but I think it also wasn't used before, and now we're using this to find the ip. 
 export function getNodeIdDomain(nodeId: string): string {
     let result = getNodeIdDomainMaybeUndefined(nodeId);
     if (result === undefined) {
@@ -61,7 +63,7 @@ export function getNodeIdDomainMaybeUndefined(nodeId: string): string | undefine
     if (!location) {
         return undefined;
     }
-    return new URL(location.address).hostname.split(".").slice(-2).join(".");
+    return new URL("https://" + location.address).hostname;
 }
 
 // NOTE: CallFactory turns into an actual CallFactory when registerNodeClient is called

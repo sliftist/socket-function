@@ -330,3 +330,40 @@ export function retryFunctional<T extends AnyFunction>(fnc: T, config?: {
         return await runFnc(args, maxRetries);
     } as any;
 }
+
+export const safeLoop = unblockLoop;
+export const throttledLoop = unblockLoop;
+export async function unblockLoop<T, R>(config: {
+    data: T[];
+    maxBlockingTime?: number;
+    backOffTime?: number;
+} | T[], fnc: (item: T) => MaybePromise<R>): Promise<R[]> {
+
+    let data = Array.isArray(config) ? config : config.data;
+    let maxBlockingTime = 300;
+    let backOffTime = 50;
+    if (!Array.isArray(config)) {
+        maxBlockingTime = config.maxBlockingTime ?? 300;
+        backOffTime = config.backOffTime ?? 50;
+    }
+
+    let lastYieldTime = Date.now();
+    let results: R[] = [];
+
+    for (let item of data) {
+        let result = fnc(item);
+
+        // If the function returns a promise, await it
+        if (result && typeof result === "object" && "then" in result) {
+            result = await result;
+        }
+        results.push(result);
+
+        // Check if we've been blocking for too long
+        if (Date.now() - lastYieldTime > maxBlockingTime) {
+            await delay(backOffTime);
+            lastYieldTime = Date.now();
+        }
+    }
+    return results;
+}

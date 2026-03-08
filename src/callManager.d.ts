@@ -1,7 +1,7 @@
 /// <reference path="../hot/HotReloadController.d.ts" />
 import { CallerContext, CallType, ClientHookContext, FullCallType, FunctionFlags, HookContext, SocketExposedInterface, SocketExposedShape, SocketFunctionClientHook, SocketFunctionHook, SocketRegistered } from "../SocketFunctionTypes";
 export declare function getCallFlags(call: CallType): FunctionFlags | undefined;
-export declare function shouldCompressCall(call: CallType): boolean;
+export declare function shouldCompressCall(call: CallType): boolean | "LZ4" | undefined;
 export declare function performLocalCall(config: {
     call: FullCallType;
     caller: CallerContext;

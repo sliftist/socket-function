@@ -1,4 +1,4 @@
-import { AnyFunction } from "./types";
+import { AnyFunction, MaybePromise } from "./types";
 export type DelayType = (number | "afterio" | "immediate" | "afterpromises" | "paintLoop" | "afterPaint");
 export declare function delay(delayTime: DelayType, immediateShortDelays?: "immediateShortDelays"): Promise<void>;
 export declare function batchFunctionNone<Arg, Result = void>(config: unknown, fnc: (arg: Arg[]) => (Promise<Result> | Result)): (arg: Arg) => Promise<Result>;
@@ -29,3 +29,10 @@ export declare function retryFunctional<T extends AnyFunction>(fnc: T, config?: 
     minDelay?: number;
     maxDelay?: number;
 }): T;
+export declare const safeLoop: typeof unblockLoop;
+export declare const throttledLoop: typeof unblockLoop;
+export declare function unblockLoop<T, R>(config: {
+    data: T[];
+    maxBlockingTime?: number;
+    backOffTime?: number;
+} | T[], fnc: (item: T) => MaybePromise<R>): Promise<R[]>;

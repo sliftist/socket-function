@@ -16,7 +16,7 @@ export type SocketExposedInterfaceClass = {
     prototype: unknown;
 };
 export type FunctionFlags = {
-    compress?: boolean;
+    compress?: boolean | "LZ4";
     /** Indicates with the same input, we give the same output, forever,
      *      independent of code changes. This only works for data storage.
      */

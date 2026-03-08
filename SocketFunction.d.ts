@@ -22,12 +22,17 @@ export declare class SocketFunction {
     static HTTP_ETAG_CACHE: boolean;
     static silent: boolean;
     static HTTP_COMPRESS: boolean;
+    static LEGACY_INITIALIZE: boolean;
     static COEP: string;
     static COOP: string;
     static readonly WIRE_SERIALIZER: {
         serialize: (obj: unknown) => MaybePromise<Buffer[]>;
         deserialize: (buffers: Buffer[]) => MaybePromise<unknown>;
     };
+    /** We will try the alternate node IDs first, however, if they fail, we will go through all of them and then eventually try the original node ID.
+     *      VERY useful, allowing us to change global ips to local ones, which short-circuits the router, massively increasing bandwidth and decreasing latency.
+     */
+    static GET_ALTERNATE_NODE_IDS: (nodeId: string) => MaybePromise<string[] | undefined>;
     static WIRE_WARN_TIME: number;
     private static onMountCallbacks;
     static exposedClasses: Set<string>;

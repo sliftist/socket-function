@@ -23,7 +23,8 @@ export type SocketExposedInterfaceClass = {
     prototype: unknown;
 };
 export type FunctionFlags = {
-    compress?: boolean;
+    // If the other side of the connection supports it, this will default to LZ4. True will also remap to LZ4, the only way to turn it off is by setting false. 
+    compress?: boolean | "LZ4";
 
     /** Indicates with the same input, we give the same output, forever,
      *      independent of code changes. This only works for data storage.

@@ -9,6 +9,7 @@ export interface CallFactory {
     lastClosed: number;
     closedForever?: boolean;
     isConnected?: boolean;
+    receivedInitializeState?: InitializeState;
     performCall(call: CallType): Promise<unknown>;
     onNextDisconnect(callback: () => void): void;
     connectionId: {
@@ -28,6 +29,9 @@ export interface SenderInterface {
     readyState: number;
     ping?(): void;
 }
+type InitializeState = {
+    supportsLZ4?: boolean;
+};
 export declare function harvestFailedCallCount(): number;
 export declare function getPendingCallCount(): number;
 export declare function harvestCallTimes(): {
@@ -35,3 +39,4 @@ export declare function harvestCallTimes(): {
     end: number;
 }[];
 export declare function createCallFactory(webSocketBase: SenderInterface | undefined, nodeId: string, localNodeId?: string): Promise<CallFactory>;
+export {};

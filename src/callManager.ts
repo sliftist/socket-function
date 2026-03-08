@@ -21,7 +21,7 @@ export function getCallFlags(call: CallType): FunctionFlags | undefined {
     return classes[call.classGuid]?.shape[call.functionName];
 }
 export function shouldCompressCall(call: CallType) {
-    return !!classes[call.classGuid]?.shape[call.functionName]?.compress;
+    return classes[call.classGuid]?.shape[call.functionName]?.compress;
 }
 
 export async function performLocalCall(

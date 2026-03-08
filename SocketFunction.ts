@@ -17,6 +17,7 @@ import cborx from "cbor-x";
 import { setFlag } from "./require/compileFlags";
 import { isNode } from "./src/misc";
 import { getPendingCallCount, harvestCallTimes, harvestFailedCallCount } from "./src/CallFactory";
+import { measureWrap } from "./src/profiling/measure";
 
 setFlag(require, "cbor-x", "allowclient", true);
 let cborxInstance = new cborx.Encoder({ structuredClone: true });
@@ -60,6 +61,8 @@ export class SocketFunction {
 
     public static HTTP_COMPRESS = false;
 
+    public static LEGACY_INITIALIZE = false;
+
     // If you have HTTP resources that require cookies you might to set `SocketFunction.COEP = "require-corp"`
     //  - Cross-origin-resource-policy.
     public static COEP = "credentialless";
@@ -69,10 +72,16 @@ export class SocketFunction {
     // In retrospect... dynamically changing the wire serializer is a BAD idea. If any calls happen
     //  before it is changed, things just break. Also, it needs to be changed on both sides,
     //  or else things break. Also, it is very hard to detect when the issue is different serializers
+    // NOTE: The only reason this is still exposed is in case in the future we want to intercept our traffic, and we want convenient functions to know how to decode it (although there are a still few other layers under this, for compression and Buffer[] sending efficiency).
     public static readonly WIRE_SERIALIZER = {
-        serialize: (obj: unknown): MaybePromise<Buffer[]> => [cborxInstance.encode(obj)],
-        deserialize: (buffers: Buffer[]): MaybePromise<unknown> => cborxInstance.decode(buffers[0]),
+        serialize: measureWrap((obj: unknown): MaybePromise<Buffer[]> => [cborxInstance.encode(obj)], "WIRE_SERIALIZER|serialize"),
+        deserialize: measureWrap((buffers: Buffer[]): MaybePromise<unknown> => cborxInstance.decode(buffers[0]), "WIRE_SERIALIZER|deserialize"),
     };
+
+    /** We will try the alternate node IDs first, however, if they fail, we will go through all of them and then eventually try the original node ID. 
+     *      VERY useful, allowing us to change global ips to local ones, which short-circuits the router, massively increasing bandwidth and decreasing latency.
+     */
+    public static GET_ALTERNATE_NODE_IDS = (nodeId: string): MaybePromise<string[] | undefined> => undefined;
 
     public static WIRE_WARN_TIME = 100;
 

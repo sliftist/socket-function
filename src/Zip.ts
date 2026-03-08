@@ -10,7 +10,7 @@ setFlag(require, "pako", "allowclient", true);
 const SYNC_THRESHOLD_BYTES = 100_000_000;
 const ZIP_SYNC_THRESHOLD_BYTES = 10_000_000;
 
-// IMPORTANT! If this ever profiles as being slow, we should switch to a wasm implementation of L4Z. For our highly repetitive data, it's almost as efficient in terms of size, and it should be significantly more efficient in terms of time.
+// IMPORTANT! If this is slow, add a LZ4 version, which uses lz4-wasm-nodejs. This should be about 10X faster in both dcompression and decompression, only using 50% more space (which isn't great, but... if it is lagging the main thread it might be worth it).
 export class Zip {
     @measureFnc
     public static async gzip(buffer: Buffer, level?: number): Promise<Buffer> {
