@@ -130,5 +130,6 @@ export type CallerContextBase = {
     //  requests can be redirected to us and would accept them, even though they are being
     //  blatantly MITMed).
     //  IF they are the server, calling us back, then this will just be ""
+    // If they're connecting on the same machine, this might be a special domain (127-0-0-1.querysub.com). This is controlled by the GET_ALTERNATE_NODE_IDS override.
     localNodeId: string;
 };
