@@ -1,19 +1,21 @@
 {
 	"name": "socket-function",
-	"version": "1.1.8",
+	"version": "1.1.10",
 	"main": "index.js",
 	"license": "MIT",
 	"dependencies": {
 		"@types/pako": "^2.0.3",
 		"@types/ws": "^8.5.3",
 		"cbor-x": "^1.6.0",
-		"lmdb": "^3.5.1",
 		"mobx": "^6.6.2",
 		"pako": "^2.1.0",
 		"preact": "10.24.3",
 		"typedev": "^0.4.0",
 		"typenode": "^6.0.1",
 		"ws": "^8.17.1"
+	},
+	"optionalDependencies": {
+		"lmdb": "^3.5.1"
 	},
 	"types": "index.d.ts",
 	"scripts": {
