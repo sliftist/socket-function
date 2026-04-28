@@ -69,6 +69,8 @@ export class SocketFunction {
     // NOTE: This COOP and COEP defaults are required so window.crossOriginIsolated will be true.
     public static COOP = "same-origin";
 
+    public static TOTAL_CALLS = 0;
+
     // In retrospect... dynamically changing the wire serializer is a BAD idea. If any calls happen
     //  before it is changed, things just break. Also, it needs to be changed on both sides,
     //  or else things break. Also, it is very hard to detect when the issue is different serializers
@@ -287,6 +289,7 @@ export class SocketFunction {
         }
     }
 
+    /** Will dedupe callbacks, so if you call with the same callback it won't call it multiple times (otherwise it's difficult to manage this, as this only calls on the NEXT callback). */
     public static onNextDisconnect(nodeId: string, callback: () => void) {
         (async () => {
             let factory = await getCallFactory(nodeId);

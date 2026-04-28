@@ -19,8 +19,12 @@ export declare function runInParallel<T extends (...args: any[]) => Promise<any>
     parallelCount: number;
     callTimeout?: number;
 }, fnc: T): T;
-export declare function runInfinitePoll(delayTime: number, fnc: () => Promise<void> | void): void;
-export declare function runInfinitePollCallAtStart(delayTime: number, fnc: () => Promise<void> | void): Promise<void>;
+export declare function runInfinitePoll(delayTime: number, fnc: () => Promise<void> | void, stopObj?: {
+    stop: boolean;
+}): void;
+export declare function runInfinitePollCallAtStart(delayTime: number, fnc: () => Promise<void> | void, stopObj?: {
+    stop: boolean;
+}): Promise<void>;
 /** Disables polling, called on shutdown. Blocks until all pending poll loops finish */
 export declare function shutdownPolling(): Promise<void>;
 export declare function retryFunctional<T extends AnyFunction>(fnc: T, config?: {

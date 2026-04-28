@@ -25,6 +25,7 @@ export declare class SocketFunction {
     static LEGACY_INITIALIZE: boolean;
     static COEP: string;
     static COOP: string;
+    static TOTAL_CALLS: number;
     static readonly WIRE_SERIALIZER: {
         serialize: (obj: unknown) => MaybePromise<Buffer[]>;
         deserialize: (buffers: Buffer[]) => MaybePromise<unknown>;
@@ -63,6 +64,7 @@ export declare class SocketFunction {
     private static socketCache;
     static rehydrateSocketCaller<Controller>(socketRegistered: SocketRegisterType<Controller>, shapeFnc?: () => SocketExposedShape): SocketRegistered<Controller>;
     private static callFromGuid;
+    /** Will dedupe callbacks, so if you call with the same callback it won't call it multiple times (otherwise it's difficult to manage this, as this only calls on the NEXT callback). */
     static onNextDisconnect(nodeId: string, callback: () => void): void;
     static getLastDisconnectTime(nodeId: string): number | undefined;
     static isNodeConnected(nodeId: string): boolean;

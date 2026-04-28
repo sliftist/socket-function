@@ -6,12 +6,14 @@ import * as ws from "ws";
 import * as tls from "tls";
 export interface CallFactory {
     nodeId: string;
+    realNodeId?: string;
     lastClosed: number;
     closedForever?: boolean;
     isConnected?: boolean;
     receivedInitializeState?: InitializeState;
     performCall(call: CallType): Promise<unknown>;
     onNextDisconnect(callback: () => void): void;
+    disconnect(): void;
     connectionId: {
         nodeId: string;
     };
@@ -20,6 +22,7 @@ export interface SenderInterface {
     nodeId?: string;
     _socket?: tls.TLSSocket;
     send(data: string | Buffer): void;
+    close(): void;
     addEventListener(event: "open", listener: () => void): void;
     addEventListener(event: "close", listener: () => void): void;
     addEventListener(event: "error", listener: (err: {

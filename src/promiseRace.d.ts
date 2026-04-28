@@ -1,10 +1,5 @@
-export declare class PromiseLessLeaky<T> extends Promise<T> {
-    constructor(executor: ((resolve: (value: T | PromiseLike<T>) => void, reject: (reason?: any) => void) => void) | undefined);
-}
-/** A promise race function which doesn't leak, unlike Promise.race
-
-    See https://github.com/nodejs/node/issues/17469
-    See https://bugs.chromium.org/p/v8/issues/detail?id=9858#c9
-
+/** Fixed Promise.race, which doesn't leak promises values. Promises still leak the Promise object themselves, but a Promise is < 100 bytes, where as the promise VALUE might be arbitrarily large.
  */
-export declare function promiseRace<T extends readonly unknown[] | []>(promises: T): Promise<Awaited<T[number]>>;
+export declare function PromiseRace<T extends any[]>(promises: {
+    [K in keyof T]: Promise<T[K]>;
+}): Promise<T[number]>;

@@ -77,7 +77,7 @@ const hotReloadModule = cache((module: NodeJS.Module) => {
     let interval = 1000;
     let fast = false;
     if (module.hotreload) {
-        interval = 10;
+        interval = 100;
         fast = true;
     }
 

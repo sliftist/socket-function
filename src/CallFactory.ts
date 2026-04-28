@@ -5,7 +5,7 @@ import { convertErrorStackToError, formatNumberSuffixed, isBufferType, isNode, l
 import { createWebsocketFactory, getTLSSocket } from "./websocketFactory";
 import { SocketFunction } from "../SocketFunction";
 import * as tls from "tls";
-import { getClientNodeId, getNodeIdLocation, registerNodeClient } from "./nodeCache";
+import { changeNodeId, getClientNodeId, getNodeIdLocation, registerNodeClient } from "./nodeCache";
 import debugbreak from "debugbreak";
 import { lazy } from "./caching";
 import { blue, green, red, yellow } from "./formatting/logColors";
@@ -44,6 +44,7 @@ type InternalReturnType = {
 
 export interface CallFactory {
     nodeId: string;
+    realNodeId?: string;
     lastClosed: number;
     closedForever?: boolean;
     isConnected?: boolean;
@@ -52,6 +53,8 @@ export interface CallFactory {
     //  Trigger performLocalCall on the other side of the connection
     performCall(call: CallType): Promise<unknown>;
     onNextDisconnect(callback: () => void): void;
+    disconnect(): void;
+    // If we change the node ID we need to recreate this object, essentially this object should be immutable. I forget why we wanted this. I think it's because we didn't know for sure if node ID would be unique, but it will be. 
     connectionId: { nodeId: string };
 }
 
@@ -61,6 +64,7 @@ export interface SenderInterface {
     _socket?: tls.TLSSocket;
 
     send(data: string | Buffer): void;
+    close(): void;
 
     addEventListener(event: "open", listener: () => void): void;
     addEventListener(event: "close", listener: () => void): void;
@@ -114,7 +118,7 @@ export async function createCallFactory(
     const createWebsocket = createWebsocketFactory();
     const registerOnce = lazy(() => registerNodeClient(callFactory));
 
-    const canReconnect = !!getNodeIdLocation(nodeId);
+    let canReconnect = !!getNodeIdLocation(nodeId);
 
     let pendingCalls: Map<number, {
         data: Buffer[];
@@ -145,9 +149,9 @@ export async function createCallFactory(
         localNodeId
     };
 
-    let disconnectCallbacks: (() => void)[] = [];
+    let disconnectCallbacks = new Set<() => void>();
     function onNextDisconnect(callback: () => void): void {
-        disconnectCallbacks.push(callback);
+        disconnectCallbacks.add(callback);
     }
 
     let callFactory: CallFactory = {
@@ -156,6 +160,13 @@ export async function createCallFactory(
         connectionId: { nodeId },
         receivedInitializeState: undefined,
         onNextDisconnect,
+        disconnect() {
+            canReconnect = false;
+            callFactory.closedForever = true;
+            if (webSocketPromise) {
+                webSocketPromise.then(ws => ws.close()).catch(() => { });
+            }
+        },
         async performCall(call: CallType) {
             let seqNum = nextSeqNum++;
             let fullCall: InternalCallType = {
@@ -315,7 +326,7 @@ export async function createCallFactory(
             }
 
             let callbacks = disconnectCallbacks;
-            disconnectCallbacks = [];
+            disconnectCallbacks = new Set();
             for (let callback of callbacks) {
                 try {
                     callback();
@@ -547,6 +558,9 @@ export async function createCallFactory(
         if (call.isReturn) {
             if (!SocketFunction.LEGACY_INITIALIZE && call.seqNum === INITIALIZE_STATE_SEQ_NUM) {
                 callFactory.receivedInitializeState = call.result as InitializeState;
+                if (SocketFunction.logMessages) {
+                    console.log(green(`Received initialize state from ${callFactory.realNodeId} (for ${nodeId}) at ${Date.now()}`));
+                }
                 return;
             }
             let callbackObj = pendingCalls.get(call.seqNum);
@@ -586,6 +600,7 @@ export async function createCallFactory(
 
             let response: InternalReturnType;
             try {
+                SocketFunction.TOTAL_CALLS++;
                 let result = await performLocalCall({ call, caller: callerContext });
                 response = {
                     isReturn: true,
@@ -719,12 +734,13 @@ export async function createCallFactory(
                 if (!pendingCall) {
                     throw new Error(`Received data without size ${message.byteLength}B, first 100 bytes: ${message.slice(0, 100).toString("hex")}`);
                 }
-                if (message.byteLength > 1000 * 1000 * 10 || pendingCall.bufferCount > 1000 && (pendingCall.buffers.length % 100 === 0)) {
+                let totalSize = message.byteLength + pendingCall.buffers.reduce((a, b) => a + b.length, 0);
+                if (totalSize > 1000 * 1000 * 10 || pendingCall.bufferCount > 1000 && (pendingCall.buffers.length % 100 === 0)) {
                     if (pendingCall.buffers.length === 0) {
-                        console.log(`Received large/many packets ${formatNumber(message.byteLength)}B (${pendingCall.buffers.length} / ${pendingCall.bufferCount}) at ${Date.now()}`);
+                        console.log(`Received large/many packets ${formatNumber(totalSize)}B (${pendingCall.buffers.length} / ${pendingCall.bufferCount}) at ${Date.now()}`);
                     } else {
                         let elapsed = Date.now() - (pendingCall.firstReceivedTime || 0);
-                        console.log(`Received large/many packets ${formatNumber(message.byteLength)}B (${pendingCall.buffers.length} / ${pendingCall.bufferCount}) after ${formatTime(elapsed)}`);
+                        console.log(`Received large/many packets ${formatNumber(totalSize)}B (${pendingCall.buffers.length} / ${pendingCall.bufferCount}) after ${formatTime(elapsed)}`);
                     }
                 }
                 if (pendingCall.buffers.length === 0) {
@@ -763,13 +779,18 @@ export async function createCallFactory(
             result: initState,
             seqNum: INITIALIZE_STATE_SEQ_NUM,
         };
+        if (SocketFunction.logMessages) {
+            console.log(`Sending initialize state to ${nodeId}`);
+        }
         let data = await SocketFunction.WIRE_SERIALIZER.serialize(initReturn);
         await send(data);
+        if (SocketFunction.logMessages) {
+            console.log(`Sent initialize state to ${nodeId}`);
+        }
     }
 
     return callFactory;
 }
-
 
 
 let uncompressedSent = 0;

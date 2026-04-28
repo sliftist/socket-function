@@ -77,6 +77,20 @@ export function registerNodeClient(callFactory: CallFactory) {
     startCleanupLoop();
 }
 
+export function changeNodeId(config: {
+    originalNodeId: string;
+    newNodeId: string;
+    callFactory: CallFactory;
+}) {
+    if (nodeCache.has(config.newNodeId)) {
+        console.warn(`Received connection we already have. Likely we and them tried to connect at the same time. Other nodeId: ${config.newNodeId}`);
+        return false;
+    }
+    nodeCache.delete(config.originalNodeId);
+    nodeCache.set(config.newNodeId, config.callFactory);
+    return true;
+}
+
 export function getCreateCallFactory(nodeId: string): MaybePromise<CallFactory> {
     let callFactory = nodeCache.get(nodeId);
     if (callFactory === undefined) {
@@ -87,6 +101,17 @@ export function getCreateCallFactory(nodeId: string): MaybePromise<CallFactory> 
 }
 export function getCallFactory(nodeId: string): MaybePromise<CallFactory | undefined> {
     return nodeCache.get(nodeId);
+}
+
+export function debugGetAllCallFactories(): CallFactory[] {
+    let result: CallFactory[] = [];
+    for (let [key, value] of nodeCache.entries()) {
+        if (value instanceof Promise) {
+            continue;
+        }
+        result.push(value);
+    }
+    return result;
 }
 
 export function resetAllNodeCallFactories() {

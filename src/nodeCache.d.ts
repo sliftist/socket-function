@@ -18,7 +18,13 @@ export declare function getNodeIdLocation(nodeId: string): {
 export declare function getNodeIdDomain(nodeId: string): string;
 export declare function getNodeIdDomainMaybeUndefined(nodeId: string): string | undefined;
 export declare function registerNodeClient(callFactory: CallFactory): void;
+export declare function changeNodeId(config: {
+    originalNodeId: string;
+    newNodeId: string;
+    callFactory: CallFactory;
+}): boolean;
 export declare function getCreateCallFactory(nodeId: string): MaybePromise<CallFactory>;
 export declare function getCallFactory(nodeId: string): MaybePromise<CallFactory | undefined>;
+export declare function debugGetAllCallFactories(): CallFactory[];
 export declare function resetAllNodeCallFactories(): void;
 export declare function countOpenConnections(): number;

@@ -253,10 +253,11 @@ let pendingPolls = new Set<Promise<unknown>>();
 
 export function runInfinitePoll(
     delayTime: number,
-    fnc: () => Promise<void> | void
+    fnc: () => Promise<void> | void,
+    stopObj?: { stop: boolean; }
 ) {
     void (async () => {
-        while (pollingRunning) {
+        while (!stopObj?.stop && pollingRunning) {
             await delay(delayTime);
             if (!pollingRunning) break;
             await runPollFnc(fnc);
@@ -266,13 +267,14 @@ export function runInfinitePoll(
 
 export async function runInfinitePollCallAtStart(
     delayTime: number,
-    fnc: () => Promise<void> | void
+    fnc: () => Promise<void> | void,
+    stopObj?: { stop: boolean; }
 ) {
     try {
         return await fnc();
     } finally {
         void (async () => {
-            while (true) {
+            while (!stopObj?.stop && pollingRunning) {
                 await delay(delayTime);
                 if (!pollingRunning) break;
                 await runPollFnc(fnc);

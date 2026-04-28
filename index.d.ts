@@ -34,6 +34,7 @@ declare module "socket-function/SocketFunction" {
         static LEGACY_INITIALIZE: boolean;
         static COEP: string;
         static COOP: string;
+        static TOTAL_CALLS: number;
         static readonly WIRE_SERIALIZER: {
             serialize: (obj: unknown) => MaybePromise<Buffer[]>;
             deserialize: (buffers: Buffer[]) => MaybePromise<unknown>;
@@ -72,6 +73,7 @@ declare module "socket-function/SocketFunction" {
         private static socketCache;
         static rehydrateSocketCaller<Controller>(socketRegistered: SocketRegisterType<Controller>, shapeFnc?: () => SocketExposedShape): SocketRegistered<Controller>;
         private static callFromGuid;
+        /** Will dedupe callbacks, so if you call with the same callback it won't call it multiple times (otherwise it's difficult to manage this, as this only calls on the NEXT callback). */
         static onNextDisconnect(nodeId: string, callback: () => void): void;
         static getLastDisconnectTime(nodeId: string): number | undefined;
         static isNodeConnected(nodeId: string): boolean;
@@ -465,12 +467,14 @@ declare module "socket-function/src/CallFactory" {
     import * as tls from "tls";
     export interface CallFactory {
         nodeId: string;
+        realNodeId?: string;
         lastClosed: number;
         closedForever?: boolean;
         isConnected?: boolean;
         receivedInitializeState?: InitializeState;
         performCall(call: CallType): Promise<unknown>;
         onNextDisconnect(callback: () => void): void;
+        disconnect(): void;
         connectionId: {
             nodeId: string;
         };
@@ -479,6 +483,7 @@ declare module "socket-function/src/CallFactory" {
         nodeId?: string;
         _socket?: tls.TLSSocket;
         send(data: string | Buffer): void;
+        close(): void;
         addEventListener(event: "open", listener: () => void): void;
         addEventListener(event: "close", listener: () => void): void;
         addEventListener(event: "error", listener: (err: {
@@ -590,8 +595,12 @@ declare module "socket-function/src/batching" {
         parallelCount: number;
         callTimeout?: number;
     }, fnc: T): T;
-    export declare function runInfinitePoll(delayTime: number, fnc: () => Promise<void> | void): void;
-    export declare function runInfinitePollCallAtStart(delayTime: number, fnc: () => Promise<void> | void): Promise<void>;
+    export declare function runInfinitePoll(delayTime: number, fnc: () => Promise<void> | void, stopObj?: {
+        stop: boolean;
+    }): void;
+    export declare function runInfinitePollCallAtStart(delayTime: number, fnc: () => Promise<void> | void, stopObj?: {
+        stop: boolean;
+    }): Promise<void>;
     /** Disables polling, called on shutdown. Blocks until all pending poll loops finish */
     export declare function shutdownPolling(): Promise<void>;
     export declare function retryFunctional<T extends AnyFunction>(fnc: T, config?: {
@@ -1060,8 +1069,14 @@ declare module "socket-function/src/nodeCache" {
     export declare function getNodeIdDomain(nodeId: string): string;
     export declare function getNodeIdDomainMaybeUndefined(nodeId: string): string | undefined;
     export declare function registerNodeClient(callFactory: CallFactory): void;
+    export declare function changeNodeId(config: {
+        originalNodeId: string;
+        newNodeId: string;
+        callFactory: CallFactory;
+    }): boolean;
     export declare function getCreateCallFactory(nodeId: string): MaybePromise<CallFactory>;
     export declare function getCallFactory(nodeId: string): MaybePromise<CallFactory | undefined>;
+    export declare function debugGetAllCallFactories(): CallFactory[];
     export declare function resetAllNodeCallFactories(): void;
     export declare function countOpenConnections(): number;
 
@@ -1250,16 +1265,11 @@ declare module "socket-function/src/profiling/tcpLagProxy" {
 }
 
 declare module "socket-function/src/promiseRace" {
-    export declare class PromiseLessLeaky<T> extends Promise<T> {
-        constructor(executor: ((resolve: (value: T | PromiseLike<T>) => void, reject: (reason?: any) => void) => void) | undefined);
-    }
-    /** A promise race function which doesn't leak, unlike Promise.race
-
-        See https://github.com/nodejs/node/issues/17469
-        See https://bugs.chromium.org/p/v8/issues/detail?id=9858#c9
-
+    /** Fixed Promise.race, which doesn't leak promises values. Promises still leak the Promise object themselves, but a Promise is < 100 bytes, where as the promise VALUE might be arbitrarily large.
      */
-    export declare function promiseRace<T extends readonly unknown[] | []>(promises: T): Promise<Awaited<T[number]>>;
+    export declare function PromiseRace<T extends any[]>(promises: {
+        [K in keyof T]: Promise<T[K]>;
+    }): Promise<T[number]>;
 
 }
 
