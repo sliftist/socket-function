@@ -48,41 +48,34 @@ export class JSONLACKS {
     public static EXTENDED_PARSER = false;
     public static IGNORE_MISSING_REFERENCES = false;
 
-    @measureFnc
     public static stringify(obj: unknown, config?: JSONLACKS_StringifyConfig): string {
         let serialized = JSONLACKS.escapeSpecialObjects(obj, config);
-        return measureBlock(function JSONstringify() { return JSON.stringify(serialized); });
+        return JSON.stringify(serialized);
     }
     /** Is useful when serializing an array to a file with one object per line */
-    @measureFnc
     public static async stringifyFile(obj: unknown[], config?: JSONLACKS_StringifyConfig): Promise<Buffer> {
         let serialized = JSONLACKS.escapeSpecialObjects(obj, config) as unknown[];
-        return await measureBlock(async function JSONstringifyAndJoin() {
-            let buffers: Buffer[] = [];
-            for (let i = 0; i < serialized.length; i += SERIALIZE_OBJECT_BATCH_COUNT) {
-                let str = serialized.slice(i, i + SERIALIZE_OBJECT_BATCH_COUNT).map(x => JSON.stringify(x) + "\n").join("");
-                buffers.push(Buffer.from(str));
-                await delay("immediate");
-            }
-            // Break up into chunks, as string => Buffer i
-            return Buffer.concat(buffers);
-        });
+        let buffers: Buffer[] = [];
+        for (let i = 0; i < serialized.length; i += SERIALIZE_OBJECT_BATCH_COUNT) {
+            let str = serialized.slice(i, i + SERIALIZE_OBJECT_BATCH_COUNT).map(x => JSON.stringify(x) + "\n").join("");
+            buffers.push(Buffer.from(str));
+            await delay("immediate");
+        }
+        // Break up into chunks, as string => Buffer i
+        return Buffer.concat(buffers);
     }
     public static stringifyFileSync(obj: unknown[], config?: JSONLACKS_StringifyConfig): Buffer {
         let serialized = JSONLACKS.escapeSpecialObjects(obj, config) as unknown[];
-        return measureBlock(function JSONstringifyAndJoin() {
-            let buffers: Buffer[] = [];
-            for (let i = 0; i < serialized.length; i += SERIALIZE_OBJECT_BATCH_COUNT) {
-                let str = serialized.slice(i, i + SERIALIZE_OBJECT_BATCH_COUNT).map(x => JSON.stringify(x) + "\n").join("");
-                buffers.push(Buffer.from(str));
-            }
-            // Break up into chunks, as string => Buffer i
-            return Buffer.concat(buffers);
-        });
+        let buffers: Buffer[] = [];
+        for (let i = 0; i < serialized.length; i += SERIALIZE_OBJECT_BATCH_COUNT) {
+            let str = serialized.slice(i, i + SERIALIZE_OBJECT_BATCH_COUNT).map(x => JSON.stringify(x) + "\n").join("");
+            buffers.push(Buffer.from(str));
+        }
+        // Break up into chunks, as string => Buffer i
+        return Buffer.concat(buffers);
     }
     // TIMING: Seems to be about 40X slower than JSON.parse unless extended is set to false,
     //  then it is about 2X slower (although it depends on the size and complexity of the objects!)
-    @measureFnc
     public static parse<T>(text: string, config?: JSONLACKS_ParseConfig, hydrateState?: HydrateState): T {
         // Empty string should parse to SOMETHING
         if (text.trim() === "") return undefined as T;
@@ -91,18 +84,17 @@ export class JSONLACKS {
         let extendedParsing = config?.extended ?? JSONLACKS.EXTENDED_PARSER;
 
         if (extendedParsing) {
-            obj = measureBlock(function JSONextendedParse() { return parser.parse(text); });
+            obj = parser.parse(text);
         } else {
             try {
-                obj = measureBlock(function JSONparse() { return JSON.parse(text); });
+                obj = JSON.parse(text);
             } catch {
-                obj = measureBlock(function JSONextendedParse() { return parser.parse(text); });
+                obj = parser.parse(text);
             }
         }
 
         return JSONLACKS.hydrateSpecialObjects(obj, hydrateState, config) as T;
     }
-    @measureFnc
     public static async parseLines<T>(buffer: Buffer, config?: JSONLACKS_ParseConfig): Promise<T[]> {
         let output: T[] = [];
         let pos = 0;
@@ -176,7 +168,6 @@ export class JSONLACKS {
         return output;
     }
 
-    @measureFnc
     private static escapeSpecialObjects(obj: unknown, config?: JSONLACKS_StringifyConfig): unknown {
         // I think iterating twice for references is the fastest way to do it?
         let objects = new Set<unknown>();
@@ -265,7 +256,6 @@ export class JSONLACKS {
         }
     }
 
-    @measureFnc
     private static hydrateSpecialObjects(obj: unknown, hydrateState?: HydrateState, config?: JSONLACKS_ParseConfig): unknown {
         let references = hydrateState?.references || new Map<string, unknown>();
         let visited = hydrateState?.visited || new Set<unknown>();
