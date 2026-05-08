@@ -1,3 +1,4 @@
+import { formatTime } from "./formatting/format";
 import { PromiseObj, isNode, timeoutToError } from "./misc";
 import { measureWrap } from "./profiling/measure";
 import { AnyFunction, Args, MaybePromise } from "./types";
@@ -333,8 +334,9 @@ export function retryFunctional<T extends AnyFunction>(fnc: T, config?: {
     } as any;
 }
 
-export const safeLoop = unblockLoop;
+/** @deprecated Use safeLoop instead */
 export const throttledLoop = unblockLoop;
+/** @deprecated Use safeLoop instead */
 export async function unblockLoop<T, R>(config: {
     data: T[];
     maxBlockingTime?: number;
@@ -366,6 +368,77 @@ export async function unblockLoop<T, R>(config: {
             await delay(backOffTime);
             lastYieldTime = Date.now();
         }
+    }
+    return results;
+}
+
+export async function safeLoop<T, R>(config: {
+    data: T[];
+    fnc: (item: T) => MaybePromise<R>;
+    /** If set, yields after blocking for this many ms. ONLY applies if your function does not return promises. Default = 1000ms */
+    maxBlockingTime?: number;
+    /** Fraction of time spent active vs yielded. e.g. 0.5 => after running X ms, wait X ms before continuing. */
+    maxActiveFraction?: number;
+    doNotWarnOnSlow?: boolean;
+    name?: string;
+}): Promise<R[]> {
+    let { data, fnc, maxActiveFraction, doNotWarnOnSlow, name } = config;
+    let maxBlockingTime = config.maxBlockingTime ?? 1000;
+
+    let label = name || fnc.name || fnc.toString().slice(0, 100);
+    let startTime = Date.now();
+    let index = 0;
+    let indexStartTime = Date.now();
+    let done = false;
+
+    if (!doNotWarnOnSlow) {
+        void (async () => {
+            while (!done) {
+                await delay(5000);
+                if (done) break;
+                let message = `${label} @ ${index} / ${data.length} | ${formatTime(Date.now() - startTime)}`;
+                let timeOnCurrent = Date.now() - indexStartTime;
+                if (timeOnCurrent > 5000) {
+                    message += `| SLOW INDEX (${index}) ${formatTime(timeOnCurrent)}+`;
+                }
+                console.log(message);
+            }
+        })();
+    }
+
+    let results: R[] = [];
+    let activeTimeSinceYield = 0;
+    try {
+        for (index = 0; index < data.length; index++) {
+            indexStartTime = Date.now();
+            let result = fnc(data[index]);
+            let isPromise = false;
+            if (result && typeof result === "object" && "then" in result) {
+                isPromise = true;
+                result = await result;
+            }
+            results.push(result);
+
+            activeTimeSinceYield += Date.now() - indexStartTime;
+
+            let backOffTime: number | undefined;
+
+            if (!isPromise && activeTimeSinceYield > maxBlockingTime) {
+                backOffTime = 0;
+            }
+
+            if (maxActiveFraction !== undefined && maxActiveFraction > 0 && maxActiveFraction < 1) {
+                let target = activeTimeSinceYield / maxActiveFraction - activeTimeSinceYield;
+                backOffTime = Math.max(backOffTime ?? 0, target);
+            }
+
+            if (backOffTime !== undefined) {
+                await delay(backOffTime);
+                activeTimeSinceYield = 0;
+            }
+        }
+    } finally {
+        done = true;
     }
     return results;
 }
