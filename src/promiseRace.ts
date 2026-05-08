@@ -59,18 +59,18 @@ function connectPromiseToCallbackObj(promise: any, callbackObj: any) {
             // We need to delete the callback lists once on finally happens. Because we only connect to the promise once, And so it'll only trigger us once. So removing it is the only way to get it to trigger us again if someone subscribes to a finished promise. 
             promiseCallbacks.delete(promise);
             for (let fnc of callbackObj.onResolve.slice()) {
-                try { fnc(value); } finally { }
+                try { fnc(value); } catch { }
             }
         },
         (value: any) => {
             promiseCallbacks.delete(promise);
             for (let fnc of callbackObj.onReject.slice()) {
-                try { fnc(value); } finally { }
+                try { fnc(value); } catch { }
             }
         }
     ).finally(() => {
         for (let fnc of callbackObj.onFinally.slice()) {
-            try { fnc(); } finally { }
+            try { fnc(); } catch { }
         }
     });
 }
