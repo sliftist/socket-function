@@ -22,7 +22,6 @@ export declare class SocketFunction {
     static HTTP_ETAG_CACHE: boolean;
     static silent: boolean;
     static HTTP_COMPRESS: boolean;
-    static LEGACY_INITIALIZE: boolean;
     static COEP: string;
     static COOP: string;
     static TOTAL_CALLS: number;

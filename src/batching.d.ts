@@ -43,11 +43,10 @@ export declare function unblockLoop<T, R>(config: {
 } | T[], fnc: (item: T) => MaybePromise<R>): Promise<R[]>;
 export declare function safeLoop<T, R>(config: {
     data: T[];
-    fnc: (item: T) => MaybePromise<R>;
+    name?: string;
     /** If set, yields after blocking for this many ms. ONLY applies if your function does not return promises. Default = 1000ms */
     maxBlockingTime?: number;
     /** Fraction of time spent active vs yielded. e.g. 0.5 => after running X ms, wait X ms before continuing. */
     maxActiveFraction?: number;
     doNotWarnOnSlow?: boolean;
-    name?: string;
-}): Promise<R[]>;
+}, fnc: (item: T) => MaybePromise<R>): Promise<R[]>;

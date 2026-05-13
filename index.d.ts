@@ -31,7 +31,6 @@ declare module "socket-function/SocketFunction" {
         static HTTP_ETAG_CACHE: boolean;
         static silent: boolean;
         static HTTP_COMPRESS: boolean;
-        static LEGACY_INITIALIZE: boolean;
         static COEP: string;
         static COOP: string;
         static TOTAL_CALLS: number;
@@ -472,6 +471,7 @@ declare module "socket-function/src/CallFactory" {
         closedForever?: boolean;
         isConnected?: boolean;
         receivedInitializeState?: InitializeState;
+        protocolNegotiated?: boolean;
         performCall(call: CallType): Promise<unknown>;
         onNextDisconnect(callback: () => void): void;
         disconnect(): void;
@@ -482,6 +482,7 @@ declare module "socket-function/src/CallFactory" {
     export interface SenderInterface {
         nodeId?: string;
         _socket?: tls.TLSSocket;
+        protocol?: string;
         send(data: string | Buffer): void;
         close(): void;
         addEventListener(event: "open", listener: () => void): void;
@@ -619,14 +620,13 @@ declare module "socket-function/src/batching" {
     } | T[], fnc: (item: T) => MaybePromise<R>): Promise<R[]>;
     export declare function safeLoop<T, R>(config: {
         data: T[];
-        fnc: (item: T) => MaybePromise<R>;
+        name?: string;
         /** If set, yields after blocking for this many ms. ONLY applies if your function does not return promises. Default = 1000ms */
         maxBlockingTime?: number;
         /** Fraction of time spent active vs yielded. e.g. 0.5 => after running X ms, wait X ms before continuing. */
         maxActiveFraction?: number;
         doNotWarnOnSlow?: boolean;
-        name?: string;
-    }): Promise<R[]>;
+    }, fnc: (item: T) => MaybePromise<R>): Promise<R[]>;
 
 }
 
@@ -1080,11 +1080,6 @@ declare module "socket-function/src/nodeCache" {
     export declare function getNodeIdDomain(nodeId: string): string;
     export declare function getNodeIdDomainMaybeUndefined(nodeId: string): string | undefined;
     export declare function registerNodeClient(callFactory: CallFactory): void;
-    export declare function changeNodeId(config: {
-        originalNodeId: string;
-        newNodeId: string;
-        callFactory: CallFactory;
-    }): boolean;
     export declare function getCreateCallFactory(nodeId: string): MaybePromise<CallFactory>;
     export declare function getCallFactory(nodeId: string): MaybePromise<CallFactory | undefined>;
     export declare function debugGetAllCallFactories(): CallFactory[];
@@ -1284,6 +1279,25 @@ declare module "socket-function/src/promiseRace" {
 
 }
 
+declare module "socket-function/src/protocolNegotiation" {
+    export type ConnectionFlags = {
+        clientLZ4: boolean;
+        serverLZ4: boolean;
+    };
+    export type DecodedProtocol = {
+        target: string;
+        flags: ConnectionFlags;
+    };
+    export declare function decodeProtocol(hex: string): DecodedProtocol | undefined;
+    export declare function proposeProtocols(target: string | undefined, clientCapabilities: {
+        lz4: boolean;
+    }): string[];
+    export declare function chooseProtocol(proposed: string[], serverNodeId: string, serverCapabilities: {
+        lz4: boolean;
+    }): string | undefined;
+
+}
+
 declare module "socket-function/src/runPromise" {
     export declare const runAsync: typeof runPromise;
     export declare function runPromise(command: string, config?: {
@@ -1420,10 +1434,11 @@ declare module "socket-function/src/websocketFactory" {
     import { SenderInterface } from "socket-function/src/CallFactory";
     import type * as ws from "ws";
     export declare function getTLSSocket(webSocket: ws.WebSocket): tls.TLSSocket;
+    export type WebsocketFactory = (nodeId: string, proposedProtocols?: string[]) => SenderInterface;
     /** NOTE: We create a factory, which embeds the key/cert information. Otherwise retries might use
      *      a different key/cert context.
      */
-    export declare function createWebsocketFactory(): (nodeId: string) => SenderInterface;
+    export declare function createWebsocketFactory(): WebsocketFactory;
 
 }
 

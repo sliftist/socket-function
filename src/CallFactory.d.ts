@@ -11,6 +11,7 @@ export interface CallFactory {
     closedForever?: boolean;
     isConnected?: boolean;
     receivedInitializeState?: InitializeState;
+    protocolNegotiated?: boolean;
     performCall(call: CallType): Promise<unknown>;
     onNextDisconnect(callback: () => void): void;
     disconnect(): void;
@@ -21,6 +22,7 @@ export interface CallFactory {
 export interface SenderInterface {
     nodeId?: string;
     _socket?: tls.TLSSocket;
+    protocol?: string;
     send(data: string | Buffer): void;
     close(): void;
     addEventListener(event: "open", listener: () => void): void;

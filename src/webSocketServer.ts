@@ -3,6 +3,7 @@ import http from "http";
 import net from "net";
 import tls from "tls";
 import { getNodeIdsFromRequest, httpCallHandler } from "./callHTTPHandler";
+import { chooseProtocol, decodeProtocol } from "./protocolNegotiation";
 import { SocketFunction } from "../SocketFunction";
 import { getTrustedCertificates, watchTrustedCertificates } from "./certStore";
 import { createCallFactory } from "./CallFactory";
@@ -63,6 +64,26 @@ export async function startSocketServer(
 
     const webSocketServer = new ws.Server({
         noServer: true,
+        // Negotiate connection-level flags via Sec-WebSocket-Protocol. The
+        // client proposes hex-encoded values that include the target nodeId;
+        // we accept only those whose target matches OUR identity
+        // (SocketFunction.mountedNodeId — not the address the client used to
+        // reach us). If none match we return false, which rejects the
+        // handshake — exactly the semantics we want (indistinguishable from
+        // "node not reachable"). If the client sent no Sec-WebSocket-Protocol
+        // at all, this callback isn't invoked and the handshake proceeds as
+        // a legacy client.
+        handleProtocols: (protocols, request) => {
+            const ourNodeId = SocketFunction.mountedNodeId;
+            const proposed = Array.from(protocols);
+            const chosen = chooseProtocol(proposed, ourNodeId, { lz4: true });
+            if (!chosen) {
+                const proposedDecoded = proposed.map(p => decodeProtocol(p) ?? `<undecodable: ${p}>`);
+                console.log(`Rejecting handshake on ${ourNodeId}: none of the ${proposed.length} proposed protocols target us`, { ourNodeId, proposedDecoded });
+                return false;
+            }
+            return chosen;
+        },
     });
 
     async function setupHTTPSServer(watchOptions: Watchable<https.ServerOptions>) {

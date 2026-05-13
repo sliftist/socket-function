@@ -5,7 +5,7 @@ import { convertErrorStackToError, formatNumberSuffixed, isBufferType, isNode, l
 import { createWebsocketFactory, getTLSSocket } from "./websocketFactory";
 import { SocketFunction } from "../SocketFunction";
 import * as tls from "tls";
-import { changeNodeId, getClientNodeId, getNodeIdLocation, registerNodeClient } from "./nodeCache";
+import { getClientNodeId, getNodeIdLocation, registerNodeClient } from "./nodeCache";
 import debugbreak from "debugbreak";
 import { lazy } from "./caching";
 import { blue, green, red, yellow } from "./formatting/logColors";
@@ -18,7 +18,8 @@ import { setFlag } from "../require/compileFlags";
 import { measureFnc, measureWrap, registerMeasureInfo } from "./profiling/measure";
 import { MaybePromise } from "./types";
 import { Zip } from "./Zip";
-import { LZ4 } from "./lz4/LZ4";
+import { decodeProtocol, proposeProtocols } from "./protocolNegotiation";
+setImmediate(() => import("./lz4/LZ4"));
 
 setFlag(require, "pako", "allowclient", true);
 
@@ -49,6 +50,9 @@ export interface CallFactory {
     closedForever?: boolean;
     isConnected?: boolean;
     receivedInitializeState?: InitializeState;
+    // True if the connection was established with a negotiated
+    // Sec-WebSocket-Protocol (so the legacy initialize packet should be skipped).
+    protocolNegotiated?: boolean;
     // NOTE: May or may not have reconnection or retry logic inside of performCall.
     //  Trigger performLocalCall on the other side of the connection
     performCall(call: CallType): Promise<unknown>;
@@ -62,6 +66,9 @@ export interface SenderInterface {
     nodeId?: string;
     // Only set AFTER "open" (if set at all, as in the browser we don't have access to the socket).
     _socket?: tls.TLSSocket;
+    // The chosen Sec-WebSocket-Protocol value (set after "open" by both Node `ws`
+    // and the browser WebSocket). Empty string means none was negotiated.
+    protocol?: string;
 
     send(data: string | Buffer): void;
     close(): void;
@@ -368,6 +375,23 @@ export async function createCallFactory(
         } else {
             onClose(new Error(`Websocket received in closed state`).stack!);
         }
+
+        if (callFactory.lastClosed && callFactory.isConnected) {
+            console.log(`Successfully reconnected to ${nodeId}, which has been closed for ${formatTime(Date.now() - callFactory.lastClosed)}`, { nodeId });
+        }
+
+        if (callFactory.isConnected && newWebSocket.protocol) {
+            let decoded = decodeProtocol(newWebSocket.protocol);
+            if (decoded) {
+                callFactory.receivedInitializeState = {
+                    supportsLZ4: decoded.flags.serverLZ4,
+                };
+                callFactory.protocolNegotiated = true;
+                if (SocketFunction.logMessages) {
+                    console.log(green(`Negotiated protocol with ${niceConnectionName}: target=${decoded.target}, clientLZ4=${decoded.flags.clientLZ4}, serverLZ4=${decoded.flags.serverLZ4}`));
+                }
+            }
+        }
     }
 
     const BASE_LENGTH_OFFSET = 324_432_461_592_612;
@@ -458,12 +482,12 @@ export async function createCallFactory(
         }
         lastConnectionAttempt = Date.now();
 
-        // Try alternates, and if any work, use them
+        // Try alternates, and if any work, use them.
         try {
             let alternates = await SocketFunction.GET_ALTERNATE_NODE_IDS(nodeId);
             if (alternates) {
                 for (let alternateNodeId of alternates) {
-                    let newWebSocket = createWebsocket(alternateNodeId);
+                    let newWebSocket = createWebsocket(alternateNodeId, proposeProtocols(isNode() ? nodeId : undefined, { lz4: true }));
                     await initializeWebsocket(newWebSocket, true);
 
                     if (callFactory.isConnected) {
@@ -475,7 +499,7 @@ export async function createCallFactory(
             console.error("Error getting alternate node IDs", e);
         }
 
-        let newWebSocket = createWebsocket(nodeId);
+        let newWebSocket = createWebsocket(nodeId, proposeProtocols(isNode() ? nodeId : undefined, { lz4: true }));
         await initializeWebsocket(newWebSocket);
 
         return newWebSocket;
@@ -556,11 +580,10 @@ export async function createCallFactory(
         };
 
         if (call.isReturn) {
-            if (!SocketFunction.LEGACY_INITIALIZE && call.seqNum === INITIALIZE_STATE_SEQ_NUM) {
-                callFactory.receivedInitializeState = call.result as InitializeState;
-                if (SocketFunction.logMessages) {
-                    console.log(green(`Received initialize state from ${callFactory.realNodeId} (for ${nodeId}) at ${Date.now()}`));
-                }
+            // Tolerate the legacy initialize packet from old peers — silently
+            // ignore so it doesn't get logged as an unknown call. Our actual
+            // initialize state comes from Sec-WebSocket-Protocol negotiation.
+            if (call.seqNum === INITIALIZE_STATE_SEQ_NUM) {
                 return;
             }
             let callbackObj = pendingCalls.get(call.seqNum);
@@ -770,25 +793,6 @@ export async function createCallFactory(
     }
 
 
-    if (!SocketFunction.LEGACY_INITIALIZE) {
-        let initState: InitializeState = {
-            supportsLZ4: true,
-        };
-        let initReturn: InternalReturnType = {
-            isReturn: true,
-            result: initState,
-            seqNum: INITIALIZE_STATE_SEQ_NUM,
-        };
-        if (SocketFunction.logMessages) {
-            console.log(`Sending initialize state to ${nodeId}`);
-        }
-        let data = await SocketFunction.WIRE_SERIALIZER.serialize(initReturn);
-        await send(data);
-        if (SocketFunction.logMessages) {
-            console.log(`Sent initialize state to ${nodeId}`);
-        }
-    }
-
     return callFactory;
 }
 
@@ -850,6 +854,7 @@ const decompressObj = measureWrap(async function wireCallDecompress(obj: Buffer,
 });
 
 const compressObjLZ4 = measureWrap(async function wireCallCompressLZ4(obj: unknown, stats: CompressionStats): Promise<Buffer[]> {
+    const { LZ4 } = await import("./lz4/LZ4");
     let headerParts: number[];
     let dataBuffers: Buffer[];
 
@@ -952,6 +957,8 @@ const compressObjLZ4 = measureWrap(async function wireCallCompressLZ4(obj: unkno
 });
 
 const decompressObjLZ4 = measureWrap(async function wireCallDecompressLZ4(obj: Buffer[], stats: CompressionStats): Promise<unknown> {
+
+    const { LZ4 } = await import("./lz4/LZ4");
     stats.compressedSize += obj.reduce((sum, buf) => sum + buf.length, 0);
 
     let decompressed: Buffer[] = [];

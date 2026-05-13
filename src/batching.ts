@@ -1,4 +1,5 @@
 import { formatTime } from "./formatting/format";
+import { red } from "./formatting/logColors";
 import { PromiseObj, isNode, timeoutToError } from "./misc";
 import { measureWrap } from "./profiling/measure";
 import { AnyFunction, Args, MaybePromise } from "./types";
@@ -374,18 +375,17 @@ export async function unblockLoop<T, R>(config: {
 
 export async function safeLoop<T, R>(config: {
     data: T[];
-    fnc: (item: T) => MaybePromise<R>;
+    name?: string;
     /** If set, yields after blocking for this many ms. ONLY applies if your function does not return promises. Default = 1000ms */
     maxBlockingTime?: number;
     /** Fraction of time spent active vs yielded. e.g. 0.5 => after running X ms, wait X ms before continuing. */
     maxActiveFraction?: number;
     doNotWarnOnSlow?: boolean;
-    name?: string;
-}): Promise<R[]> {
-    let { data, fnc, maxActiveFraction, doNotWarnOnSlow, name } = config;
+}, fnc: (item: T) => MaybePromise<R>): Promise<R[]> {
+    let { data, maxActiveFraction, doNotWarnOnSlow, name } = config;
     let maxBlockingTime = config.maxBlockingTime ?? 1000;
 
-    let label = name || fnc.name || fnc.toString().slice(0, 100);
+    let label = name || fnc.name || fnc.toString().slice(0, 100).replaceAll("\n", "\\n");
     let startTime = Date.now();
     let index = 0;
     let indexStartTime = Date.now();
@@ -396,7 +396,7 @@ export async function safeLoop<T, R>(config: {
             while (!done) {
                 await delay(5000);
                 if (done) break;
-                let message = `${label} @ ${index} / ${data.length} | ${formatTime(Date.now() - startTime)}`;
+                let message = `${red("SLOW LOOP")} | ${index} / ${data.length} | ${formatTime(Date.now() - startTime)} | ${label}`;
                 let timeOnCurrent = Date.now() - indexStartTime;
                 if (timeOnCurrent > 5000) {
                     message += `| SLOW INDEX (${index}) ${formatTime(timeOnCurrent)}+`;

@@ -11,13 +11,15 @@ export function getTLSSocket(webSocket: ws.WebSocket) {
     return (webSocket as any)._socket as tls.TLSSocket;
 }
 
+export type WebsocketFactory = (nodeId: string, proposedProtocols?: string[]) => SenderInterface;
+
 /** NOTE: We create a factory, which embeds the key/cert information. Otherwise retries might use
  *      a different key/cert context.
  */
-export function createWebsocketFactory(): (nodeId: string) => SenderInterface {
+export function createWebsocketFactory(): WebsocketFactory {
 
     if (!isNode()) {
-        return (nodeId: string) => {
+        return (nodeId: string, proposedProtocols?: string[]) => {
             let location = getNodeIdLocation(nodeId);
             if (!location) throw new Error(`Cannot connect to ${nodeId}, no address known`);
             let { address, port } = location;
@@ -25,10 +27,13 @@ export function createWebsocketFactory(): (nodeId: string) => SenderInterface {
             if (!SocketFunction.silent) {
                 console.log(`Connecting to ${address}:${port}`);
             }
+            if (proposedProtocols && proposedProtocols.length > 0) {
+                return new WebSocket(`wss://${address}:${port}`, proposedProtocols);
+            }
             return new WebSocket(`wss://${address}:${port}`);
         };
     } else {
-        return (nodeId: string) => {
+        return (nodeId: string, proposedProtocols?: string[]) => {
             let location = getNodeIdLocation(nodeId);
             if (!location) throw new Error(`Cannot connect to ${nodeId}, no address known`);
             let { address, port } = location;
@@ -37,7 +42,7 @@ export function createWebsocketFactory(): (nodeId: string) => SenderInterface {
                 console.log(`Connecting to ${address}:${port}`);
             }
             const ws = require("ws") as typeof import("ws");
-            let webSocket = new ws.WebSocket(`wss://${address}:${port}`, undefined, {
+            let webSocket = new ws.WebSocket(`wss://${address}:${port}`, proposedProtocols, {
                 ca: getTrustedCertificates(),
             });
 
@@ -49,4 +54,3 @@ export function createWebsocketFactory(): (nodeId: string) => SenderInterface {
         };
     }
 }
-

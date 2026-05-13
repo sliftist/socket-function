@@ -61,8 +61,6 @@ export class SocketFunction {
 
     public static HTTP_COMPRESS = false;
 
-    public static LEGACY_INITIALIZE = false;
-
     // If you have HTTP resources that require cookies you might to set `SocketFunction.COEP = "require-corp"`
     //  - Cross-origin-resource-policy.
     public static COEP = "credentialless";
