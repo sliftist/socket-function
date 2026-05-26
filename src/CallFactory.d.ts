@@ -44,4 +44,12 @@ export declare function harvestCallTimes(): {
     end: number;
 }[];
 export declare function createCallFactory(webSocketBase: SenderInterface | undefined, nodeId: string, localNodeId?: string): Promise<CallFactory>;
+export declare function getStats(): {
+    uncompressedSent: number;
+    compressedSent: number;
+    uncompressedReceived: number;
+    compressedReceived: number;
+    sendCount: number;
+    receiveCount: number;
+};
 export {};

@@ -3,7 +3,7 @@
 import { SocketExposedInterface, SocketFunctionHook, SocketFunctionClientHook, SocketExposedShape, SocketRegistered, CallerContext, FullCallType, CallType, FncType, SocketRegisterType } from "./SocketFunctionTypes";
 import { exposeClass, registerClass, registerGlobalClientHook, registerGlobalHook, runClientHooks } from "./src/callManager";
 import { SocketServerConfig, startSocketServer } from "./src/webSocketServer";
-import { getCallFactory, getCreateCallFactory, getNodeId, getNodeIdLocation } from "./src/nodeCache";
+import { getCallFactory, getCreateCallFactory, getNodeId, getNodeIdLocation, isClientNodeId } from "./src/nodeCache";
 import { getCallProxy } from "./src/nodeProxy";
 import { Args, MaybePromise } from "./src/types";
 import { setDefaultHTTPCall } from "./src/callHTTPHandler";
@@ -287,8 +287,18 @@ export class SocketFunction {
         }
     }
 
-    /** Will dedupe callbacks, so if you call with the same callback it won't call it multiple times (otherwise it's difficult to manage this, as this only calls on the NEXT callback). */
-    public static onNextDisconnect(nodeId: string, callback: () => void) {
+    /** Will dedupe callbacks, so if you call with the same callback it won't call it multiple times (otherwise it's difficult to manage this, as this only calls on the NEXT callback).
+        IMPORTANT! Client node ids will NEVER reconnect, so this can full cleanup. However full nodeIds might if we try to use that nodeId again, so this cannot fully clean them up.
+    */
+    public static onNextDisconnect(
+        nodeId: string,
+        callback: () => void,
+        // NOTE: It's important to know that unlike client ids, server ids (a nodeId YOU connect to, instead of connecting to you), might be alive again, and so you need some kind of logic to try it again or in some way reconnect. For clients you don't need to, as it's their job to reconnect to you, and they will reconnect with a NEW nodeId.
+        noServerNodeIdWarning?: "iKnowThatServerNodeIdsMayReconnect_andIHandleReconnections"
+    ) {
+        if (!isClientNodeId(nodeId) && !noServerNodeIdWarning) {
+            console.error(`Watching for disconnections of ${nodeId}. This is a server nodeId and may be alive again after disconnection. Please set the noServerNodeIdWarning flag in this argument to confirm you are handling reconnecting if the server becomes available again.`);
+        }
         (async () => {
             let factory = await getCallFactory(nodeId);
             if (!factory) {

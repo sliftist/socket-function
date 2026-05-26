@@ -474,6 +474,7 @@ export async function createCallFactory(
             ...data,
         ]);
     }
+    // IMPORTANT! NEVER allow for reconnection of client ids. A lot of code depends on the fact that clients will reconnect with a new client node id when they disconnect!
     async function tryToReconnect(): Promise<SenderInterface> {
         // Don't try to reconnect too often!
         let timeSinceLastAttempt = Date.now() - lastConnectionAttempt;
@@ -814,6 +815,16 @@ function addReceiveStats(stats: CompressionStats) {
     uncompressedReceived += stats.uncompressedSize;
     compressedReceived += stats.compressedSize;
     receiveCount++;
+}
+export function getStats() {
+    return {
+        uncompressedSent,
+        compressedSent,
+        uncompressedReceived,
+        compressedReceived,
+        sendCount,
+        receiveCount,
+    };
 }
 // Register this late as I don't want it to appear before the memory register info, which is use more useful than the network one. 
 setImmediate(() => {

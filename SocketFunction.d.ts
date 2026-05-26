@@ -63,8 +63,10 @@ export declare class SocketFunction {
     private static socketCache;
     static rehydrateSocketCaller<Controller>(socketRegistered: SocketRegisterType<Controller>, shapeFnc?: () => SocketExposedShape): SocketRegistered<Controller>;
     private static callFromGuid;
-    /** Will dedupe callbacks, so if you call with the same callback it won't call it multiple times (otherwise it's difficult to manage this, as this only calls on the NEXT callback). */
-    static onNextDisconnect(nodeId: string, callback: () => void): void;
+    /** Will dedupe callbacks, so if you call with the same callback it won't call it multiple times (otherwise it's difficult to manage this, as this only calls on the NEXT callback).
+        IMPORTANT! Client node ids will NEVER reconnect, so this can full cleanup. However full nodeIds might if we try to use that nodeId again, so this cannot fully clean them up.
+    */
+    static onNextDisconnect(nodeId: string, callback: () => void, noServerNodeIdWarning?: "iKnowThatServerNodeIdsMayReconnect_andIHandleReconnections"): void;
     static getLastDisconnectTime(nodeId: string): number | undefined;
     static isNodeConnected(nodeId: string): boolean;
     /** NOTE: Only works if the nodeIs used is from SocketFunction.connect (we can't convert arbitrary nodeIds into urls,

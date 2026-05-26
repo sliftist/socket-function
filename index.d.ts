@@ -72,8 +72,10 @@ declare module "socket-function/SocketFunction" {
         private static socketCache;
         static rehydrateSocketCaller<Controller>(socketRegistered: SocketRegisterType<Controller>, shapeFnc?: () => SocketExposedShape): SocketRegistered<Controller>;
         private static callFromGuid;
-        /** Will dedupe callbacks, so if you call with the same callback it won't call it multiple times (otherwise it's difficult to manage this, as this only calls on the NEXT callback). */
-        static onNextDisconnect(nodeId: string, callback: () => void): void;
+        /** Will dedupe callbacks, so if you call with the same callback it won't call it multiple times (otherwise it's difficult to manage this, as this only calls on the NEXT callback).
+            IMPORTANT! Client node ids will NEVER reconnect, so this can full cleanup. However full nodeIds might if we try to use that nodeId again, so this cannot fully clean them up.
+        */
+        static onNextDisconnect(nodeId: string, callback: () => void, noServerNodeIdWarning?: "iKnowThatServerNodeIdsMayReconnect_andIHandleReconnections"): void;
         static getLastDisconnectTime(nodeId: string): number | undefined;
         static isNodeConnected(nodeId: string): boolean;
         /** NOTE: Only works if the nodeIs used is from SocketFunction.connect (we can't convert arbitrary nodeIds into urls,
@@ -504,6 +506,14 @@ declare module "socket-function/src/CallFactory" {
         end: number;
     }[];
     export declare function createCallFactory(webSocketBase: SenderInterface | undefined, nodeId: string, localNodeId?: string): Promise<CallFactory>;
+    export declare function getStats(): {
+        uncompressedSent: number;
+        compressedSent: number;
+        uncompressedReceived: number;
+        compressedReceived: number;
+        sendCount: number;
+        receiveCount: number;
+    };
     export {};
 
 }
@@ -1462,6 +1472,9 @@ declare module "socket-function/time/trueTimeShim" {
     export declare function getTrueTime(): number;
     export declare function getTrueTimeOffset(): number;
     export declare function waitForFirstTimeSync(): Promise<void> | undefined;
+    declare global {
+        var TRUE_TIME_ALREADY_SHIMMED: boolean;
+    }
     export declare function shimDateNow(): void;
     export declare function getBrowserTime(): number;
     export declare function setGetTimeOffsetBase(base: () => Promise<number>): void;

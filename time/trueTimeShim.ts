@@ -151,10 +151,15 @@ export function waitForFirstTimeSync(): Promise<void> | undefined {
     if (didFirstTimeSync) return undefined;
     return firstTimeSyncPromise;
 }
+declare global {
+    var TRUE_TIME_ALREADY_SHIMMED: boolean;
+}
 let shimmed = false;
 export function shimDateNow() {
     if (shimmed) return;
     shimmed = true;
+    if (globalThis.TRUE_TIME_ALREADY_SHIMMED) return;
+    globalThis.TRUE_TIME_ALREADY_SHIMMED = true;
     Date.now = getTrueTime;
 }
 export function getBrowserTime() {
