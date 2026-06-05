@@ -202,8 +202,7 @@ class HotReloadControllerBase {
                 file = "https://" + (BOOTED_EDGE_NODE?.host || location.host) + "/" + file;
                 let module = require.cache[file];
                 if (!module) {
-                    console.log(`Module not found: ${file}, reloading page to ensure new version is loaded`);
-                    document.location.reload();
+                    console.log(`Module not found: ${file}, not reloading page`);
                     return;
                 }
                 if (!module.hotreload) {
