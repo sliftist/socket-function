@@ -25,6 +25,8 @@ export declare class SocketFunction {
     static COEP: string;
     static COOP: string;
     static TOTAL_CALLS: number;
+    static ENABLE_CLIENT_MODE: boolean;
+    static isClient(): boolean;
     static readonly WIRE_SERIALIZER: {
         serialize: (obj: unknown) => MaybePromise<Buffer[]>;
         deserialize: (buffers: Buffer[]) => MaybePromise<unknown>;

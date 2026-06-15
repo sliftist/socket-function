@@ -500,7 +500,7 @@ export async function createCallFactory(
             console.error("Error getting alternate node IDs", e);
         }
 
-        let newWebSocket = createWebsocket(nodeId, proposeProtocols(isNode() ? nodeId : undefined, { lz4: true }));
+        let newWebSocket = createWebsocket(nodeId, proposeProtocols(!SocketFunction.isClient() ? nodeId : undefined, { lz4: true }));
         await initializeWebsocket(newWebSocket);
 
         return newWebSocket;

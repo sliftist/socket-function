@@ -69,6 +69,10 @@ export class SocketFunction {
 
     public static TOTAL_CALLS = 0;
 
+    public static ENABLE_CLIENT_MODE = false;
+    // Places where we decide if we want to act as a client. Most places we check for is node, but some places it's not, depending on if we're in Node.js or not, it's depending on if we're a client or not.
+    public static isClient() { return !isNode() || SocketFunction.ENABLE_CLIENT_MODE; }
+
     // In retrospect... dynamically changing the wire serializer is a BAD idea. If any calls happen
     //  before it is changed, things just break. Also, it needs to be changed on both sides,
     //  or else things break. Also, it is very hard to detect when the issue is different serializers
