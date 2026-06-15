@@ -306,8 +306,16 @@ export class SocketFunction {
         (async () => {
             let factory = await getCallFactory(nodeId);
             if (!factory) {
-                callback();
-                return;
+                for (let i = 0; i < 30; i++) {
+                    await delay(1000);
+                    factory = await getCallFactory(nodeId);
+                    if (factory) break;
+                }
+                if (!factory) {
+                    console.error(`Failed to get call factory for ${nodeId} after 30 seconds, giving up.`);
+                    callback();
+                    return;
+                }
             }
 
             factory.onNextDisconnect(callback);
