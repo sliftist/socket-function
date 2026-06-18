@@ -78,8 +78,14 @@ export async function startSocketServer(
             const proposed = Array.from(protocols);
             const chosen = chooseProtocol(proposed, ourNodeId, { lz4: true });
             if (!chosen) {
-                const proposedDecoded = proposed.map(p => decodeProtocol(p) ?? `<undecodable: ${p}>`);
-                console.log(`Rejecting handshake on ${ourNodeId}: none of the ${proposed.length} proposed protocols target us`, { ourNodeId, proposedDecoded });
+                const proposedDecoded = proposed.map(p => decodeProtocol(p));
+                let target = proposedDecoded[0]?.target;
+                let getMachineId = (x: string) => x.split(".").slice(-3).join(".");
+                if (target && getMachineId(target) === getMachineId(ourNodeId)) {
+                    console.log(`Rejecting handshake from old thread, ${target} !== ${ourNodeId}`);
+                } else {
+                    console.log(`Rejecting handshake on ${ourNodeId}: none of the ${proposed.length} proposed protocols target us`, { ourNodeId, proposedDecoded });
+                }
                 return false;
             }
             return chosen;
