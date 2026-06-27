@@ -9,6 +9,7 @@ import { Args, MaybePromise } from "./src/types";
 import { setDefaultHTTPCall } from "./src/callHTTPHandler";
 import debugbreak from "debugbreak";
 import { lazy } from "./src/caching";
+import { createSingleton } from "./src/createSingleton";
 import { delay } from "./src/batching";
 import { blue, magenta } from "./src/formatting/logColors";
 import { JSONLACKS } from "./src/JSONLACKS/JSONLACKS";
@@ -35,6 +36,14 @@ if (isNode()) {
 }
 
 module.allowclient = true;
+
+// The active call's caller, plus a sequence number used to reset it synchronously (see
+//  _setSocketContext). Shared across copies of this package, so SocketFunction.getCaller()
+//  returns the right caller even when the call was set up by a different copy. See createSingleton.
+const socketContext = createSingleton("SocketFunction.socketContext", 1, () => ({
+    seqNum: 1,
+    caller: undefined as CallerContext | undefined,
+}));
 
 type ExtractShape<ClassType, Shape> = {
     [key in keyof ClassType]: (
@@ -89,10 +98,16 @@ export class SocketFunction {
 
     public static WIRE_WARN_TIME = 100;
 
-    private static onMountCallbacks = new Map<string, (() => MaybePromise<void>)[]>();
-    public static exposedClasses = new Set<string>();
+    // Shared across copies of this package, so onMount callbacks registered through one copy still
+    //  fire when another copy mounts. See createSingleton.
+    private static onMountCallbacks = createSingleton("SocketFunction.onMountCallbacks", 1, () => new Map<string, (() => MaybePromise<void>)[]>()).get();
+    // Shared across copies of this package, so the set of exposed classes is consistent regardless
+    //  of which copy a class was exposed through. See createSingleton.
+    private static exposedClassesSingleton = createSingleton("SocketFunction.exposedClasses", 1, () => new Set<string>());
+    public static get exposedClasses() { return SocketFunction.exposedClassesSingleton.get(); }
 
-    public static callerContext: CallerContext | undefined;
+    public static get callerContext(): CallerContext | undefined { return socketContext.get().caller; }
+    public static set callerContext(value: CallerContext | undefined) { socketContext.get().caller = value; }
     public static getCaller(): CallerContext {
         const caller = SocketFunction.callerContext;
         if (!caller) throw new Error(`Tried to access caller when not in the synchronous phase of a function call`);
@@ -215,7 +230,9 @@ export class SocketFunction {
         return Object.assign(socketCaller, config?.statics) as any;
     }
 
-    private static socketCache = new Map<string, SocketRegistered>();
+    // Shared across copies of this package, so a given classGuid resolves to one canonical caller
+    //  regardless of which copy rehydrated it. See createSingleton.
+    private static socketCache = createSingleton("SocketFunction.socketCache", 1, () => new Map<string, SocketRegistered>()).get();
     public static rehydrateSocketCaller<Controller>(
         socketRegistered: SocketRegisterType<Controller>,
         // Shape is required for client hooks.
@@ -359,13 +376,15 @@ export class SocketFunction {
         return url.toString();
     }
 
-    private static ignoreExposeCount = 0;
+    // Shared across copies of this package, so suppressing expose calls in one copy also suppresses
+    //  them in the others. See createSingleton.
+    private static ignoreExposeCount = createSingleton("SocketFunction.ignoreExposeCount", 1, () => ({ count: 0 }));
     public static async ignoreExposeCalls<T>(code: () => Promise<T>) {
-        this.ignoreExposeCount++;
+        SocketFunction.ignoreExposeCount.get().count++;
         try {
             return await code();
         } finally {
-            this.ignoreExposeCount--;
+            SocketFunction.ignoreExposeCount.get().count--;
         }
     }
 
@@ -374,7 +393,7 @@ export class SocketFunction {
      *      to add additional imports to ensure the register call runs.
      */
     public static expose(socketRegistered: SocketRegistered) {
-        if (this.ignoreExposeCount > 0) return;
+        if (SocketFunction.ignoreExposeCount.get().count > 0) return;
         if (!socketRegistered._classGuid) {
             throw new Error("SocketFunction.expose must be called with a classGuid");
         }
@@ -382,7 +401,7 @@ export class SocketFunction {
         exposeClass(socketRegistered);
         this.exposedClasses.add(socketRegistered._classGuid);
 
-        if (this.hasMounted) {
+        if (SocketFunction.mountState.get().hasMounted) {
             let mountCallbacks = SocketFunction.onMountCallbacks.get(socketRegistered._classGuid);
             for (let onMount of mountCallbacks || []) {
                 Promise.resolve(onMount()).catch(e => {
@@ -392,12 +411,26 @@ export class SocketFunction {
         }
     }
 
-    public static mountedNodeId: string = "";
+    // All mount state is shared across copies of this package, so a second mount (even from a
+    //  different copy) is rejected, and onMount/mountPromise observers fire once across them all.
+    //  See createSingleton.
+    private static mountState = createSingleton("SocketFunction.mountState", 1, () => {
+        let mountResolve!: () => void;
+        let mountPromise = new Promise<void>(resolve => mountResolve = resolve);
+        return {
+            hasMounted: false,
+            mountedNodeId: "",
+            mountedIP: "",
+            mountResolve,
+            mountPromise,
+        };
+    });
+    public static get mountedNodeId() { return SocketFunction.mountState.get().mountedNodeId; }
+    public static set mountedNodeId(value: string) { SocketFunction.mountState.get().mountedNodeId = value; }
     public static isMounted() { return !!this.mountedNodeId; }
-    public static mountedIP: string = "";
-    private static hasMounted = false;
-    private static onMountCallback: () => void = () => { };
-    public static mountPromise: Promise<void> = new Promise(r => this.onMountCallback = r);
+    public static get mountedIP() { return SocketFunction.mountState.get().mountedIP; }
+    public static set mountedIP(value: string) { SocketFunction.mountState.get().mountedIP = value; }
+    public static get mountPromise() { return SocketFunction.mountState.get().mountPromise; }
     public static async mount(config: SocketServerConfig) {
         if (this.mountedNodeId) {
             throw new Error("SocketFunction already mounted, mounting twice in one thread is not allowed.");
@@ -416,7 +449,7 @@ export class SocketFunction {
         await delay("immediate");
 
         this.mountedNodeId = await startSocketServer(config);
-        this.hasMounted = true;
+        SocketFunction.mountState.get().hasMounted = true;
         for (let classGuid of SocketFunction.exposedClasses) {
             let callbacks = SocketFunction.onMountCallbacks.get(classGuid);
             if (!callbacks) continue;
@@ -424,7 +457,7 @@ export class SocketFunction {
                 await callback();
             }
         }
-        this.onMountCallback();
+        SocketFunction.mountState.get().mountResolve();
         return this.mountedNodeId;
     }
 
@@ -484,20 +517,19 @@ function getBootedEdgeNode() {
 }
 
 
-let socketContextSeqNum = 1;
-
 export function _setSocketContext<T>(
     caller: CallerContext,
     code: () => T,
 ) {
-    socketContextSeqNum++;
-    let seqNum = socketContextSeqNum;
-    SocketFunction.callerContext = caller;
+    let ctx = socketContext.get();
+    ctx.seqNum++;
+    let seqNum = ctx.seqNum;
+    ctx.caller = caller;
     try {
         return code();
     } finally {
-        if (seqNum === socketContextSeqNum) {
-            SocketFunction.callerContext = undefined;
+        if (seqNum === ctx.seqNum) {
+            ctx.caller = undefined;
         }
     }
 }

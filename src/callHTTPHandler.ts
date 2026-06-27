@@ -7,11 +7,14 @@ import { gzip } from "zlib";
 import zlib from "zlib";
 import { formatNumberSuffixed, getRootDomain, sha256Hash } from "./misc";
 import { getClientNodeId, getNodeId } from "./nodeCache";
+import { createSingleton } from "./createSingleton";
 
-let defaultHTTPCall: CallType | undefined;
+// Shared across copies of this package, so the default HTTP call set through one copy is used by
+//  the HTTP handler of any other copy. See createSingleton.
+const defaultHTTPCall = createSingleton("callHTTPHandler.defaultHTTPCall", 1, () => ({ call: undefined as CallType | undefined }));
 
 export function setDefaultHTTPCall(call: CallType) {
-    defaultHTTPCall = call;
+    defaultHTTPCall.get().call = call;
 }
 
 export function getServerLocationFromRequest(request: http.IncomingMessage) {
@@ -49,7 +52,9 @@ export function getNodeIdsFromRequest(request: http.IncomingMessage) {
     return { nodeId, localNodeId };
 }
 
-let requests = new Map<CallerContext, http.IncomingMessage>();
+// Shared across copies of this package, so getCurrentHTTPRequest works even when the call was set
+//  up by a different copy's HTTP handler. See createSingleton.
+const requests = createSingleton("callHTTPHandler.requests", 1, () => new Map<CallerContext, http.IncomingMessage>()).get();
 export function getCurrentHTTPRequest(): http.IncomingMessage | undefined {
     return requests.get(SocketFunction.getCaller());
 }
@@ -139,10 +144,11 @@ export async function httpCallHandler(request: http.IncomingMessage, response: h
         let args: string | unknown[] | null = urlObj.searchParams.get("args");
 
         if (!classGuid) {
-            if (defaultHTTPCall) {
-                classGuid = defaultHTTPCall.classGuid;
-                functionName = defaultHTTPCall.functionName;
-                args = defaultHTTPCall.args;
+            let defaultCall = defaultHTTPCall.get().call;
+            if (defaultCall) {
+                classGuid = defaultCall.classGuid;
+                functionName = defaultCall.functionName;
+                args = defaultCall.args;
             } else {
                 throw new Error("Missing classGuid in URL query");
             }

@@ -1,6 +1,6 @@
 import { formatTime } from "./formatting/format";
 import { red } from "./formatting/logColors";
-import { PromiseObj, isNode, timeoutToError } from "./misc";
+import { PromiseObj, isNode, timeoutToError, watchSlowPromise } from "./misc";
 import { measureWrap } from "./profiling/measure";
 import { AnyFunction, Args, MaybePromise } from "./types";
 
@@ -312,18 +312,32 @@ export function retryFunctional<T extends AnyFunction>(fnc: T, config?: {
     shouldRetry?: (message: string) => boolean;
     minDelay?: number;
     maxDelay?: number;
+    timeout?: number;
+    warningInterval?: number;
 }): T {
-    let { maxRetries = DEFAULT_MAX_RETRIES, shouldRetry, minDelay = DEFAULT_RETRY_DELAY, maxDelay = DEFAULT_RETRY_DELAY } = config || {};
+    let {
+        maxRetries = DEFAULT_MAX_RETRIES, shouldRetry, minDelay = DEFAULT_RETRY_DELAY, maxDelay = DEFAULT_RETRY_DELAY,
+        timeout,
+        warningInterval,
+    } = config || {};
     let expFactor = Math.max(1, Math.log(maxDelay / minDelay) / Math.log(Math.max(maxRetries, 2)));
+    let name = fnc.name || fnc.toString().slice(0, 100);
     async function runFnc(args: any[], retries: number): Promise<ReturnType<T>> {
         try {
-            return await (fnc as any)(...args);
+            let promise = (fnc as any)(...args);
+            if (timeout !== undefined) {
+                promise = timeoutToError(timeout, promise, () => new Error(`timed out after ${formatTime(timeout)}`));
+            }
+            if (warningInterval !== undefined) {
+                promise = watchSlowPromise(name, promise, { interval: warningInterval });
+            }
+            return await promise;
         } catch (e: any) {
             if (shouldRetry && !shouldRetry(String(e.stack))) {
                 throw e;
             }
             if (retries < 0) throw e;
-            console.warn(`Retrying ${fnc.name}, due to error ${String(e.stack)}`);
+            console.warn(`Retrying ${name}, due to error ${String(e.stack)}`);
             retries--;
             let curCount = maxRetries - retries;
             await delay(minDelay * expFactor ** curCount);

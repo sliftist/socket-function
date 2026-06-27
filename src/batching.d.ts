@@ -32,6 +32,8 @@ export declare function retryFunctional<T extends AnyFunction>(fnc: T, config?: 
     shouldRetry?: (message: string) => boolean;
     minDelay?: number;
     maxDelay?: number;
+    timeout?: number;
+    warningInterval?: number;
 }): T;
 /** @deprecated Use safeLoop instead */
 export declare const throttledLoop: typeof unblockLoop;

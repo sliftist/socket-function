@@ -1,5 +1,7 @@
 import { canHaveChildren, MaybePromise } from "./types";
-import { formatNumber } from "./formatting/format";
+import { formatNumber, formatTime } from "./formatting/format";
+import { delay } from "./batching";
+import { yellow } from "./formatting/logColors";
 
 export const timeInSecond = 1000;
 export const timeInMinute = timeInSecond * 60;
@@ -457,4 +459,21 @@ export function errorToWarning<T>(promise: Promise<T>): void {
         console.warn(e.stack);
         return undefined as any;
     }) as any;
+}
+
+export function watchSlowPromise<T>(title: string, promise: Promise<T>, config: {
+    interval?: number;
+}) {
+    let { interval = 5000 } = config;
+    let fulfilled = false;
+    void promise.finally(() => fulfilled = true);
+    let startTime = Date.now();
+    void (async () => {
+        while (true) {
+            await delay(interval);
+            if (fulfilled) break;
+            console.log(`${yellow(`Slow promise running for ${formatTime(Date.now() - startTime)}`)} | ${title}`);
+        }
+    })();
+    return promise;
 }

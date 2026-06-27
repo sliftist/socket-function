@@ -4,6 +4,7 @@ module.allowclient = true;
 
 import { SocketFunction } from "../SocketFunction";
 import { cache, lazy } from "../src/caching";
+import { createSingleton } from "../src/createSingleton";
 import * as fs from "fs";
 import crypto from "crypto";
 import debugbreak from "debugbreak";
@@ -56,18 +57,23 @@ declare global {
     var isHotReloading: (() => boolean) | undefined;
 }
 
-let isHotReloadingValue = false;
+// Shared across copies of this package, so the "currently hot reloading" flag is consistent no
+//  matter which copy set it (ex, setExternalHotReloading) or reads it (callManager.registerClass
+//  reads it via the globalThis.isHotReloading bridge, which each copy overwrites). See createSingleton.
+const isHotReloadingState = createSingleton("HotReloadController.isHotReloading", 1, () => ({ value: false }));
 export function isHotReloading() {
-    return isHotReloadingValue;
+    return isHotReloadingState.get().value;
 }
 globalThis.isHotReloading = isHotReloading;
 export function hotReloadingGuard(): true {
     return !isHotReloading() as any;
 }
 export function setExternalHotReloading(value: boolean) {
-    isHotReloadingValue = value;
+    isHotReloadingState.get().value = value;
 }
-let hotReloadCallbacks: ((modules: NodeJS.Module[]) => void)[] = [];
+// Shared across copies, so callbacks registered through one copy's onHotReload still fire when the
+//  first-registered copy's controller performs a reload. See createSingleton.
+const hotReloadCallbacks = createSingleton("HotReloadController.hotReloadCallbacks", 1, () => [] as ((modules: NodeJS.Module[]) => void)[]).get();
 export function onHotReload(callback: (modules: NodeJS.Module[]) => void) {
     hotReloadCallbacks.push(callback);
 }
@@ -124,7 +130,7 @@ const hotReloadModule = cache((module: NodeJS.Module) => {
                 || module.moduleContents?.includes("\r\nmodule.hotreload = true;" + "\r\n")
             ) {
                 console.log(`Serverside reloading ${module.id}`);
-                isHotReloadingValue = true;
+                isHotReloadingState.get().value = true;
                 try {
                     module.loaded = false;
                     module.load(module.id);
@@ -133,7 +139,7 @@ const hotReloadModule = cache((module: NodeJS.Module) => {
                     console.error(e);
                 } finally {
                     setTimeout(() => {
-                        isHotReloadingValue = false;
+                        isHotReloadingState.get().value = false;
                     }, 1000);
                 }
             }
@@ -215,12 +221,12 @@ class HotReloadControllerBase {
             for (let module of modules) {
                 module.loaded = false;
             }
-            isHotReloadingValue = true;
+            isHotReloadingState.get().value = true;
             try {
                 await Promise.all(modules.map(module => module.load(module.filename)));
             } finally {
                 setTimeout(() => {
-                    isHotReloadingValue = false;
+                    isHotReloadingState.get().value = false;
                 }, 1000);
             }
 

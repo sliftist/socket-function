@@ -46,8 +46,10 @@ declare module "socket-function/SocketFunction" {
         static GET_ALTERNATE_NODE_IDS: (nodeId: string) => MaybePromise<string[] | undefined>;
         static WIRE_WARN_TIME: number;
         private static onMountCallbacks;
-        static exposedClasses: Set<string>;
-        static callerContext: CallerContext | undefined;
+        private static exposedClassesSingleton;
+        static get exposedClasses(): Set<string>;
+        static get callerContext(): CallerContext | undefined;
+        static set callerContext(value: CallerContext | undefined);
         static getCaller(): CallerContext;
         static harvestFailedCallCount: () => number;
         static getPendingCallCount: () => number;
@@ -91,12 +93,13 @@ declare module "socket-function/SocketFunction" {
          *      to add additional imports to ensure the register call runs.
          */
         static expose(socketRegistered: SocketRegistered): void;
-        static mountedNodeId: string;
+        private static mountState;
+        static get mountedNodeId(): string;
+        static set mountedNodeId(value: string);
         static isMounted(): boolean;
-        static mountedIP: string;
-        private static hasMounted;
-        private static onMountCallback;
-        static mountPromise: Promise<void>;
+        static get mountedIP(): string;
+        static set mountedIP(value: string);
+        static get mountPromise(): Promise<void>;
         static mount(config: SocketServerConfig): Promise<string>;
         /** Sets the default call when an http request is made, but no classGuid is set.
          *      NOTE: All other calls should be endpoint calls, even if those endpoints return a static file with an HTML content type.
@@ -357,8 +360,14 @@ declare module "socket-function/require/RequireController" {
     declare function addStaticRoot(root: string): void;
     type GetModulesResult = ReturnType<RequireControllerBase["getModules"]> extends Promise<infer T> ? T : never;
     export type GetModulesArgs = Parameters<RequireControllerBase["getModules"]>;
-    declare let mapGetModules: {
-        remap(result: GetModulesResult, args: GetModulesArgs): Promise<GetModulesResult>;
+    declare const mapGetModules: {
+        remap(result: GetModulesResult, args: [pathRequests: string[], alreadyHave?: {
+            requireSeqNumProcessId: string;
+            seqNumRanges: {
+                s: number;
+                e?: number;
+            }[];
+        } | undefined, config?: {} | undefined]): Promise<GetModulesResult>;
     }[];
     declare function addMapGetModules(remap: typeof mapGetModules[number]["remap"]): void;
     declare class RequireControllerBase {
@@ -621,6 +630,8 @@ declare module "socket-function/src/batching" {
         shouldRetry?: (message: string) => boolean;
         minDelay?: number;
         maxDelay?: number;
+        timeout?: number;
+        warningInterval?: number;
     }): T;
     /** @deprecated Use safeLoop instead */
     export declare const throttledLoop: typeof unblockLoop;
@@ -813,6 +824,29 @@ declare module "socket-function/src/certStore" {
 }
 
 declare module "socket-function/src/corsCheck" {
+
+}
+
+declare module "socket-function/src/createSingleton" {
+    export interface Singleton<T> {
+        get(): T;
+        set(value: T): void;
+    }
+    /** Stores a value on globalThis so it is shared across every copy of socket-function loaded in
+     *      the process, provided each copy passes the same name and version. Use this only for state
+     *      that MUST be process-global to stay correct when multiple compatible versions are installed
+     *      at once - ex, the registry of exposed classes, the node connection cache, and mount state.
+     *      Regular config and caches that are fine to keep per-copy should NOT use this.
+     *  - version is part of the identity. Bump it only when the shape of the stored value changes in a
+     *      way that makes an old and a new copy unable to safely share it. Copies that disagree on the
+     *      version get separate slots (so they will NOT share), which is the correct outcome, as they
+     *      can't interoperate - and we warn so the situation is visible.
+     *  - getDefault runs at most once per name+version, lazily, the first time get() is called.
+     *  - For a value that is mutated in place (a Map/Set/array/object), just call get() once and keep
+     *      the reference. For a value that gets reassigned (a primitive, or a whole-object swap), use
+     *      get()/set() at each access so every copy sees the latest.
+     */
+    export declare function createSingleton<T>(name: string, version: string | number, getDefault: () => T): Singleton<T>;
 
 }
 
@@ -1099,6 +1133,9 @@ declare module "socket-function/src/misc" {
     export declare function timeoutToUndefined<T>(time: number, p: Promise<T>): Promise<T | undefined>;
     export declare function timeoutToUndefinedSilent<T>(time: number, p: Promise<T>): Promise<T | undefined>;
     export declare function errorToWarning<T>(promise: Promise<T>): void;
+    export declare function watchSlowPromise<T>(title: string, promise: Promise<T>, config: {
+        interval?: number;
+    }): Promise<T>;
 
 }
 

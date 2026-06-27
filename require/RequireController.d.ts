@@ -45,8 +45,14 @@ declare function injectHTMLBeforeStartup(text: string | (() => Promise<string>))
 declare function addStaticRoot(root: string): void;
 type GetModulesResult = ReturnType<RequireControllerBase["getModules"]> extends Promise<infer T> ? T : never;
 export type GetModulesArgs = Parameters<RequireControllerBase["getModules"]>;
-declare let mapGetModules: {
-    remap(result: GetModulesResult, args: GetModulesArgs): Promise<GetModulesResult>;
+declare const mapGetModules: {
+    remap(result: GetModulesResult, args: [pathRequests: string[], alreadyHave?: {
+        requireSeqNumProcessId: string;
+        seqNumRanges: {
+            s: number;
+            e?: number;
+        }[];
+    } | undefined, config?: {} | undefined]): Promise<GetModulesResult>;
 }[];
 declare function addMapGetModules(remap: typeof mapGetModules[number]["remap"]): void;
 declare class RequireControllerBase {

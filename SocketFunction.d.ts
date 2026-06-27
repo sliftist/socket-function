@@ -37,8 +37,10 @@ export declare class SocketFunction {
     static GET_ALTERNATE_NODE_IDS: (nodeId: string) => MaybePromise<string[] | undefined>;
     static WIRE_WARN_TIME: number;
     private static onMountCallbacks;
-    static exposedClasses: Set<string>;
-    static callerContext: CallerContext | undefined;
+    private static exposedClassesSingleton;
+    static get exposedClasses(): Set<string>;
+    static get callerContext(): CallerContext | undefined;
+    static set callerContext(value: CallerContext | undefined);
     static getCaller(): CallerContext;
     static harvestFailedCallCount: () => number;
     static getPendingCallCount: () => number;
@@ -82,12 +84,13 @@ export declare class SocketFunction {
      *      to add additional imports to ensure the register call runs.
      */
     static expose(socketRegistered: SocketRegistered): void;
-    static mountedNodeId: string;
+    private static mountState;
+    static get mountedNodeId(): string;
+    static set mountedNodeId(value: string);
     static isMounted(): boolean;
-    static mountedIP: string;
-    private static hasMounted;
-    private static onMountCallback;
-    static mountPromise: Promise<void>;
+    static get mountedIP(): string;
+    static set mountedIP(value: string);
+    static get mountPromise(): Promise<void>;
     static mount(config: SocketServerConfig): Promise<string>;
     /** Sets the default call when an http request is made, but no classGuid is set.
      *      NOTE: All other calls should be endpoint calls, even if those endpoints return a static file with an HTML content type.

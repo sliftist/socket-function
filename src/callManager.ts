@@ -5,17 +5,20 @@ import { entries, isNode } from "./misc";
 import debugbreak from "debugbreak";
 import { measureBlock, measureWrap } from "./profiling/measure";
 import { formatTime } from "./formatting/format";
+import { createSingleton } from "./createSingleton";
 
-let classes: {
+// Shared across copies of this package, so a call routed through one copy can find a class
+//  (and its hooks) registered through another copy. See createSingleton.
+const classes = createSingleton("callManager.classes", 1, () => ({} as {
     [classGuid: string]: {
         controller: SocketExposedInterface;
         shape: SocketExposedShape;
     }
-} = {};
-let exposedClasses = new Set<string>();
+})).get();
+const exposedClasses = createSingleton("callManager.exposedClasses", 1, () => new Set<string>()).get();
 
-let globalHooks: SocketFunctionHook[] = [];
-let globalClientHooks: SocketFunctionClientHook[] = [];
+const globalHooks = createSingleton("callManager.globalHooks", 1, () => [] as SocketFunctionHook[]).get();
+const globalClientHooks = createSingleton("callManager.globalClientHooks", 1, () => [] as SocketFunctionClientHook[]).get();
 
 export function getCallFlags(call: CallType): FunctionFlags | undefined {
     return classes[call.classGuid]?.shape[call.functionName];
@@ -83,7 +86,8 @@ export function registerClass(classGuid: string, controller: SocketExposedInterf
     noFunctionMeasure?: boolean;
 }) {
     if (!globalThis.isHotReloading?.() && classes[classGuid]) {
-        throw new Error(`Class ${classGuid} already registered`);
+        console.warn(`Class ${classGuid} already registered. This is normal if you are using multiple copies of socket-function at once.`);
+        return;
     }
 
     if (!config?.noFunctionMeasure) {

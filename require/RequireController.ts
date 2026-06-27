@@ -6,6 +6,7 @@ import { getCurrentHTTPRequest, setHTTPResultHeaders } from "../src/callHTTPHand
 import { formatNumberSuffixed, isNode, isNodeTrue, sha256Hash, sha256HashPromise } from "../src/misc";
 import zlib from "zlib";
 import { cacheLimited, lazy } from "../src/caching";
+import { createSingleton } from "../src/createSingleton";
 import { formatNumber } from "../src/formatting/format";
 import { requireMain } from "./require";
 import path from "path";
@@ -88,11 +89,16 @@ const resolvedHTMLFile = lazy(() => {
         );
 });
 
-let beforeEntryText: (string | (() => Promise<string>))[] = [];
+// All of these are mutated by the static helpers below (injectHTMLBeforeStartup, addStaticRoot,
+//  addMapGetModules), which callers invoke on RequireController. But only the first-registered
+//  copy's controller actually serves requireHTML/getModules, and it reads these vars. So they must
+//  be shared across copies, or a caller using a different copy would add (ex) before-entry HTML
+//  that the serving controller never reads. See createSingleton.
+const beforeEntryText = createSingleton("RequireController.beforeEntryText", 1, () => [] as (string | (() => Promise<string>))[]).get();
 function injectHTMLBeforeStartup(text: string | (() => Promise<string>)) {
     beforeEntryText.push(text);
 }
-let staticRoots: string[] = [];
+const staticRoots = createSingleton("RequireController.staticRoots", 1, () => [] as string[]).get();
 function addStaticRoot(root: string) {
     if (!root.endsWith("/")) {
         root += "/";
@@ -102,9 +108,9 @@ function addStaticRoot(root: string) {
 
 type GetModulesResult = ReturnType<RequireControllerBase["getModules"]> extends Promise<infer T> ? T : never;
 export type GetModulesArgs = Parameters<RequireControllerBase["getModules"]>;
-let mapGetModules: {
+const mapGetModules = createSingleton("RequireController.mapGetModules", 1, () => [] as {
     remap(result: GetModulesResult, args: GetModulesArgs): Promise<GetModulesResult>
-}[] = [];
+}[]).get();
 function addMapGetModules(remap: typeof mapGetModules[number]["remap"]) {
     mapGetModules.push({ remap });
 }
@@ -421,7 +427,7 @@ async function compressCached(bufferKey: string, buffer: () => Buffer): Promise<
 export function getIsAllowClient(module: NodeJS.Module) {
     if (module.serveronly) return false;
     // IMPORTANT! We do not allow everything in node modules by default, as most things in node modules, you don't want to import client-side, and it will break if you import it client-side. Many of these are imported, but will never end up being called client-side, so it's fine to exclude them.
-    if (allowAllNodeModulesFlag && module.filename.includes("node_modules")) {
+    if (allowAllNodeModulesFlag.get().value && module.filename.includes("node_modules")) {
         return true;
     }
     return module.allowclient;
@@ -434,7 +440,9 @@ declare global {
     var remapImportRequestsClientside: undefined | ClientRemapCallback[];
 }
 
-let baseController = new RequireControllerBase();
+// Shared across copies of this package, so the registered controller and rootResolvePath (set by
+//  setRequireBootRequire) are the same instance everyone reads/writes. See createSingleton.
+const baseController = createSingleton("RequireController.baseController", 1, () => new RequireControllerBase()).get();
 /** @deprecated, not needed, as this defaults to ".", which is a lot easier to reason about anyways. */
 export function setRequireBootRequire(dir: string) {
     dir = path.resolve(dir);
@@ -445,9 +453,11 @@ export function setRequireBootRequire(dir: string) {
     baseController.rootResolvePath = dir;
 }
 
-let allowAllNodeModulesFlag = false;
+// Shared across copies, so calling allowAllNodeModules() on any copy is seen by the serving
+//  controller's getIsAllowClient. See createSingleton.
+const allowAllNodeModulesFlag = createSingleton("RequireController.allowAllNodeModules", 1, () => ({ value: false }));
 export function allowAllNodeModules() {
-    allowAllNodeModulesFlag = true;
+    allowAllNodeModulesFlag.get().value = true;
 }
 
 export const RequireController = SocketFunction.register(

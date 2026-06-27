@@ -3,6 +3,7 @@ import { MaybePromise } from "./types";
 import { lazy } from "./caching";
 import { SocketFunction } from "../SocketFunction";
 import { isNode } from "./misc";
+import { createSingleton } from "./createSingleton";
 
 // TODO: Add CallInstanceFactory.isClosed, so nodeCache can clean up old entries.
 //  This is only needed for memory management, and not for correctness. Entries never
@@ -67,8 +68,10 @@ export function getNodeIdDomainMaybeUndefined(nodeId: string): string | undefine
 }
 
 // NOTE: CallFactory turns into an actual CallFactory when registerNodeClient is called
-// nodeId => 
-const nodeCache = new Map<string, MaybePromise<CallFactory>>();
+// nodeId =>
+// Shared across copies of this package, so connections established through one copy are reused
+//  by the others (instead of each copy opening its own duplicate connection). See createSingleton.
+const nodeCache = createSingleton("nodeCache", 1, () => new Map<string, MaybePromise<CallFactory>>()).get();
 
 // NOTE: Should be called directly inside call factory constructor whenever
 //      their nodeId changes (and on construction).
