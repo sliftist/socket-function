@@ -96,6 +96,6 @@ export declare function timeoutToError<T>(time: number, p: Promise<T>, err: () =
 export declare function timeoutToUndefined<T>(time: number, p: Promise<T>): Promise<T | undefined>;
 export declare function timeoutToUndefinedSilent<T>(time: number, p: Promise<T>): Promise<T | undefined>;
 export declare function errorToWarning<T>(promise: Promise<T>): void;
-export declare function watchSlowPromise<T>(title: string, promise: Promise<T>, config: {
+export declare function watchSlowPromise<T>(title: string, promise: Promise<T>, config?: {
     interval?: number;
 }): Promise<T>;

@@ -461,10 +461,10 @@ export function errorToWarning<T>(promise: Promise<T>): void {
     }) as any;
 }
 
-export function watchSlowPromise<T>(title: string, promise: Promise<T>, config: {
+export function watchSlowPromise<T>(title: string, promise: Promise<T>, config?: {
     interval?: number;
 }) {
-    let { interval = 5000 } = config;
+    let { interval = 5000 } = config || {};
     let fulfilled = false;
     void promise.finally(() => fulfilled = true);
     let startTime = Date.now();

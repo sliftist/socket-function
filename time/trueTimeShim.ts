@@ -2,33 +2,56 @@ import { SocketFunction } from "../SocketFunction";
 import { blue, green, red, yellow } from "../src/formatting/logColors";
 import { isNode } from "../src/misc";
 
-// IMPOTRANT! We don't ensure that the times of return are unique. We cannot ensure they are unique because the amount of precision is only about ten thousand date times per millisecond, Which would mean if the calling code called date.now frequently enough, which doesn't even have to be that frequent, it could slowly drift farther and farther ahead of the real time, which would be really bad.
+// IMPORTANT! We don't ensure that the times of return are unique. We cannot ensure they are unique because the amount of precision is only about ten thousand date times per millisecond, Which would mean if the calling code called date.now frequently enough, which doesn't even have to be that frequent, it could slowly drift farther and farther ahead of the real time, which would be really bad.
 
 module.allowclient = true;
 
 
 const UPDATE_VERIFY_COUNT = 3;
 
-// Configuration for cross-process synchronization
-const UPDATE_TRANSITION_GAP = 1000 * 60 * 20; // 5 minutes between current and next
-const UPDATE_CHECK_INTERVAL = 1000 * 60 * 5; // Check every 1 minute
-const DEBUG_TIME_SYNC = false; // Enable debug logging for time synchronization
+const UPDATE_TRANSITION_GAP = 1000 * 60 * 20;
+const UPDATE_CHECK_INTERVAL = 1000 * 60 * 5;
+const DEBUG_TIME_SYNC = false;
+
+const FETCH_RETRY_INITIAL_DELAY = 1000;
+const FETCH_RETRY_MAX_DELAY = 1000 * 30;
+const FETCH_MAX_FAILURES = 8;
+const NTP_TIMEOUT = 1000 * 10;
 
 // Time can never go backwards, but we can run at a slower rate until the output time allows
 //      the real time to catch up with it.
 const MINIMUM_TIME_RATE = 0.5;
 
+// The offset tweens toward its target at this fraction of elapsed real time, then plateaus once it gets there. Must stay below 1 so output time keeps moving forward even while the offset is shrinking. Tweening across the whole transition window instead would mean a badly-off clock (many seconds) takes the entire window to converge, which breaks transactional consistency with other machines.
+const OFFSET_TWEEN_RATE = 0.5;
+
 const THROW_ON_ERROR = false;
 
-// Hugely important as if we don't synchronize between processes, it means our logs are going to be confusing and out of order. 
-//  - Of course, cross-machine, the logs could be out of order. However, due to the latency between machines, that's less likely. The latency will probably be a few milliseconds, and hopefully, our time isn't more than a few milliseconds off of the real time. However, between processes, the latency could easily be microseconds, and our time will absolutely certainly be microseconds off of the real time. 
+// Hugely important as if we don't synchronize between processes, it means our logs are going to be confusing and out of order.
+//  - Of course, cross-machine, the logs could be out of order. However, due to the latency between machines, that's less likely. The latency will probably be a few milliseconds, and hopefully, our time isn't more than a few milliseconds off of the real time. However, between processes, the latency could easily be microseconds, and our time will absolutely certainly be microseconds off of the real time.
 let USE_LMDB_PROCESS_SYNC = true;
+
+// Browser tabs synchronize via localStorage, for the same reason processes synchronize via LMDB.
+const TIME_OFFSET_LOCAL_STORAGE_KEY = "socket-function-time-offset";
 
 function debugLog(...args: any[]) {
     if (DEBUG_TIME_SYNC) {
         console.log("[TimeSync]", ...args);
     }
 }
+
+// The raw evidence behind an offset measurement. sendTime/receiveTime are on the local system clock, serverTime is the remote clock's timestamp, and offset is derived from them by assuming the server timestamped at the midpoint of the round trip.
+export type TimeOffsetProof = {
+    sendTime: number;
+    receiveTime: number;
+    serverTime: number;
+    offset: number;
+};
+
+export type TimeOffsetMeasurement = {
+    offset: number;
+    proof?: TimeOffsetProof;
+};
 
 type TimeOffsetData = {
     lastOffset: number;
@@ -37,6 +60,8 @@ type TimeOffsetData = {
     updateTime: number;
     nextOffset: number;
     nextUpdateTime: number;
+    // Proof of the most recent measurement (the one that produced nextOffset).
+    proof?: TimeOffsetProof;
 };
 
 let cachedTimeOffsetData: TimeOffsetData | undefined = undefined;
@@ -45,6 +70,11 @@ let onFirstTimeSync!: () => void;
 let firstTimeSyncPromise = new Promise<void>((resolve) => {
     onFirstTimeSync = resolve;
 });
+function markFirstTimeSync() {
+    if (didFirstTimeSync) return;
+    didFirstTimeSync = true;
+    onFirstTimeSync();
+}
 
 const baseGetTime = Date.now;
 let lastTime = 0;
@@ -111,13 +141,24 @@ export function getTimeComponentsDetailed(): {
     }
 }
 
+export function computeTweenedOffset(components: {
+    systemTime: number;
+    fromOffset: number;
+    toOffset: number;
+    fromTime: number;
+}): number {
+    const elapsed = Math.max(0, components.systemTime - components.fromTime);
+    const delta = components.toOffset - components.fromOffset;
+    const maxChange = elapsed * OFFSET_TWEEN_RATE;
+    if (Math.abs(delta) <= maxChange) {
+        return components.toOffset;
+    }
+    return components.fromOffset + Math.sign(delta) * maxChange;
+}
+
 export function getTimeComponents(): { systemTime: number; offset: number } {
     const detailed = getTimeComponentsDetailed();
-    const elapsed = detailed.systemTime - detailed.fromTime;
-    const duration = detailed.toTime - detailed.fromTime;
-    const fraction = duration > 0 ? Math.min(1, elapsed / duration) : 0;
-    const offset = detailed.fromOffset + (detailed.toOffset - detailed.fromOffset) * fraction;
-    return { systemTime: detailed.systemTime, offset };
+    return { systemTime: detailed.systemTime, offset: computeTweenedOffset(detailed) };
 }
 
 export function getTrueTime() {
@@ -147,6 +188,31 @@ export function getTrueTimeOffset() {
     const { offset } = getTimeComponents();
     return offset;
 }
+export type TrueTimeProof = {
+    systemTime: number;
+    // The tween endpoints the current offset is moving between. When offset !== toOffset we are still converging.
+    fromOffset: number;
+    toOffset: number;
+    fromTime: number;
+    toTime: number;
+    offset: number;
+    // The raw measurement that produced the newest offset. Undefined if the offset came from a caller-provided base that only returns numbers.
+    measurement?: TimeOffsetProof;
+};
+export function getTrueTimeProof(): TrueTimeProof | undefined {
+    const data = cachedTimeOffsetData;
+    if (!data) return undefined;
+    const detailed = getTimeComponentsDetailed();
+    return {
+        systemTime: detailed.systemTime,
+        fromOffset: detailed.fromOffset,
+        toOffset: detailed.toOffset,
+        fromTime: detailed.fromTime,
+        toTime: detailed.toTime,
+        offset: computeTweenedOffset(detailed),
+        measurement: data.proof,
+    };
+}
 export function waitForFirstTimeSync(): Promise<void> | undefined {
     if (didFirstTimeSync) return undefined;
     return firstTimeSyncPromise;
@@ -166,18 +232,22 @@ export function getBrowserTime() {
     return baseGetTime();
 }
 
-export function setGetTimeOffsetBase(base: () => Promise<number>) {
+export function setGetTimeOffsetBase(base: () => Promise<number | TimeOffsetMeasurement>) {
     getTimeOffsetBase = base;
 }
 
-async function defaultGetTimeOffset(): Promise<number> {
+function makeMeasurement(sendTime: number, receiveTime: number, serverTime: number): TimeOffsetMeasurement {
+    const predictedServerToClientLatency = (receiveTime - sendTime) / 2;
+    const offset = serverTime + predictedServerToClientLatency - receiveTime;
+    return { offset, proof: { sendTime, receiveTime, serverTime, offset } };
+}
+
+async function defaultGetTimeOffset(): Promise<TimeOffsetMeasurement> {
     if (!isNode()) {
         let sendTime = baseGetTime();
         let serverTrueTime = await TimeController.nodes[SocketFunction.browserNodeId()].getTrueTime();
-        let systemTime = baseGetTime();
-        let predictedServerToClientLatency = (systemTime - sendTime) / 2;
-        let trueTimeRightNow = serverTrueTime + predictedServerToClientLatency;
-        return trueTimeRightNow - systemTime;
+        let receiveTime = baseGetTime();
+        return makeMeasurement(sendTime, receiveTime, serverTrueTime);
     }
 
     const dgram = await import("dgram");
@@ -194,32 +264,60 @@ async function defaultGetTimeOffset(): Promise<number> {
 
         const sendTime = baseGetTime();
 
+        // NTP is UDP, so a lost packet means the "message" event simply never fires. Without a timeout that leaves updateTimeOffset stuck (updatingOffset stays true forever), permanently stopping all future syncs.
+        const timeout = setTimeout(() => {
+            client.close();
+            reject(new Error(`NTP request to ${NTP_SERVER} timed out`));
+        }, NTP_TIMEOUT);
+
         client.send(message, 0, message.length, NTP_PORT, NTP_SERVER);
         client.on("error", (err) => {
+            clearTimeout(timeout);
             client.close();
             reject(err);
         });
 
         client.on("message", (msg) => {
             const receiveTime = baseGetTime();
+            // A throw in this handler would be an uncaught exception, not a rejection, so validate before reading fixed offsets.
+            if (msg.length < NTP_PACKET_SIZE) return;
+            clearTimeout(timeout);
 
             // Extract the transmit timestamp from the server response
             const transmitTimestampSeconds = msg.readUInt32BE(40);
             const transmitTimestampFraction = msg.readUInt32BE(44);
             const transmitTimestamp = (transmitTimestampSeconds * 1000) + (transmitTimestampFraction * 1000 / 0x100000000) - NTP_EPOCH_OFFSET;
 
-            const predictedServerToClientLatency = (receiveTime - sendTime) / 2;
-
-            // Calculate the offset
-            const systemTime = baseGetTime();
-            const actualTime = transmitTimestamp + predictedServerToClientLatency;
-            const offset = actualTime - systemTime;
-
             client.close();
-            resolve(offset);
+            resolve(makeMeasurement(sendTime, receiveTime, transmitTimestamp));
         });
     });
 }
+
+function isValidTimeOffsetData(data: unknown): data is TimeOffsetData {
+    const d = data as TimeOffsetData | undefined;
+    return (
+        !!d &&
+        typeof d.lastOffset === "number" &&
+        typeof d.lastUpdateTime === "number" &&
+        typeof d.offset === "number" &&
+        typeof d.updateTime === "number" &&
+        typeof d.nextOffset === "number" &&
+        typeof d.nextUpdateTime === "number"
+    );
+}
+
+type TimeOffsetStoreEntry = {
+    data: TimeOffsetData;
+    version: number;
+};
+type TimeOffsetStore = {
+    getEntry(): Promise<TimeOffsetStoreEntry | undefined>;
+    // Atomic conditional write, only succeeds if the stored version matches expectedVersion.
+    putIfVersion(data: TimeOffsetData, expectedVersion: number): Promise<boolean>;
+    // Unconditional write when no entry exists yet. Returns false if another writer raced us, in which case the caller should re-read and use their data.
+    putInitial(data: TimeOffsetData): Promise<boolean>;
+};
 
 let timeOffsetDb: import("lmdb").RootDatabase<TimeOffsetData, string> | undefined = undefined;
 async function getTimeOffsetDb() {
@@ -245,86 +343,145 @@ async function getTimeOffsetDb() {
     }
 }
 
-async function getTimeOffsetFromLmdb(): Promise<{
-    data: TimeOffsetData;
-    version: number;
-} | undefined> {
-    if (!isNode() || !USE_LMDB_PROCESS_SYNC) {
-        // Skip LMDB for browsers or if disabled
-        return undefined;
-    }
-
-    try {
-        const db = await getTimeOffsetDb();
-        if (!db) return undefined;
-
-        const entry = await db.getEntry("timeOffset"); // Gets {value, version} atomically
-        if (!entry) return undefined;
-
-        const data = entry.value;
-        const version = entry.version;
-
-        if (data &&
-            typeof version === "number" &&
-            typeof data.lastOffset === "number" &&
-            typeof data.lastUpdateTime === "number" &&
-            typeof data.offset === "number" &&
-            typeof data.updateTime === "number" &&
-            typeof data.nextOffset === "number" &&
-            typeof data.nextUpdateTime === "number") {
-            return { data, version };
-        }
-        return undefined;
-    } catch (e) {
-        console.error("Error reading from LMDB database:", e);
-        return undefined;
-    }
+function getLmdbStore(db: import("lmdb").RootDatabase<TimeOffsetData, string>): TimeOffsetStore {
+    return {
+        async getEntry() {
+            try {
+                const entry = await db.getEntry("timeOffset"); // Gets {value, version} atomically
+                if (!entry) return undefined;
+                if (typeof entry.version !== "number" || !isValidTimeOffsetData(entry.value)) return undefined;
+                return { data: entry.value, version: entry.version };
+            } catch (e) {
+                console.error("Error reading from LMDB database:", e);
+                return undefined;
+            }
+        },
+        async putIfVersion(data, expectedVersion) {
+            try {
+                // Use random version to minimize collision probability on retries
+                const newVersion = Math.random();
+                const success = await db.ifVersion("timeOffset", expectedVersion, () => {
+                    return db.put("timeOffset", data, newVersion);
+                });
+                return success !== undefined;
+            } catch (e) {
+                console.error("Error writing to LMDB database:", e);
+                return false;
+            }
+        },
+        async putInitial(data) {
+            try {
+                const newVersion = Math.random();
+                await db.put("timeOffset", data, newVersion);
+                // Read back to see what actually got written
+                const actualEntry = await db.getEntry("timeOffset");
+                return actualEntry?.version === newVersion;
+            } catch (e) {
+                console.error("Error writing to LMDB database:", e);
+                return false;
+            }
+        },
+    };
 }
 
-async function setTimeOffsetInLmdb(
-    data: TimeOffsetData,
-    expectedVersion: number
-): Promise<boolean> {
+function getLocalStorageStore(): TimeOffsetStore | undefined {
     try {
-        const db = await getTimeOffsetDb();
-        if (!db) return false;
-
-        // Atomic conditional write - only succeeds if version matches expectedVersion
-        // Use random version to minimize collision probability on retries
-        const newVersion = Math.random();
-
-        // Conditional write with version check
-        const success = await db.ifVersion("timeOffset", expectedVersion, () => {
-            return db.put("timeOffset", data, newVersion);
-        });
-
-        return success !== undefined;
-    } catch (e) {
-        console.error("Error writing to LMDB database:", e);
-        return false;
+        if (typeof localStorage === "undefined") return undefined;
+    } catch {
+        return undefined;
     }
-}
-
-let getTimeOffsetBase: () => Promise<number> = defaultGetTimeOffset;
-
-async function fetchNewOffset(): Promise<number> {
-    let offsets: number[] = [];
-    for (let i = 0; i < UPDATE_VERIFY_COUNT; i++) {
+    type StoredValue = {
+        version: number;
+        data: TimeOffsetData;
+    };
+    function readStored(): StoredValue | undefined {
         try {
-            offsets.push(await getTimeOffsetBase());
+            const raw = localStorage.getItem(TIME_OFFSET_LOCAL_STORAGE_KEY);
+            if (!raw) return undefined;
+            const parsed = JSON.parse(raw) as StoredValue;
+            if (!parsed || typeof parsed.version !== "number" || !isValidTimeOffsetData(parsed.data)) return undefined;
+            return parsed;
         } catch (e) {
-            console.error("Error getting time offset:", e);
+            console.error("Error reading time offset from localStorage:", (e as Error).stack ?? e);
+            return undefined;
+        }
+    }
+    function writeStored(data: TimeOffsetData): number | undefined {
+        try {
+            const version = Math.random();
+            localStorage.setItem(TIME_OFFSET_LOCAL_STORAGE_KEY, JSON.stringify({ version, data }));
+            return version;
+        } catch (e) {
+            console.error("Error writing time offset to localStorage:", (e as Error).stack ?? e);
+            return undefined;
+        }
+    }
+    return {
+        async getEntry() {
+            const stored = readStored();
+            if (!stored) return undefined;
+            return { data: stored.data, version: stored.version };
+        },
+        // localStorage has no atomic compare-and-swap, but access within a tab is synchronous, so re-reading the version immediately before writing shrinks the race window to effectively nothing. Worst case two tabs both fetch an offset, which is harmless.
+        async putIfVersion(data, expectedVersion) {
+            const stored = readStored();
+            if (stored?.version !== expectedVersion) return false;
+            return writeStored(data) !== undefined;
+        },
+        async putInitial(data) {
+            const version = writeStored(data);
+            if (version === undefined) return false;
+            return readStored()?.version === version;
+        },
+    };
+}
+
+let timeOffsetStore: TimeOffsetStore | undefined = undefined;
+let timeOffsetStoreResolved = false;
+async function getTimeOffsetStore(): Promise<TimeOffsetStore | undefined> {
+    if (timeOffsetStoreResolved) return timeOffsetStore;
+    if (isNode()) {
+        const db = await getTimeOffsetDb();
+        if (db) {
+            timeOffsetStore = getLmdbStore(db);
+        }
+    } else {
+        timeOffsetStore = getLocalStorageStore();
+    }
+    timeOffsetStoreResolved = true;
+    return timeOffsetStore;
+}
+
+let getTimeOffsetBase: () => Promise<number | TimeOffsetMeasurement> = defaultGetTimeOffset;
+
+// Returns undefined if we couldn't get any measurements. Callers must NOT treat that as an offset of 0 - a fabricated offset written to the shared store would poison every other process/tab for the full transition window.
+async function fetchNewOffset(): Promise<TimeOffsetMeasurement | undefined> {
+    let measurements: TimeOffsetMeasurement[] = [];
+    let failures = 0;
+    let retryDelay = FETCH_RETRY_INITIAL_DELAY;
+    while (measurements.length < UPDATE_VERIFY_COUNT) {
+        // The tab may have been hidden mid-fetch. Measurements from a throttled tab are worse than none, so stop and use whatever we already collected.
+        if (!canMeasureOffset()) break;
+        try {
+            const result = await getTimeOffsetBase();
+            measurements.push(typeof result === "number" ? { offset: result } : result);
+        } catch (e) {
+            console.error("Error getting time offset:", (e as Error).stack ?? e);
+            failures++;
+            if (failures >= FETCH_MAX_FAILURES) break;
+            await new Promise(resolve => setTimeout(resolve, retryDelay));
+            retryDelay = Math.min(retryDelay * 2, FETCH_RETRY_MAX_DELAY);
         }
     }
 
-    if (offsets.length === 0) {
-        // All calls failed, return 0 as fallback
-        return 0;
+    if (measurements.length === 0) {
+        return undefined;
     }
 
     // Pick the middle offset
-    offsets.sort((a, b) => a - b);
-    let offset = offsets[Math.floor(offsets.length / 2)];
+    measurements.sort((a, b) => a.offset - b.offset);
+    let measurement = measurements[Math.floor(measurements.length / 2)];
+    let offset = measurement.offset;
 
     // Log if offset is significant
     let offsetRound = Math.abs(Math.round(offset));
@@ -337,7 +494,14 @@ async function fetchNewOffset(): Promise<number> {
         console.log(`${blue("Synchronized time")}, local clock was ${offset > 0 ? "behind" : "ahead"} by ${offsetColored} @ ${blue(Date.now() + "")}`);
     }
 
-    return offset;
+    return measurement;
+}
+
+function canMeasureOffset() {
+    if (isNode()) return true;
+    if (typeof document === "undefined") return true;
+    // Hidden tabs get their timers and message delivery throttled, which corrupts the round-trip latency estimate and therefore the offset. A visible tab will measure and share via localStorage instead.
+    return document.visibilityState !== "hidden";
 }
 
 let updatingOffset = false;
@@ -346,8 +510,8 @@ async function updateTimeOffset() {
     updatingOffset = true;
 
     try {
-        const db = await getTimeOffsetDb();
-        if (!db) {
+        const store = await getTimeOffsetStore();
+        if (!store) {
             // IMPORTANT: Always use baseGetTime() for scheduling, never getTrueTime().
             // Our update schedule must be based on the stable system clock, not the
             // offset-adjusted time which changes as we synchronize.
@@ -359,44 +523,54 @@ async function updateTimeOffset() {
                 debugLog("Past nextUpdateTime, resetting");
             }
 
-            if (!cachedData) {
+            const needsFetch = !cachedData || currentTime >= cachedData.updateTime;
+            if (needsFetch && !canMeasureOffset()) {
+                // Keep using whatever offset we have (even a stale one is better than a measurement skewed by background throttling).
+            } else if (!cachedData) {
                 // First time initialization
-                const offset = await fetchNewOffset();
-                cachedTimeOffsetData = {
-                    lastOffset: offset,
-                    lastUpdateTime: currentTime,
-                    offset: offset,
-                    updateTime: currentTime + UPDATE_TRANSITION_GAP,
-                    nextOffset: offset,
-                    nextUpdateTime: currentTime + UPDATE_TRANSITION_GAP * 2,
-                };
-                debugLog("Initialized - time offset:", offset, "ms, next update in", UPDATE_TRANSITION_GAP, "ms");
+                const measurement = await fetchNewOffset();
+                if (measurement) {
+                    // Re-read the time, as fetchNewOffset can take minutes when it has to retry.
+                    const initTime = baseGetTime();
+                    const offset = measurement.offset;
+                    cachedTimeOffsetData = {
+                        lastOffset: offset,
+                        lastUpdateTime: initTime,
+                        offset: offset,
+                        updateTime: initTime + UPDATE_TRANSITION_GAP,
+                        nextOffset: offset,
+                        nextUpdateTime: initTime + UPDATE_TRANSITION_GAP * 2,
+                        proof: measurement.proof,
+                    };
+                    debugLog("Initialized - time offset:", offset, "ms, next update in", UPDATE_TRANSITION_GAP, "ms");
+                }
+                // On total failure we leave the data unset (getTrueTime then uses the raw system clock) and the next check interval retries. We never fabricate an offset.
             } else if (currentTime >= cachedData.updateTime) {
                 // Time to rotate
-                const newOffset = await fetchNewOffset();
-                cachedTimeOffsetData = {
-                    lastOffset: cachedData.offset,
-                    lastUpdateTime: cachedData.updateTime,
-                    offset: cachedData.nextOffset,
-                    updateTime: cachedData.nextUpdateTime,
-                    nextOffset: newOffset,
-                    nextUpdateTime: cachedData.nextUpdateTime + UPDATE_TRANSITION_GAP,
-                };
-                const timeUntilNext = cachedTimeOffsetData.nextUpdateTime - baseGetTime();
-                debugLog("Advancing time offset - current:", cachedTimeOffsetData.offset, "ms, next:", cachedTimeOffsetData.nextOffset, "ms, next update in", timeUntilNext, "ms");
+                const newMeasurement = await fetchNewOffset();
+                if (newMeasurement) {
+                    cachedTimeOffsetData = {
+                        lastOffset: cachedData.offset,
+                        lastUpdateTime: cachedData.updateTime,
+                        offset: cachedData.nextOffset,
+                        updateTime: cachedData.nextUpdateTime,
+                        nextOffset: newMeasurement.offset,
+                        nextUpdateTime: cachedData.nextUpdateTime + UPDATE_TRANSITION_GAP,
+                        proof: newMeasurement.proof,
+                    };
+                    const timeUntilNext = cachedTimeOffsetData.nextUpdateTime - baseGetTime();
+                    debugLog("Advancing time offset - current:", cachedTimeOffsetData.offset, "ms, next:", cachedTimeOffsetData.nextOffset, "ms, next update in", timeUntilNext, "ms");
+                }
             }
 
-            if (!didFirstTimeSync) {
-                didFirstTimeSync = true;
-                onFirstTimeSync();
-            }
+            // Always resolve the first sync, even on failure - SocketFunction.mount awaits this, and hanging forever is worse than temporarily running on the unadjusted system clock.
+            markFirstTimeSync();
             return;
         }
 
-        // At this point: Node.js, LMDB enabled and working
-        // Main LMDB path with atomic synchronization
+        // At this point we have a shared store (LMDB for processes, localStorage for tabs) with atomic-ish versioned writes.
         while (true) {
-            const entry = await getTimeOffsetFromLmdb();
+            const entry = await store.getEntry();
             // IMPORTANT: Always use baseGetTime() for scheduling, never getTrueTime().
             // Our update schedule must be based on the stable system clock, not the
             // offset-adjusted time which changes as we synchronize.
@@ -411,38 +585,48 @@ async function updateTimeOffset() {
                 debugLog("Past nextUpdateTime, resetting");
             }
 
+            const needsFetch = !cachedData || currentTime >= cachedData.updateTime;
+            if (needsFetch && !canMeasureOffset()) {
+                // Keep using whatever offset we have (even a stale one is better than a measurement skewed by background throttling). If we have nothing, run unsynced until we become visible or another tab writes to the store.
+                cachedTimeOffsetData = entry?.data ?? cachedTimeOffsetData;
+                break;
+            }
+
             if (!cachedData || !readVersion) {
                 // First time initialization - use conditional write to handle race
-                const offset = await fetchNewOffset();
+                const measurement = await fetchNewOffset();
+                if (!measurement) {
+                    // Total failure - keep any stale data rather than writing a fabricated offset to the shared store. The next check interval retries.
+                    cachedTimeOffsetData = entry?.data ?? cachedTimeOffsetData;
+                    break;
+                }
+                // Re-read the time, as fetchNewOffset can take minutes when it has to retry.
+                const initTime = baseGetTime();
+                const offset = measurement.offset;
                 const initData: TimeOffsetData = {
                     lastOffset: offset,
-                    lastUpdateTime: currentTime,
+                    lastUpdateTime: initTime,
                     offset: offset,
-                    updateTime: currentTime + UPDATE_TRANSITION_GAP,
+                    updateTime: initTime + UPDATE_TRANSITION_GAP,
                     nextOffset: offset,
-                    nextUpdateTime: currentTime + UPDATE_TRANSITION_GAP * 2,
+                    nextUpdateTime: initTime + UPDATE_TRANSITION_GAP * 2,
+                    proof: measurement.proof,
                 };
 
-                const newVersion = Math.random();
-
                 if (readVersion) {
-                    const success = await setTimeOffsetInLmdb(initData, readVersion);
+                    const success = await store.putIfVersion(initData, readVersion);
                     if (!success) {
                         debugLog("Lost the race, retrying");
                         // Lost the race, retry
                         continue;
                     }
+                    cachedTimeOffsetData = initData;
                     console.log("Successfully wrote atomic reset");
                     break;
                 }
 
-                // Try to write our data
-                await db.put("timeOffset", initData, newVersion);
-
-                // Read back to see what actually got written
-                const actualEntry = await db.getEntry("timeOffset");
-                if (actualEntry?.version !== newVersion) {
-                    // Lost the race, another process wrote after us
+                if (!await store.putInitial(initData)) {
+                    // Lost the race, another writer wrote after us
                     // Retry from the top to read their data
                     debugLog("Value was changed by another process, retrying");
                     continue;
@@ -456,17 +640,23 @@ async function updateTimeOffset() {
 
             if (currentTime >= cachedData.updateTime) {
                 // Time to rotate
-                const newOffset = await fetchNewOffset();
+                const newMeasurement = await fetchNewOffset();
+                if (!newMeasurement) {
+                    // Total failure - keep the existing data unrotated (the offset just flattens out at nextOffset). The next check interval retries the rotation.
+                    cachedTimeOffsetData = cachedData;
+                    break;
+                }
                 const newData: TimeOffsetData = {
                     lastOffset: cachedData.offset,
                     lastUpdateTime: cachedData.updateTime,
                     offset: cachedData.nextOffset,
                     updateTime: cachedData.nextUpdateTime,
-                    nextOffset: newOffset,
+                    nextOffset: newMeasurement.offset,
                     nextUpdateTime: cachedData.nextUpdateTime + UPDATE_TRANSITION_GAP,
+                    proof: newMeasurement.proof,
                 };
 
-                const success = await setTimeOffsetInLmdb(newData, readVersion);
+                const success = await store.putIfVersion(newData, readVersion);
                 if (!success) {
                     // Lost the race, retry
                     continue;
@@ -479,30 +669,41 @@ async function updateTimeOffset() {
             } else {
                 cachedTimeOffsetData = cachedData;
                 const timeUntilNext = cachedData.updateTime - baseGetTime();
-                debugLog("Loaded from LMDB - current:", cachedData.offset, "ms, next:", cachedData.nextOffset, "ms, next update in", timeUntilNext, "ms");
+                debugLog("Loaded from store - current:", cachedData.offset, "ms, next:", cachedData.nextOffset, "ms, next update in", timeUntilNext, "ms");
                 break;
             }
         }
 
-        if (!didFirstTimeSync) {
-            didFirstTimeSync = true;
-            onFirstTimeSync();
-        }
+        markFirstTimeSync();
     } finally {
         updatingOffset = false;
     }
 }
 
-setInterval(() => {
+function triggerUpdateTimeOffset() {
     updateTimeOffset().catch((e) => {
         console.warn("Error updating time offset:", e);
     });
-}, UPDATE_CHECK_INTERVAL);
+}
+
+setInterval(triggerUpdateTimeOffset, UPDATE_CHECK_INTERVAL);
 setImmediate(() => {
     updateTimeOffset().catch((e) => {
         console.error("Error updating initial offset:", e);
     });
 });
+
+if (!isNode() && typeof window !== "undefined" && typeof document !== "undefined") {
+    // If we loaded in a hidden tab we skip measuring, so re-check as soon as we become visible.
+    document.addEventListener("visibilitychange", triggerUpdateTimeOffset);
+    window.addEventListener("focus", triggerUpdateTimeOffset);
+    // Pick up offsets other tabs write, so only one tab ever has to measure.
+    window.addEventListener("storage", (e) => {
+        if (e.key === TIME_OFFSET_LOCAL_STORAGE_KEY) {
+            triggerUpdateTimeOffset();
+        }
+    });
+}
 
 
 class TimeControllerBase {

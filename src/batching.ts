@@ -337,8 +337,8 @@ export function retryFunctional<T extends AnyFunction>(fnc: T, config?: {
                 throw e;
             }
             if (retries < 0) throw e;
-            console.warn(`Retrying ${name}, due to error ${String(e.stack)}`);
             retries--;
+            console.warn(`Retrying ${name} (${retries}/${maxRetries} left), due to error ${String(e.stack)}`);
             let curCount = maxRetries - retries;
             await delay(minDelay * expFactor ** curCount);
             return runFnc(args, retries);

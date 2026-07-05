@@ -1,4 +1,4 @@
-import { getTimeComponentsDetailed, waitForFirstTimeSync } from "./time/trueTimeShim";
+import { computeTweenedOffset, getTimeComponentsDetailed, waitForFirstTimeSync } from "./time/trueTimeShim";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -19,7 +19,6 @@ async function sampleMode() {
         toOffset: number;
         fromTime: number;
         toTime: number;
-        fraction: number;
     };
 
     const samples: Sample[] = [];
@@ -28,11 +27,8 @@ async function sampleMode() {
     for (let i = 0; i < SAMPLE_COUNT; i++) {
         const detailed = getTimeComponentsDetailed();
 
-        // Calculate smearing using the same systemTime
-        const elapsed = detailed.systemTime - detailed.fromTime;
-        const duration = detailed.toTime - detailed.fromTime;
-        const fraction = duration > 0 ? Math.min(1, elapsed / duration) : 0;
-        const offset = detailed.fromOffset + (detailed.toOffset - detailed.fromOffset) * fraction;
+        // Calculate the tween using the same systemTime
+        const offset = computeTweenedOffset(detailed);
 
         samples.push({
             id: TEST_RUN_ID,
@@ -42,7 +38,6 @@ async function sampleMode() {
             toOffset: detailed.toOffset,
             fromTime: detailed.fromTime,
             toTime: detailed.toTime,
-            fraction,
         });
 
         if (SAMPLE_INTERVAL_MS > 0) {
@@ -88,7 +83,6 @@ async function verifyMode() {
         toOffset: number;
         fromTime: number;
         toTime: number;
-        fraction: number;
         file: string;
     };
 
@@ -126,13 +120,13 @@ async function verifyMode() {
             console.error(`    systemTime: ${prev.systemTime}`);
             console.error(`    offset: ${prev.offset}`);
             console.error(`    trueTime: ${prevTrueTime}`);
-            console.error(`    smearing: ${prev.fromOffset} -> ${prev.toOffset} (${(prev.fraction * 100).toFixed(2)}%)`);
+            console.error(`    tween: ${prev.fromOffset} -> ${prev.toOffset}`);
             console.error(`    timeWindow: ${prev.fromTime} -> ${prev.toTime}`);
             console.error(`  Current [ID: ${sample.id}, file: ${sample.file}]:`);
             console.error(`    systemTime: ${sample.systemTime}`);
             console.error(`    offset: ${sample.offset}`);
             console.error(`    trueTime: ${trueTime}`);
-            console.error(`    smearing: ${sample.fromOffset} -> ${sample.toOffset} (${(sample.fraction * 100).toFixed(2)}%)`);
+            console.error(`    tween: ${sample.fromOffset} -> ${sample.toOffset}`);
             console.error(`    timeWindow: ${sample.fromTime} -> ${sample.toTime}`);
             console.error(`  Difference: ${trueTime - lastTrueTime}ms`);
         }
