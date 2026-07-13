@@ -20,6 +20,12 @@ import { formatTime } from "./formatting/format";
 import { getExternalIP, testTCPIsListening } from "./networking";
 import { forwardPort } from "./forwardPort";
 
+// When a requested port is taken and useAvailablePortIfPortInUse is set, we scan
+//  upwards from this base instead of binding a random OS-assigned port, so restarts
+//  land on predictable, consistent ports.
+const PORT_SCAN_START = 13000;
+const PORT_SCAN_COUNT = 10000;
+
 export type SocketServerConfig = (
     https.ServerOptions & {
         key: string | Buffer;
@@ -266,7 +272,7 @@ export async function startSocketServer(
                     }
                 }
 
-                if (!sniServers.has(sni)) {
+                if (!sniServers.has(sni) && sniServers.size > 0) {
                     console.warn(`No SNI server found for ${originalSNI}, using main server. SNI candidates ${Array.from(sniServers.keys()).join(", ")}`);
                 }
                 server = sniServers.get(sni) || mainHTTPSServer;
@@ -311,52 +317,63 @@ export async function startSocketServer(
 
     let port = config.port;
     if (!SocketFunction.silent) {
-        console.log(yellow(`Trying to listening on ${host}:${port}`));
+        console.log(yellow(`Trying to listen on ${host}:${port}`));
     }
 
-    let listeningPromise = waitUntilListening();
-    listeningPromise.catch(e => { });
-
-    // Return true if we are listening, false if the address is in use, and throws on other errors
-    async function waitUntilListening() {
+    // Attempts to bind realServer to a single port. Resolves true once the server is
+    //  actually listening, false if the port is already in use, and rejects on any
+    //  other error. After an EADDRINUSE the server is still usable, so the caller can
+    //  simply retry listen() on the next candidate.
+    async function tryListen(candidatePort: number): Promise<boolean> {
         return await new Promise<boolean>((resolve, reject) => {
-            realServer.once("error", e => {
-                reject(e);
-            });
-            realServer.once("listening", () => {
-                resolve(false);
-            });
-        });
-    }
-
-    if (config.useAvailablePortIfPortInUse && port) {
-        realServer.listen(port, host);
-        let isListening = await new Promise<boolean>((resolve, reject) => {
-            if (realServer.listening) {
-                resolve(true);
-                return;
+            function cleanup() {
+                realServer.removeListener("error", onError);
+                realServer.removeListener("listening", onListening);
             }
-            realServer.once("error", e => {
-                if (e.message.includes("EADDRINUSE")) {
-                    resolve(true);
+            function onError(e: NodeJS.ErrnoException) {
+                cleanup();
+                if (e.code === "EADDRINUSE" || e.message.includes("EADDRINUSE")) {
+                    resolve(false);
                 } else {
                     reject(e);
                 }
-            });
-            realServer.once("listening", () => {
-                resolve(false);
-            });
+            }
+            function onListening() {
+                cleanup();
+                resolve(true);
+            }
+            realServer.once("error", onError);
+            realServer.once("listening", onListening);
+            realServer.listen(candidatePort, host);
         });
-        if (!isListening) {
-            port = 0;
-            realServer.listen(port, host);
-            listeningPromise = waitUntilListening();
-        }
-    } else {
-        realServer.listen(port, host);
     }
 
-    await listeningPromise;
+    let bound = false;
+    // Honor an explicitly requested port first. A falsy port (0, the default) means
+    //  "no preference" — skip straight to the scan so we land on a consistent port
+    //  instead of an OS-assigned random one.
+    if (port) {
+        bound = await tryListen(port);
+        if (!bound && !config.useAvailablePortIfPortInUse) {
+            throw new Error(`Port ${port} is already in use (set useAvailablePortIfPortInUse to fall back to another port)`);
+        }
+    }
+    // Scan upwards from PORT_SCAN_START for the first free port, so restarts land on
+    //  predictable ports.
+    if (!bound) {
+        for (let candidate = PORT_SCAN_START; candidate < PORT_SCAN_START + PORT_SCAN_COUNT; candidate++) {
+            if (candidate === port) continue;
+            if (await tryListen(candidate)) {
+                bound = true;
+                port = candidate;
+                break;
+            }
+        }
+        if (!bound) {
+            throw new Error(`Could not find an available port in range ${PORT_SCAN_START}-${PORT_SCAN_START + PORT_SCAN_COUNT - 1} (requested ${config.port})`);
+        }
+    }
+
     port = (realServer.address() as net.AddressInfo).port;
 
     if (config.autoForwardPort && config.public) {
@@ -377,7 +394,9 @@ export async function startSocketServer(
     }
 
     let nodeId = getNodeId(getCommonName(config.cert), port);
-    console.log(green(`Started Listening on ${nodeId} (${host}) after ${formatTime(process.uptime() * 1000)}`));
+    console.log(green(`Started Listening on ${nodeId} (${host}) after ${formatTime(process.uptime() * 1000)}`), {
+        domains: Object.keys(config.SNICerts || {}),
+    });
 
     return nodeId;
 }

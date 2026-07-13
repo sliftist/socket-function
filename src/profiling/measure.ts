@@ -7,24 +7,31 @@ import { addToStats, addToStatsValue, createStatsValue, getStatsTop, StatsValue 
 import { white } from "../formatting/logColors";
 import { isNode } from "../misc";
 import { formatStats, percent } from "./statsFormat";
+import { createSingleton } from "../createSingleton";
 
-let measurementsDisabled = false;
+// Shared across every copy of this package loaded in the process, so enable/disableMeasurements
+//  on any copy is honored by every copy's measureWrap, and so the skipped-function warning counts
+//  across all copies. Held as a mutated-in-place object because the flags are reassigned. See
+//  createSingleton.
+const measureState = createSingleton("measure.state", 1, () => ({
+    measurementsEnabled: true,
+    measurementsDisabled: false,
+    functionsSkipped: 0,
+})).get();
 /** NOTE: Must be called BEFORE anything else is imported!
  *      NOTE: Measurements on on by default now, so this doesn't really need to be called...
 */
 export function enableMeasurements() {
-    if (functionsSkipped) {
-        console.warn(red(`Skipped measure shimming ${functionsSkipped} functions. Fix this by calling enableMeasurements before any other imports.`));
+    if (measureState.functionsSkipped) {
+        console.warn(red(`Skipped measure shimming ${measureState.functionsSkipped} functions. Fix this by calling enableMeasurements before any other imports.`));
     }
-    measurementsEnabled = true;
+    measureState.measurementsEnabled = true;
 }
 /** NOTE: Must be called BEFORE anything else is imported! */
 export function disableMeasurements() {
-    measurementsEnabled = false;
-    measurementsDisabled = true;
+    measureState.measurementsEnabled = false;
+    measureState.measurementsDisabled = true;
 }
-
-let functionsSkipped = 0;
 
 const measureOverhead = 5 / 1000;
 
@@ -60,8 +67,8 @@ export function nameFunction<T extends Function>(name: string, fnc: T) {
 }
 // NOTE: Handles promises correctly
 export function measureWrap<T extends (...args: any[]) => any>(fnc: T, name?: string): T {
-    if (!measurementsEnabled) {
-        functionsSkipped++;
+    if (!measureState.measurementsEnabled) {
+        measureState.functionsSkipped++;
         return fnc;
     }
     let usedName = name || fnc.name || fnc.toString().slice(0, 100).replaceAll(/\s/g, " ");
@@ -78,7 +85,8 @@ export function measureBlock<T extends (...args: any[]) => any>(fnc: T, name?: s
     return measureWrap(fnc, name)();
 }
 
-let extraInfoGetters: (() => string | undefined)[] = [];
+// Shared across copies so registerMeasureInfo on any copy is seen by logMeasureTable. See createSingleton.
+const extraInfoGetters = createSingleton("measure.extraInfoGetters", 1, () => [] as (() => string | undefined)[]).get();
 /** NOTE: You should often call registerNodeMetadata for this as well. registerMeasureInfo
  *      is for logs, while registerNodeMetadata is for the overview page.
  */
@@ -92,7 +100,7 @@ export function registerMeasureInfo(getInfo: () => string | undefined) {
 export function startMeasure(): {
     finish: () => MeasureProfile;
 } {
-    if (!measurementsEnabled && !measurementsDisabled) {
+    if (!measureState.measurementsEnabled && !measureState.measurementsDisabled) {
         console.warn(red(`To capture measurements enableMeasurements() must be called before any other imports in your entry point`));
     }
     let now = Date.now();
@@ -355,9 +363,10 @@ interface ProfileEntry {
     stillOpenCount: number;
 }
 
-let measurementsEnabled = true;
-
-let outstandingProfiles: MeasureProfile[] = [];
+// Shared across copies so a profile started through one copy captures measureWrap'd functions from
+//  every other copy - otherwise a profile would only ever see functions wrapped by its own copy.
+//  See createSingleton.
+const outstandingProfiles = createSingleton("measure.outstandingProfiles", 1, () => [] as MeasureProfile[]).get();
 (globalThis as any).outstandingProfiles = outstandingProfiles;
 function recordOwnTime(ownTimeObj: OwnTimeObj) {
     if (outstandingProfiles.length === 0) return;

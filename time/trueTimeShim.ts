@@ -18,6 +18,11 @@ const FETCH_RETRY_MAX_DELAY = 1000 * 30;
 const FETCH_MAX_FAILURES = 8;
 const NTP_TIMEOUT = 1000 * 10;
 
+// The on-disk LMDB database can become corrupt (ex, a process killed mid-write). After this many
+//  consecutive failed operations we stop just reopening the handle and delete the files to start
+//  fresh - the data is only a cached time offset, so wiping it merely forces a re-measurement.
+const LMDB_MAX_CORRUPTION_FAILURES = 3;
+
 // Time can never go backwards, but we can run at a slower rate until the output time allows
 //      the real time to catch up with it.
 const MINIMUM_TIME_RATE = 0.5;
@@ -319,67 +324,113 @@ type TimeOffsetStore = {
     putInitial(data: TimeOffsetData): Promise<boolean>;
 };
 
-let timeOffsetDb: import("lmdb").RootDatabase<TimeOffsetData, string> | undefined = undefined;
-async function getTimeOffsetDb() {
-    if (!USE_LMDB_PROCESS_SYNC) return undefined;
-    if (timeOffsetDb) return timeOffsetDb;
-    if (!isNode()) return undefined;
+type TimeOffsetDb = import("lmdb").RootDatabase<TimeOffsetData, string>;
+let timeOffsetDb: TimeOffsetDb | undefined = undefined;
+let timeOffsetDbPath: string | undefined = undefined;
 
+async function openTimeOffsetDb(): Promise<TimeOffsetDb | undefined> {
     try {
         const lmdb = await import("lmdb");
         const path = await import("path");
         const os = await import("os");
 
-        const dbPath = path.join(os.tmpdir(), "socket-function-time-offset-2");
-        timeOffsetDb = lmdb.open<TimeOffsetData, string>({
-            path: dbPath,
+        timeOffsetDbPath = path.join(os.tmpdir(), "socket-function-time-offset-2");
+        return lmdb.open<TimeOffsetData, string>({
+            path: timeOffsetDbPath,
             // Enable versioning for conditional writes
             useVersions: true,
         });
-        return timeOffsetDb;
     } catch (e) {
-        console.error("Error opening LMDB database:", e);
+        console.error("Error opening LMDB database:", (e as Error).stack ?? e);
         return undefined;
     }
 }
 
-function getLmdbStore(db: import("lmdb").RootDatabase<TimeOffsetData, string>): TimeOffsetStore {
+async function getTimeOffsetDb() {
+    if (!USE_LMDB_PROCESS_SYNC) return undefined;
+    if (!isNode()) return undefined;
+    if (timeOffsetDb) return timeOffsetDb;
+    timeOffsetDb = await openTimeOffsetDb();
+    return timeOffsetDb;
+}
+
+// Closes the current handle (so the next op reopens a fresh one) and, when wipe is set, deletes the
+//  on-disk files so a corrupt database is replaced with an empty one. lmdb writes the main file at
+//  the path plus a sibling lock file, so we clear the path and its lock variants.
+async function recreateTimeOffsetDb(config: { wipe: boolean }) {
+    let db = timeOffsetDb;
+    timeOffsetDb = undefined;
+    if (db) {
+        try {
+            await db.close();
+        } catch (e) {
+            console.error("Error closing LMDB database:", (e as Error).stack ?? e);
+        }
+    }
+    if (config.wipe && timeOffsetDbPath) {
+        try {
+            const fs = await import("fs");
+            for (let suffix of ["", "-lock", ".lock"]) {
+                await fs.promises.rm(timeOffsetDbPath + suffix, { recursive: true, force: true });
+            }
+            console.log(yellow(`Wiped corrupt time-offset LMDB database at ${timeOffsetDbPath}`));
+        } catch (e) {
+            console.error("Error wiping corrupt LMDB database:", (e as Error).stack ?? e);
+        }
+    }
+}
+
+// A corrupt database throws on every read and on the read-back inside every write, and we can't
+//  repair it. So we run each op through here: on success we reset the failure count, and on error
+//  we reopen the handle (wiping the files once we've hit the threshold) and return the fallback so
+//  callers degrade to running unsynced instead of throwing. Ops are serialized by updatingOffset,
+//  so there is no concurrent access to worry about.
+let lmdbCorruptionFailures = 0;
+async function runLmdbOp<T>(name: string, op: (db: TimeOffsetDb) => Promise<T>, fallback: T): Promise<T> {
+    const db = await getTimeOffsetDb();
+    if (!db) return fallback;
+    try {
+        const result = await op(db);
+        lmdbCorruptionFailures = 0;
+        return result;
+    } catch (e) {
+        lmdbCorruptionFailures++;
+        console.error(`Error during LMDB ${name} (failure ${lmdbCorruptionFailures}/${LMDB_MAX_CORRUPTION_FAILURES}):`, (e as Error).stack ?? e);
+        let wipe = lmdbCorruptionFailures >= LMDB_MAX_CORRUPTION_FAILURES;
+        await recreateTimeOffsetDb({ wipe });
+        if (wipe) lmdbCorruptionFailures = 0;
+        return fallback;
+    }
+}
+
+function getLmdbStore(): TimeOffsetStore {
     return {
         async getEntry() {
-            try {
+            return runLmdbOp("getEntry", async (db) => {
                 const entry = await db.getEntry("timeOffset"); // Gets {value, version} atomically
                 if (!entry) return undefined;
                 if (typeof entry.version !== "number" || !isValidTimeOffsetData(entry.value)) return undefined;
                 return { data: entry.value, version: entry.version };
-            } catch (e) {
-                console.error("Error reading from LMDB database:", e);
-                return undefined;
-            }
+            }, undefined);
         },
         async putIfVersion(data, expectedVersion) {
-            try {
+            return runLmdbOp("putIfVersion", async (db) => {
                 // Use random version to minimize collision probability on retries
                 const newVersion = Math.random();
                 const success = await db.ifVersion("timeOffset", expectedVersion, () => {
                     return db.put("timeOffset", data, newVersion);
                 });
                 return success !== undefined;
-            } catch (e) {
-                console.error("Error writing to LMDB database:", e);
-                return false;
-            }
+            }, false);
         },
         async putInitial(data) {
-            try {
+            return runLmdbOp("putInitial", async (db) => {
                 const newVersion = Math.random();
                 await db.put("timeOffset", data, newVersion);
                 // Read back to see what actually got written
                 const actualEntry = await db.getEntry("timeOffset");
                 return actualEntry?.version === newVersion;
-            } catch (e) {
-                console.error("Error writing to LMDB database:", e);
-                return false;
-            }
+            }, false);
         },
     };
 }
@@ -443,7 +494,7 @@ async function getTimeOffsetStore(): Promise<TimeOffsetStore | undefined> {
     if (isNode()) {
         const db = await getTimeOffsetDb();
         if (db) {
-            timeOffsetStore = getLmdbStore(db);
+            timeOffsetStore = getLmdbStore();
         }
     } else {
         timeOffsetStore = getLocalStorageStore();

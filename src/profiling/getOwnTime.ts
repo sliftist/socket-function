@@ -1,5 +1,6 @@
 import debugbreak from "debugbreak";
 import { isNode } from "../misc";
+import { createSingleton } from "../createSingleton";
 // TODO: We could probably make this an optional / dev dependency, to allow
 //  for use on machines without the ability to compile?
 //import { now } from "rdtsc-now";
@@ -15,7 +16,12 @@ export type OwnTimeObjInternal = OwnTimeObj & {
     firstStartTime: number;
 };
 
-let openTimes: OwnTimeObjInternal[] = [];
+// Shared across every copy of this package loaded in the process, so a profile started via one
+//  copy's startMeasure nests correctly with getOwnTime calls made through another copy. The
+//  open-time stack MUST be a single instance, otherwise cross-copy nesting/own-time accounting
+//  breaks (a function wrapped by copy A calling one wrapped by copy B would push onto a different
+//  stack). See createSingleton.
+const openTimes = createSingleton("measure.openTimes", 1, () => [] as OwnTimeObjInternal[]).get();
 
 export function getOpenTimesBase(): OwnTimeObjInternal[] {
     return openTimes;
