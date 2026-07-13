@@ -6,6 +6,72 @@ import { timeInHour } from "./misc";
 const SSDP_DISCOVER_MX = 2;
 const SSDP_DISCOVER_MSG = `M-SEARCH * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\nMAN: "ssdp:discover"\r\nMX: ${SSDP_DISCOVER_MX}\r\nST: urn:schemas-upnp-org:device:InternetGatewayDevice:1\r\n\r\n`;
 
+/** Resolves the UPnP Internet Gateway Device we can talk to, along with the local
+ *      addressing needed to build SOAP requests against it. Shared by every operation
+ *      that needs to reach the router's control endpoint. */
+async function resolveGateway(): Promise<{
+    internalIP: string;
+    gatewayIP: string;
+    controlPort: number;
+    controlURLs: string[];
+}> {
+    const localObj = getLocalInterfaceAddress();
+    if (!localObj) throw new Error("Could not find the local address / gateway");
+
+    const { internalIP, gatewayIP } = localObj;
+    console.log(`Local IP: ${internalIP}, Gateway IP: ${gatewayIP}`);
+    let gateway = await discoverGateway(internalIP);
+    let controlURLs = await getControlPaths(gateway);
+    let controlPort = Number(new URL(gateway).port);
+
+    return { internalIP, gatewayIP, controlPort, controlURLs };
+}
+
+export interface PortMapping {
+    externalPort: number;
+    internalPort: number;
+    protocol: string;
+    /** The LAN client the mapping forwards to (NewInternalClient). */
+    internalClient: string;
+    /** Empty string means "any" remote host (the usual case). */
+    remoteHost: string;
+    enabled: boolean;
+    description: string;
+    /** Remaining lease in seconds; 0 means a permanent (static) mapping. */
+    leaseDuration: number;
+}
+
+/** Queries the router for every existing UPnP port mapping by walking
+ *      GetGenericPortMappingEntry from index 0 until the gateway reports the index
+ *      is out of range (SOAP error 713 / a non-200 response). */
+export async function listPortMappings(): Promise<PortMapping[]> {
+    if (os.platform() === "linux") return [];
+
+    const { internalIP, gatewayIP, controlPort, controlURLs } = await resolveGateway();
+
+    let lastError: unknown;
+    for (let controlURL of controlURLs) {
+        try {
+            const mappings: PortMapping[] = [];
+            for (let index = 0; ; index++) {
+                const entry = await getGenericPortMappingEntry({
+                    gatewayIP,
+                    controlPort,
+                    controlPath: controlURL,
+                    index,
+                });
+                if (!entry) break;
+                mappings.push(entry);
+            }
+            return mappings;
+        } catch (e) {
+            lastError = e;
+            console.error(`Failed to list port mappings using controlURL ${controlURL}`, e);
+        }
+    }
+    throw new Error(`Failed to list port mappings, could not find a working controlURL. Last error: ${(lastError as Error)?.stack ?? lastError}`);
+}
+
 export async function forwardPort(config: {
     externalPort: number;
     internalPort: number;
@@ -18,14 +84,7 @@ export async function forwardPort(config: {
         const { externalPort, internalPort } = config;
         let duration = config.duration ?? timeInHour;
 
-        const localObj = getLocalInterfaceAddress();
-        if (!localObj) throw new Error("Could not find the local address / gateway");
-
-        const { internalIP, gatewayIP } = localObj;
-        console.log(`Local IP: ${internalIP}, Gateway IP: ${gatewayIP}`);
-        let gateway = await discoverGateway(internalIP);
-        let controlURLs = await getControlPaths(gateway);
-        let controlPort = Number(new URL(gateway).port);
+        const { internalIP, gatewayIP, controlPort, controlURLs } = await resolveGateway();
 
         for (let controlURL of controlURLs) {
             try {
@@ -47,6 +106,12 @@ export async function forwardPort(config: {
     } catch (e) {
         console.error("Error in forwardPort", e);
     }
+}
+
+/** Our machine's LAN IP, as the router sees it — used to tell whether an existing port
+ *      mapping points at us or at a different machine on the network. */
+export function getLocalInternalIP(): string | undefined {
+    return getLocalInterfaceAddress()?.internalIP;
 }
 
 function getLocalInterfaceAddress(): { internalIP: string; gatewayIP: string; } | undefined {
@@ -215,4 +280,62 @@ async function createPortMapping(config: {
         const data = await res.text();
         throw new Error(`Failed to create port mapping: ${data}`);
     }
+}
+
+// UPnP returns this error code when we walk past the last mapping index, which is how
+//  we detect the end of the list rather than a real failure.
+const UPNP_ARRAY_INDEX_INVALID = 713;
+
+/** Fetches a single port mapping by its index. Returns undefined once the index is past
+ *      the end of the table (the router's signal that there are no more entries). */
+async function getGenericPortMappingEntry(config: {
+    gatewayIP: string;
+    controlPort: number;
+    controlPath: string;
+    index: number;
+}): Promise<PortMapping | undefined> {
+    const { gatewayIP, controlPort, controlPath, index } = config;
+    const action = "\"urn:schemas-upnp-org:service:WANIPConnection:1#GetGenericPortMappingEntry\"";
+
+    const soapBody = `
+        <?xml version="1.0"?>
+        <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+            <s:Body>
+                <u:GetGenericPortMappingEntry xmlns:u="urn:schemas-upnp-org:service:WANIPConnection:1">
+                    <NewPortMappingIndex>${index}</NewPortMappingIndex>
+                </u:GetGenericPortMappingEntry>
+            </s:Body>
+        </s:Envelope>
+    `;
+
+    const res = await fetch(`http://${gatewayIP}:${controlPort}${controlPath}`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "text/xml; charset=\"utf-8\"",
+            "SOAPAction": action,
+            "Content-Length": Buffer.byteLength(soapBody) + "",
+        },
+        body: soapBody
+    });
+
+    const data = await res.text();
+    if (res.status !== 200) {
+        let errorCode = Number(data.match(/<errorCode>(\d+)<\/errorCode>/)?.[1]);
+        if (errorCode === UPNP_ARRAY_INDEX_INVALID) {
+            return undefined;
+        }
+        throw new Error(`Failed to get port mapping entry ${index}: ${res.status} ${data}`);
+    }
+
+    let getField = (name: string) => data.match(new RegExp(`<${name}>(.*?)</${name}>`, "s"))?.[1] ?? "";
+    return {
+        externalPort: Number(getField("NewExternalPort")),
+        internalPort: Number(getField("NewInternalPort")),
+        protocol: getField("NewProtocol"),
+        internalClient: getField("NewInternalClient"),
+        remoteHost: getField("NewRemoteHost"),
+        enabled: getField("NewEnabled") === "1",
+        description: getField("NewPortMappingDescription"),
+        leaseDuration: Number(getField("NewLeaseDuration")),
+    };
 }

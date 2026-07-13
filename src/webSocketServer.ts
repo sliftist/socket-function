@@ -12,13 +12,14 @@ import debugbreak from "debugbreak";
 import { getNodeId } from "./nodeCache";
 import crypto from "crypto";
 import { Watchable, getRootDomain, timeInHour, timeInMinute } from "./misc";
-import { delay, runInfinitePoll, runInfinitePollCallAtStart } from "./batching";
+import { delay, runInfinitePoll } from "./batching";
 import { magenta, red } from "./formatting/logColors";
 import { yellow } from "./formatting/logColors";
 import { green } from "./formatting/logColors";
 import { formatTime } from "./formatting/format";
 import { getExternalIP, testTCPIsListening } from "./networking";
-import { forwardPort } from "./forwardPort";
+import { forwardPort, listPortMappings, getLocalInternalIP, PortMapping } from "./forwardPort";
+import os from "os";
 
 // When a requested port is taken and useAvailablePortIfPortInUse is set, we scan
 //  upwards from this base instead of binding a random OS-assigned port, so restarts
@@ -348,49 +349,103 @@ export async function startSocketServer(
         });
     }
 
-    let bound = false;
-    // Honor an explicitly requested port first. A falsy port (0, the default) means
-    //  "no preference" — skip straight to the scan so we land on a consistent port
-    //  instead of an OS-assigned random one.
-    if (port) {
-        bound = await tryListen(port);
-        if (!bound && !config.useAvailablePortIfPortInUse) {
-            throw new Error(`Port ${port} is already in use (set useAvailablePortIfPortInUse to fall back to another port)`);
-        }
+    // Frees the currently-bound listening socket so we can rebind on a different port
+    //  (used when a locally-free port turns out to be unusable for forwarding).
+    async function releasePort(): Promise<void> {
+        await new Promise<void>((resolve, reject) => {
+            if (!realServer.listening) {
+                resolve();
+                return;
+            }
+            realServer.close(e => e ? reject(e) : resolve());
+        });
     }
-    // Scan upwards from PORT_SCAN_START for the first free port, so restarts land on
-    //  predictable ports.
-    if (!bound) {
+
+    // Forwarding maps the external port to an equal internal port, so a candidate is only
+    //  usable if we can also own its external mapping on the router. Skipped on linux,
+    //  where forwardPort is a no-op anyway.
+    const doForward = !!(config.autoForwardPort && config.public && os.platform() !== "linux");
+
+    // Ensures the router's external mapping for `externalPort` belongs to us. Returns true
+    //  if it's ours to keep (existing-and-ours → refresh the lease; free → create and
+    //  confirm we won it), false if another machine owns it and we should try a new port.
+    async function claimPortForward(externalPort: number): Promise<boolean> {
+        const ourIP = getLocalInternalIP();
+        const matches = (m: PortMapping) => m.externalPort === externalPort && m.protocol.toUpperCase() === "TCP";
+
+        const existing = (await listPortMappings()).find(matches);
+        if (existing) {
+            if (ourIP && existing.internalClient === ourIP) {
+                await forwardPort({ externalPort, internalPort: externalPort });
+                return true;
+            }
+            console.log(magenta(`External port ${externalPort} is already forwarded to ${existing.internalClient}, trying another port`));
+            return false;
+        }
+
+        // Free right now — create the mapping, then re-read it to make sure another host
+        //  didn't grab the same external port in the race between our list and our create.
+        await forwardPort({ externalPort, internalPort: externalPort });
+        const ours = (await listPortMappings()).find(matches);
+        if (!ours || (ourIP && ours.internalClient !== ourIP)) {
+            console.log(magenta(`Failed to claim external port ${externalPort} (now ${ours ? `forwarded to ${ours.internalClient}` : "still unmapped"}), trying another port`));
+            return false;
+        }
+        return true;
+    }
+
+    // Candidate ports: an explicitly requested port first (a falsy port, the default 0,
+    //  means "no preference"), then a consistent upward scan so restarts are predictable.
+    function* candidatePorts(): Generator<number> {
+        if (port) yield port;
         for (let candidate = PORT_SCAN_START; candidate < PORT_SCAN_START + PORT_SCAN_COUNT; candidate++) {
             if (candidate === port) continue;
-            if (await tryListen(candidate)) {
-                bound = true;
-                port = candidate;
-                break;
+            yield candidate;
+        }
+    }
+
+    let bound = false;
+    for (const candidate of candidatePorts()) {
+        if (!await tryListen(candidate)) {
+            if (candidate === config.port && !config.useAvailablePortIfPortInUse) {
+                throw new Error(`Port ${candidate} is already in use (set useAvailablePortIfPortInUse to fall back to another port)`);
+            }
+            continue;
+        }
+        // Locally bound. If we also forward, the external mapping must be ours too, or we
+        //  release this port and keep scanning.
+        if (doForward) {
+            let claimed: boolean;
+            try {
+                claimed = await claimPortForward(candidate);
+            } catch (e) {
+                // UPnP unavailable (no gateway / discovery failed): fall back to best-effort
+                //  forwarding rather than refusing to start.
+                console.error(red(`Could not verify forwarding for port ${candidate}, continuing best-effort: ${(e as Error).stack}`));
+                claimed = true;
+            }
+            if (!claimed) {
+                await releasePort();
+                continue;
             }
         }
-        if (!bound) {
-            throw new Error(`Could not find an available port in range ${PORT_SCAN_START}-${PORT_SCAN_START + PORT_SCAN_COUNT - 1} (requested ${config.port})`);
-        }
+        port = candidate;
+        bound = true;
+        break;
+    }
+    if (!bound) {
+        throw new Error(`Could not find an available port in range ${PORT_SCAN_START}-${PORT_SCAN_START + PORT_SCAN_COUNT - 1} (requested ${config.port})`);
     }
 
     port = (realServer.address() as net.AddressInfo).port;
 
-    if (config.autoForwardPort && config.public) {
-        // let externalIP = await getExternalIP();
-        // let isListening = await testTCPIsListening(externalIP, port);
-        // if (!isListening) {
-        //     console.log(magenta(`Port ${port} is not externally reachable, trying to forward it`));
-        //     await forwardPort({ externalPort: port, internalPort: port });
-        // }
-        // Even if they are listening, they might not stay listening. Forward every 8 hours
-        //      (including at the start, in case the forward is about to expire).
-        async function forward() {
+    if (doForward) {
+        // The mapping is claimed above; keep refreshing the lease so it doesn't expire.
+        async function refreshForward() {
             await forwardPort({ externalPort: port, internalPort: port });
-            console.log(magenta(`Forwarded port ${port} to our machine`));
+            console.log(magenta(`Refreshed port forward ${port} to our machine`));
         }
-        // Every hour, in case our network configuration changes
-        runInfinitePollCallAtStart(timeInMinute * 30, forward).catch(e => console.error(red(`Error in port forwarding ${e.stack}`)));
+        runInfinitePoll(timeInMinute * 30, refreshForward);
     }
 
     let nodeId = getNodeId(getCommonName(config.cert), port);
