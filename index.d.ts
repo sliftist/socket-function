@@ -942,11 +942,31 @@ declare module "socket-function/src/formatting/logColors" {
 }
 
 declare module "socket-function/src/forwardPort" {
+    export interface PortMapping {
+        externalPort: number;
+        internalPort: number;
+        protocol: string;
+        /** The LAN client the mapping forwards to (NewInternalClient). */
+        internalClient: string;
+        /** Empty string means "any" remote host (the usual case). */
+        remoteHost: string;
+        enabled: boolean;
+        description: string;
+        /** Remaining lease in seconds; 0 means a permanent (static) mapping. */
+        leaseDuration: number;
+    }
+    /** Queries the router for every existing UPnP port mapping by walking
+     *      GetGenericPortMappingEntry from index 0 until the gateway reports the index
+     *      is out of range (SOAP error 713 / a non-200 response). */
+    export declare function listPortMappings(): Promise<PortMapping[]>;
     export declare function forwardPort(config: {
         externalPort: number;
         internalPort: number;
         duration?: number;
     }): Promise<void>;
+    /** Our machine's LAN IP, as the router sees it — used to tell whether an existing port
+     *      mapping points at us or at a different machine on the network. */
+    export declare function getLocalInternalIP(): string | undefined;
 
 }
 
