@@ -1,6 +1,6 @@
 {
 	"name": "socket-function",
-	"version": "1.2.9",
+	"version": "1.2.10",
 	"main": "index.js",
 	"license": "MIT",
 	"dependencies": {
@@ -12,13 +12,17 @@
 		"preact": "10.24.3",
 		"typedev": "^0.4.0",
 		"typenode": "^6.0.1",
-		"ws": "^8.17.1"
+		"ws": "^8.21.0"
 	},
 	"optionalDependencies": {
 		"lmdb": "^3.5.1"
 	},
 	"types": "index.d.ts",
+	"bin": {
+		"upreal": "./bin/upreal.js"
+	},
 	"scripts": {
+		"upreal": "yarn typenode ./src/upreal.ts",
 		"test": "yarn typenode ./test.ts",
 		"test-all": "node run-test.js",
 		"type": "yarn tsc --noEmit",
