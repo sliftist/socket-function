@@ -1,6 +1,5 @@
 /// <reference path="../../typenode/index.d.ts" />
 /// <reference types="node" />
-/// <reference types="node" />
 declare global {
     namespace NodeJS {
         interface Module {

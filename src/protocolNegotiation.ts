@@ -5,6 +5,8 @@
 // the server returns no protocol and the handshake fails — which is exactly the
 // rejection semantics we want (indistinguishable from "node not reachable").
 
+import { isIpDomain } from "./misc";
+
 const PROTOCOL_VERSION = "v1";
 
 export type ConnectionFlags = {
@@ -70,9 +72,14 @@ export function decodeProtocol(hex: string): DecodedProtocol | undefined {
 // cert). The server then accepts the connection regardless of its identity,
 // while still negotiating flags.
 export function proposeProtocols(target: string | undefined, clientCapabilities: { lz4: boolean }): string[] {
+    // An ip domain is an address alias, not a node identity — the server's real nodeId can never match it, so connect as a wildcard client (exactly like browsers do).
+    if (target && isIpDomain(target)) {
+        target = undefined;
+    }
     let out: string[] = [];
     let clientLZ4Options = clientCapabilities.lz4 ? [true, false] : [false];
-    let serverLZ4Options = [true, false];
+    // When we don't want LZ4 we must not propose serverLZ4=1 at all — the server picks the first proposal it can serve, and the echoed serverLZ4 bit is what BOTH sides read as "this connection uses LZ4".
+    let serverLZ4Options = clientCapabilities.lz4 ? [true, false] : [false];
     let encodedTarget = target ?? WILDCARD_TARGET;
     for (let clientLZ4 of clientLZ4Options) {
         for (let serverLZ4 of serverLZ4Options) {

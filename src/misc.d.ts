@@ -1,5 +1,4 @@
 /// <reference types="node" />
-/// <reference types="node" />
 import { MaybePromise } from "./types";
 export declare const timeInSecond = 1000;
 export declare const timeInMinute: number;
@@ -99,3 +98,6 @@ export declare function errorToWarning<T>(promise: Promise<T>): void;
 export declare function watchSlowPromise<T>(title: string, promise: Promise<T>, config?: {
     interval?: number;
 }): Promise<T>;
+export declare function setTraceTimes(on: boolean): void;
+export declare function traceTime(name: string): void;
+export declare function isIpDomain(nodeIdOrHost: string): boolean;

@@ -18,8 +18,7 @@ import { yellow } from "./formatting/logColors";
 import { green } from "./formatting/logColors";
 import { formatTime } from "./formatting/format";
 import { getExternalIP, testTCPIsListening } from "./networking";
-import { forwardPort, listPortMappings, getLocalInternalIP, PortMapping } from "./forwardPort";
-import os from "os";
+import { forwardPort, listPortMappings, getLocalInternalIP, isBehindNAT, PortMapping } from "./forwardPort";
 
 // When a requested port is taken and useAvailablePortIfPortInUse is set, we scan
 //  upwards from this base instead of binding a random OS-assigned port, so restarts
@@ -83,7 +82,7 @@ export async function startSocketServer(
         handleProtocols: (protocols, request) => {
             const ourNodeId = SocketFunction.mountedNodeId;
             const proposed = Array.from(protocols);
-            const chosen = chooseProtocol(proposed, ourNodeId, { lz4: true });
+            const chosen = chooseProtocol(proposed, ourNodeId, { lz4: !SocketFunction.DISABLE_COMPRESSION });
             if (!chosen) {
                 const proposedDecoded = proposed.map(p => decodeProtocol(p));
                 let target = proposedDecoded[0]?.target;
@@ -362,15 +361,15 @@ export async function startSocketServer(
     }
 
     // Forwarding maps the external port to an equal internal port, so a candidate is only
-    //  usable if we can also own its external mapping on the router. Skipped on linux,
-    //  where forwardPort is a no-op anyway.
-    const doForward = !!(config.autoForwardPort && config.public && os.platform() !== "linux");
+    //  usable if we can also own its external mapping on the router. Only worthwhile when a
+    //  NAT sits between us and the internet; a directly-reachable public host needs no forward.
+    const doForward = !!(config.autoForwardPort && config.public) && await isBehindNAT();
 
     // Ensures the router's external mapping for `externalPort` belongs to us. Returns true
     //  if it's ours to keep (existing-and-ours → refresh the lease; free → create and
     //  confirm we won it), false if another machine owns it and we should try a new port.
     async function claimPortForward(externalPort: number): Promise<boolean> {
-        const ourIP = getLocalInternalIP();
+        const ourIP = await getLocalInternalIP();
         const matches = (m: PortMapping) => m.externalPort === externalPort && m.protocol.toUpperCase() === "TCP";
 
         const existing = (await listPortMappings()).find(matches);

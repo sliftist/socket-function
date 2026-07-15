@@ -22,4 +22,9 @@ export declare function forwardPort(config: {
 }): Promise<void>;
 /** Our machine's LAN IP, as the router sees it — used to tell whether an existing port
  *      mapping points at us or at a different machine on the network. */
-export declare function getLocalInternalIP(): string | undefined;
+export declare function getLocalInternalIP(): Promise<string | undefined>;
+/** True when our outbound address is private/CGNAT — i.e. a NAT sits between us and the
+ *      internet, so forwarding a port is worthwhile. A public outbound address means we're
+ *      directly reachable and forwarding is unnecessary. This is the cross-platform gate that
+ *      replaced the old "skip forwarding on linux" check, so Linux hosts behind NAT forward. */
+export declare function isBehindNAT(): Promise<boolean>;

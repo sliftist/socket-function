@@ -15,14 +15,18 @@ async function resolveGateway(): Promise<{
     controlPort: number;
     controlURLs: string[];
 }> {
-    const localObj = getLocalInterfaceAddress();
-    if (!localObj) throw new Error("Could not find the local address / gateway");
+    let internalIP = await getOutboundIP();
+    if (!internalIP) throw new Error("Could not determine our local network address");
 
-    const { internalIP, gatewayIP } = localObj;
-    console.log(`Local IP: ${internalIP}, Gateway IP: ${gatewayIP}`);
+    // The gateway that answers SSDP discovery is the router we forward through; take its IP
+    //  and control port straight from the discovered device URL rather than parsing routes.
     let gateway = await discoverGateway(internalIP);
+    let gatewayURL = new URL(gateway);
+    let gatewayIP = gatewayURL.hostname;
+    let controlPort = Number(gatewayURL.port);
     let controlURLs = await getControlPaths(gateway);
-    let controlPort = Number(new URL(gateway).port);
+
+    console.log(`Local IP: ${internalIP}, Gateway IP: ${gatewayIP}`);
 
     return { internalIP, gatewayIP, controlPort, controlURLs };
 }
@@ -45,8 +49,6 @@ export interface PortMapping {
  *      GetGenericPortMappingEntry from index 0 until the gateway reports the index
  *      is out of range (SOAP error 713 / a non-200 response). */
 export async function listPortMappings(): Promise<PortMapping[]> {
-    if (os.platform() === "linux") return [];
-
     const { internalIP, gatewayIP, controlPort, controlURLs } = await resolveGateway();
 
     let lastError: unknown;
@@ -77,9 +79,6 @@ export async function forwardPort(config: {
     internalPort: number;
     duration?: number;
 }) {
-    // On linux, just return, the server probably doesn't require forwarding, and if it does,
-    //  it probably this code probably won't work anyways.
-    if (os.platform() === "linux") return;
     try {
         const { externalPort, internalPort } = config;
         let duration = config.duration ?? timeInHour;
@@ -110,72 +109,71 @@ export async function forwardPort(config: {
 
 /** Our machine's LAN IP, as the router sees it — used to tell whether an existing port
  *      mapping points at us or at a different machine on the network. */
-export function getLocalInternalIP(): string | undefined {
-    return getLocalInterfaceAddress()?.internalIP;
+export async function getLocalInternalIP(): Promise<string | undefined> {
+    return getOutboundIP();
 }
 
-function getLocalInterfaceAddress(): { internalIP: string; gatewayIP: string; } | undefined {
-    let looksLikeRouter = (ip: string) => ip.startsWith("10.0.0") || ip.startsWith("10.0.1") || ip.startsWith("192.168.0");
+/** True when our outbound address is private/CGNAT — i.e. a NAT sits between us and the
+ *      internet, so forwarding a port is worthwhile. A public outbound address means we're
+ *      directly reachable and forwarding is unnecessary. This is the cross-platform gate that
+ *      replaced the old "skip forwarding on linux" check, so Linux hosts behind NAT forward. */
+export async function isBehindNAT(): Promise<boolean> {
+    let ip = await getOutboundIP();
+    if (!ip) {
+        return false;
+    }
+    return isPrivateIPv4(ip);
+}
 
-    // On windows, run `ipconfig` and parse the output
-    // Otherwise, ifconfig
-    if (os.platform() === "win32") {
-        let output = require("child_process").execSync("ipconfig").toString();
-        let sections = output.split("\r\n\r\n");
+// RFC-1918 private ranges, plus 100.64/10 (carrier-grade NAT) and 169.254/16 (link-local).
+//  Any of these as our outbound address means there's a NAT between us and the internet.
+function isPrivateIPv4(ip: string): boolean {
+    let parts = ip.split(".").map(Number);
+    if (parts.length !== 4 || parts.some(n => !Number.isInteger(n))) {
+        return false;
+    }
+    let [a, b] = parts;
+    return (
+        a === 10 ||
+        (a === 172 && b >= 16 && b <= 31) ||
+        (a === 192 && b === 168) ||
+        (a === 100 && b >= 64 && b <= 127) ||
+        (a === 169 && b === 254)
+    );
+}
 
-        for (let section of sections) {
-            if (section.includes("IPv4 Address")) {
-                let ipv4Match = section.match(/IPv4 Address[.\s]*: ([\d.]+)/);
-                let gatewayMatch = section.match(/Default Gateway[.\s]*: ([\d.]+)/);
-
-                if (ipv4Match && gatewayMatch && looksLikeRouter(gatewayMatch[1])) {
-                    return {
-                        internalIP: ipv4Match[1],
-                        gatewayIP: gatewayMatch[1]
-                    };
-                }
+// The source IPv4 the kernel would use to reach the internet. Connecting a UDP socket runs a
+//  route lookup that assigns the local address without sending any packets, so it picks the
+//  correct interface even when several exist (VPN, docker, ...). Falls back to scanning the
+//  interface list when the route probe can't run.
+async function getOutboundIP(): Promise<string | undefined> {
+    let viaRoute = await new Promise<string | undefined>(resolve => {
+        const socket = dgram.createSocket("udp4");
+        let finish = (ip: string | undefined) => {
+            try {
+                socket.close();
+            } catch {
             }
-        }
-    } else {
-        let gatewayMatch: RegExpMatchArray | undefined;
+            resolve(ip);
+        };
+        socket.on("error", () => finish(undefined));
         try {
-            // Attempt to get the gateway using "ip route" command (more universal)
-            const routeOutput = require("child_process").execSync("ip route show default").toString();
-            gatewayMatch = routeOutput.match(/default via (\d+\.\d+\.\d+\.\d+)/);
-        } catch (err) {
-            console.error("Failed to execute 'ip route show default', trying fallback", err);
+            socket.connect(53, "8.8.8.8", () => finish(socket.address().address));
+        } catch {
+            finish(undefined);
         }
+    });
+    if (viaRoute) {
+        return viaRoute;
+    }
 
-        if (!gatewayMatch) {
-            try {
-                // Fallback to "netstat -rn" for older systems
-                const netstatOutput = require("child_process").execSync("netstat -rn").toString();
-                gatewayMatch = netstatOutput.match(/default\s+(\d+\.\d+\.\d+\.\d+)/);
-            } catch (err) {
-                console.error("Failed to execute 'netstat -rn', unable to find gateway", err);
-            }
-        }
-
-        if (gatewayMatch) {
-            try {
-                // Use "ip addr" to get internal IP (more universal)
-                const ipOutput = require("child_process").execSync("ip addr").toString();
-                const ipMatch = ipOutput.match(/inet (?!127\.0\.0\.1)(\d+\.\d+\.\d+\.\d+)\//);
-
-                if (ipMatch) {
-                    return {
-                        internalIP: ipMatch[1],
-                        gatewayIP: gatewayMatch[1]
-                    };
-                } else {
-                    console.error("Failed to match internal IP");
-                }
-            } catch (err) {
-                console.error("Failed to execute 'ip addr'", err);
+    for (let addrs of Object.values(os.networkInterfaces())) {
+        for (let addr of addrs ?? []) {
+            if (addr.family === "IPv4" && !addr.internal) {
+                return addr.address;
             }
         }
     }
-
     return undefined;
 }
 

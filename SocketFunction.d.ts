@@ -1,6 +1,5 @@
 /// <reference path="require/RequireController.d.ts" />
 /// <reference types="node" />
-/// <reference types="node" />
 import { SocketExposedInterface, SocketFunctionHook, SocketFunctionClientHook, SocketExposedShape, SocketRegistered, CallerContext, FullCallType, SocketRegisterType } from "./SocketFunctionTypes";
 import { SocketServerConfig } from "./src/webSocketServer";
 import { Args, MaybePromise } from "./src/types";
@@ -11,11 +10,12 @@ type ExtractShape<ClassType, Shape> = {
 export declare class SocketFunction {
     static logMessages: boolean;
     static trackMessageSizes: {
-        upload: ((size: number) => void)[];
-        download: ((size: number) => void)[];
+        upload: ((size: number, nodeId: string) => void)[];
+        download: ((size: number, nodeId: string) => void)[];
         callTimes: ((obj: {
             start: number;
             end: number;
+            nodeId: string;
         }) => void)[];
     };
     static MAX_MESSAGE_SIZE: number;
@@ -36,6 +36,7 @@ export declare class SocketFunction {
      */
     static GET_ALTERNATE_NODE_IDS: (nodeId: string) => MaybePromise<string[] | undefined>;
     static WIRE_WARN_TIME: number;
+    static DISABLE_COMPRESSION: boolean;
     private static onMountCallbacks;
     private static exposedClassesSingleton;
     static get exposedClasses(): Set<string>;

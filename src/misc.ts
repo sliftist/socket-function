@@ -477,3 +477,20 @@ export function watchSlowPromise<T>(title: string, promise: Promise<T>, config?:
     })();
     return promise;
 }
+
+// An ip domain (127-0-0-1.example.com, or a raw ip) is an address alias for a machine, not a node identity — a server's real nodeId will never equal it.
+export function isIpDomain(nodeIdOrHost: string): boolean {
+    let host = nodeIdOrHost.split(":")[0];
+    return isIpParts(host.split(".")[0].split("-")) || isIpParts(host.split("."));
+}
+function isIpParts(parts: string[]): boolean {
+    if (parts.length !== 4) return false;
+    for (let part of parts) {
+        if (!part || part.length > 3) return false;
+        for (let char of part) {
+            if (char < "0" || char > "9") return false;
+        }
+        if (parseInt(part) > 255) return false;
+    }
+    return true;
+}

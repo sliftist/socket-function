@@ -1,5 +1,4 @@
 /// <reference types="node" />
-/// <reference types="node" />
 export declare function parseTLSHello(buffer: Buffer): {
     extensions: {
         type: number;

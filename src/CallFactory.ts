@@ -192,9 +192,10 @@ export async function createCallFactory(
                 compressedSize: 0,
             };
             try {
-                if (callFactory.receivedInitializeState?.supportsLZ4) {
+                if (SocketFunction.DISABLE_COMPRESSION) {
+                } else if (callFactory.receivedInitializeState?.supportsLZ4) {
                     let compressMode = shouldCompressCall(fullCall);
-                    // If it's undefined, then we compress it. We basically always want to compress from now on, because LZ4 is so fast. 
+                    // If it's undefined, then we compress it. We basically always want to compress from now on, because LZ4 is so fast.
                     if (compressMode !== false) {
                         fullCall.args = await compressObjLZ4(fullCall.args, sendStats) as any;
                         fullCall.isArgsCompressed = "LZ4";
@@ -277,7 +278,7 @@ export async function createCallFactory(
             {
                 let resultSize = data.map(x => x.length).reduce((a, b) => a + b, 0);
                 for (let callback of SocketFunction.trackMessageSizes.upload) {
-                    callback(resultSize);
+                    callback(resultSize, nodeId);
                 }
                 if (SocketFunction.logMessages) {
                     let fncHack = "";
@@ -488,7 +489,7 @@ export async function createCallFactory(
             let alternates = await SocketFunction.GET_ALTERNATE_NODE_IDS(nodeId);
             if (alternates) {
                 for (let alternateNodeId of alternates) {
-                    let newWebSocket = createWebsocket(alternateNodeId, proposeProtocols(isNode() ? nodeId : undefined, { lz4: true }));
+                    let newWebSocket = createWebsocket(alternateNodeId, proposeProtocols(nodeId, { lz4: !SocketFunction.DISABLE_COMPRESSION }));
                     await initializeWebsocket(newWebSocket, true);
 
                     if (callFactory.isConnected) {
@@ -500,7 +501,7 @@ export async function createCallFactory(
             console.error("Error getting alternate node IDs", e);
         }
 
-        let newWebSocket = createWebsocket(nodeId, proposeProtocols(!SocketFunction.isClient() ? nodeId : undefined, { lz4: true }));
+        let newWebSocket = createWebsocket(nodeId, proposeProtocols(nodeId, { lz4: !SocketFunction.DISABLE_COMPRESSION }));
         await initializeWebsocket(newWebSocket);
 
         return newWebSocket;
@@ -568,7 +569,7 @@ export async function createCallFactory(
         }
         let parseTime = Date.now() - time;
         for (let callback of SocketFunction.trackMessageSizes.download) {
-            callback(resultSize);
+            callback(resultSize, nodeId);
         }
 
         let receiveStats: CompressionStats = {
@@ -635,7 +636,8 @@ export async function createCallFactory(
                     let timeTaken = Date.now() - time;
                     console.log(`DUR\t${(formatTime(timeTaken)).padEnd(6, " ")}\tFINISH\t${call.classGuid}.${call.functionName} at ${Date.now()}, (${nodeId} / ${localNodeId})`);
                 }
-                if (callFactory.receivedInitializeState?.supportsLZ4) {
+                if (SocketFunction.DISABLE_COMPRESSION) {
+                } else if (callFactory.receivedInitializeState?.supportsLZ4) {
                     let compressMode = shouldCompressCall(call);
                     if (compressMode !== false) {
                         response.result = await compressObjLZ4(response.result, sendStats);
@@ -659,7 +661,7 @@ export async function createCallFactory(
                 let start = time;
                 let end = Date.now();
                 for (let fnc of SocketFunction.trackMessageSizes.callTimes) {
-                    fnc({ start, end });
+                    fnc({ start, end, nodeId });
                 }
             }
 

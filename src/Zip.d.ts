@@ -1,5 +1,4 @@
 /// <reference types="node" />
-/// <reference types="node" />
 import { MaybePromise } from "./types";
 export declare class Zip {
     static gzip(buffer: Buffer, level?: number): Promise<Buffer>;

@@ -1,6 +1,5 @@
 /// <reference types="node" />
 /// <reference types="node" />
-/// <reference types="node" />
 import http from "http";
 import { CallType } from "../SocketFunctionTypes";
 export declare function setDefaultHTTPCall(call: CallType): void;

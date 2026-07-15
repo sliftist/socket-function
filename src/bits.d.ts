@@ -1,5 +1,4 @@
 /// <reference types="node" />
-/// <reference types="node" />
 /** Subtracts the smallest possible value from a number (a double). This makes it possible to convert an exclusive range end
  *      to an inclusive range end, which is sometimes required (as in, < x is the same as <= minusEpsilon(x)).
  */

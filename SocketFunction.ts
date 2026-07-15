@@ -58,9 +58,9 @@ type ExtractShape<ClassType, Shape> = {
 export class SocketFunction {
     public static logMessages = false;
     public static trackMessageSizes = {
-        upload: [] as ((size: number) => void)[],
-        download: [] as ((size: number) => void)[],
-        callTimes: [] as ((obj: { start: number; end: number; }) => void)[],
+        upload: [] as ((size: number, nodeId: string) => void)[],
+        download: [] as ((size: number, nodeId: string) => void)[],
+        callTimes: [] as ((obj: { start: number; end: number; nodeId: string; }) => void)[],
     };
 
     public static MAX_MESSAGE_SIZE = 1024 * 1024 * 32;
@@ -97,6 +97,9 @@ export class SocketFunction {
     public static GET_ALTERNATE_NODE_IDS = (nodeId: string): MaybePromise<string[] | undefined> => undefined;
 
     public static WIRE_WARN_TIME = 100;
+
+    // Process-wide compression kill switch. When set before connections are established, LZ4 is left out of the protocol negotiation entirely (both for connections we initiate and ones we accept), so NEITHER side compresses — the wire format stays the plain backwards-compatible one. Overrides per-function `compress` flags.
+    public static DISABLE_COMPRESSION = false;
 
     // Shared across copies of this package, so onMount callbacks registered through one copy still
     //  fire when another copy mounts. See createSingleton.
