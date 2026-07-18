@@ -7,6 +7,14 @@ import { dnsCacheLookup, reportConnectionFailure } from "./dnsCache";
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
 
+// Response metadata surfaced back to the caller. Extend this rather than adding new out-params, so callers
+//  can read whatever they need without the signature churning.
+export interface HttpsResponseInfo {
+    statusCode?: number;
+    statusMessage?: string;
+    headers: { [key: string]: string | undefined };
+}
+
 // Error codes that mean the TCP connection was never established (so no request bytes reached the server
 //  and a full retry — even of a non-idempotent method — is safe). These are the failures a stale DNS
 //  answer produces, and the only ones we re-resolve + retry on.
@@ -47,6 +55,9 @@ export function httpsRequest(
     config?: {
         headers?: { [key: string]: string | undefined },
         cancel?: Promise<void>;
+        // Populated with the response status code, message, and headers, so the caller can read them
+        //  without us adding a new out-param per field.
+        outResponse?: HttpsResponseInfo;
     }
 ): Promise<Buffer> {
     if (isNode()) {
@@ -96,6 +107,16 @@ export function httpsRequest(
                             autoSelectFamily: true,
                         } as https.RequestOptions,
                         async httpResponse => {
+                            if (config?.outResponse) {
+                                let headers: { [key: string]: string | undefined } = {};
+                                for (let [key, value] of Object.entries(httpResponse.headers)) {
+                                    headers[key] = Array.isArray(value) ? value.join(", ") : value;
+                                }
+                                config.outResponse.statusCode = httpResponse.statusCode;
+                                config.outResponse.statusMessage = httpResponse.statusMessage;
+                                config.outResponse.headers = headers;
+                            }
+
                             let data: Buffer[] = [];
                             httpResponse.on("data", chunk => {
                                 data.push(chunk);
@@ -158,6 +179,17 @@ export function httpsRequest(
         }
         return new Promise((resolve, reject) => {
             request.onload = () => {
+                if (config?.outResponse) {
+                    let headers: { [key: string]: string | undefined } = {};
+                    for (let line of request.getAllResponseHeaders().trim().split(/[\r\n]+/)) {
+                        let index = line.indexOf(":");
+                        if (index < 0) continue;
+                        headers[line.slice(0, index).trim().toLowerCase()] = line.slice(index + 1).trim();
+                    }
+                    config.outResponse.statusCode = request.status;
+                    config.outResponse.statusMessage = request.statusText;
+                    config.outResponse.headers = headers;
+                }
                 if (!request.status.toString().startsWith("2")) {
                     try {
                         // It should be an error.stack. But if it isn't... just throw the status text...
