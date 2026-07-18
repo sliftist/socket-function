@@ -3,6 +3,7 @@ import { isNode } from "./misc";
 import { SenderInterface } from "./CallFactory";
 import { getTrustedCertificates } from "./certStore";
 import { getNodeIdLocation } from "./nodeCache";
+import { dnsCacheLookup } from "./dnsCache";
 import debugbreak from "debugbreak";
 import { SocketFunction } from "../SocketFunction";
 import type * as ws from "ws";
@@ -44,7 +45,13 @@ export function createWebsocketFactory(): WebsocketFactory {
             const ws = require("ws") as typeof import("ws");
             let webSocket = new ws.WebSocket(`wss://${address}:${port}`, proposedProtocols, {
                 ca: getTrustedCertificates(),
-            });
+                // Resolve through our DNS cache instead of getaddrinfo, to avoid glibc's sticky failure
+                //  cache. ws forwards these to the underlying tls/https connect. We don't get httpsRequest's
+                //  connection-level re-resolve+retry here, but the DNS-level retries, positive cache, and
+                //  negative cache still apply, and CallFactory's reconnect picks up a re-resolved address.
+                lookup: dnsCacheLookup,
+                autoSelectFamily: true,
+            } as ws.ClientOptions);
 
             // NOTE: Little setup is done here, because Sometimes websockets are created here,
             //      and sometimes via incoming connections, We should do most setup in

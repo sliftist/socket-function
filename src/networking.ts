@@ -1,13 +1,15 @@
 import net from "net";
 import { lazy } from "./caching";
 import { httpsRequest } from "./https";
+import { dnsCacheLookup } from "./dnsCache";
 import { measureWrap } from "./profiling/measure";
 
 export const testTCPIsListening = measureWrap(async function testTCPIsListening(host: string, port: number): Promise<boolean> {
     // We need to establish a TCP connection, then close it? Yeah... so it is
     //  not even a SocketFunction call, because it can't be, because that woule be TLS,
     //  which we can't do with an ip!
-    let socket = net.connect({ host, port });
+    // Resolve through our DNS cache rather than getaddrinfo, to avoid glibc's sticky failure cache.
+    let socket = net.connect({ host, port, lookup: dnsCacheLookup });
     return new Promise((resolve) => {
         socket.on("connect", () => {
             socket.end();

@@ -1,7 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
-import * as https from "https";
 import { spawn } from "child_process";
+import { httpsRequest } from "./https";
 
 // Dependency sections in package.json that upreal is willing to update, in the order we search them.
 const DEP_SECTIONS = [
@@ -86,18 +86,9 @@ async function getLatestVersion(packageName: string): Promise<string> {
         : encodeURIComponent(packageName);
     let url = `https://registry.npmjs.org/${encodedName}/latest`;
 
-    let body = await new Promise<string>((resolve, reject) => {
-        https.get(url, res => {
-            if (res.statusCode !== 200) {
-                res.resume();
-                reject(new Error(`Registry returned ${res.statusCode} for ${url}`));
-                return;
-            }
-            let chunks: Buffer[] = [];
-            res.on("data", chunk => chunks.push(chunk));
-            res.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
-        }).on("error", reject);
-    });
+    // Via httpsRequest so registry lookups go through the DNS cache (and its re-resolve/retry), rather
+    //  than getaddrinfo, which caches certain failures forever.
+    let body = (await httpsRequest(url)).toString("utf8");
 
     let parsed = JSON.parse(body) as { version?: string };
     if (!parsed.version) {
