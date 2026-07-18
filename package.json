@@ -1,6 +1,6 @@
 {
 	"name": "socket-function",
-	"version": "1.2.16",
+	"version": "1.2.17",
 	"main": "index.js",
 	"license": "MIT",
 	"dependencies": {
@@ -30,7 +30,8 @@
 		"generate-index-dts": "node ./generateIndexDts.js",
 		"update-types": "yarn emit-dts && yarn generate-index-dts",
 		"prepublishOnly": "yarn update-types",
-		"testsni": "yarn typenode ./src/sniTest.ts"
+		"testsni": "yarn typenode ./src/sniTest.ts",
+		"test-dns-claude": "yarn typenode ./src/dnsCacheTest.ts"
 	},
 	"devDependencies": {
 		"@types/cookie": "^0.5.1",
