@@ -852,6 +852,25 @@ declare module "socket-function/src/createSingleton" {
 
 }
 
+declare module "socket-function/src/dnsCache" {
+    /// <reference types="node" />
+    import * as net from "net";
+    interface DNSRecord {
+        address: string;
+        family: number;
+    }
+    export declare function resolveHost(hostname: string, family?: number): Promise<DNSRecord[]>;
+    export declare const dnsCacheLookup: net.LookupFunction;
+    export declare function reportConnectionFailure(hostname: string): Promise<boolean>;
+    export {};
+
+}
+
+declare module "socket-function/src/dnsCacheTest" {
+    export {};
+
+}
+
 declare module "socket-function/src/fixLargeNetworkCalls" {
     export declare function markArrayAsSplitable<T>(data: T[]): T[];
     export declare function isSplitableArray<T>(data: T): data is T & (unknown[]);
