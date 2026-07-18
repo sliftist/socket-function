@@ -200,6 +200,8 @@ export class SocketFunction {
 
             for (let value of Object.values(shape)) {
                 if (!value) continue;
+                value.noClientHooks = value.noClientHooks ?? defaultHooks?.noClientHooks;
+                value.noDefaultHooks = value.noDefaultHooks ?? defaultHooks?.noDefaultHooks;
                 if (!value.noClientHooks) {
                     value.clientHooks = [...(defaultHooks?.clientHooks || []), ...(value.clientHooks || [])];
                 }

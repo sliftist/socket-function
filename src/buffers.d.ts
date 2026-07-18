@@ -1,4 +1,5 @@
 /// <reference types="node" />
+/// <reference types="node" />
 export type ArrayBufferViewTypes = Uint8Array | Int8Array | Uint16Array | Int16Array | Uint32Array | Int32Array | BigUint64Array | BigInt64Array | Float64Array | Float32Array | Uint8ClampedArray;
 export type BufferType = ArrayBuffer | SharedArrayBuffer | ArrayBufferViewTypes;
 export declare function cloneBuffer(data: Buffer): Buffer;

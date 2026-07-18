@@ -1,5 +1,6 @@
 /// <reference types="node" />
 /// <reference types="node" />
+/// <reference types="node" />
 import { CallType } from "../SocketFunctionTypes";
 import * as ws from "ws";
 import * as tls from "tls";

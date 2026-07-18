@@ -128,6 +128,7 @@ export function unregisterGlobalClientHook(hook: SocketFunctionClientHook) {
     }
 }
 
+let startupTime = Date.now();
 export const runClientHooks = measureWrap(async function runClientHooks(
     callType: FullCallType,
     hooks: Exclude<SocketExposedShape[""], undefined>,
@@ -149,8 +150,9 @@ export const runClientHooks = measureWrap(async function runClientHooks(
         await measureBlock(async () => {
             await hook(context);
         }, `clientHook|${hook.name || hook.toString().slice(0, 100)}`);
-        time = Date.now() - time;
-        if (time > 500) {
+        let now = Date.now();
+        time = now - time;
+        if (time > 500 && now - startupTime > 60_000) {
             console.warn(`Slow (${formatTime(time)}) client hook: ${JSON.stringify(hook.name || hook.toString().slice(0, 100))} for ${callType.classGuid}.${callType.functionName}(...)`);
         }
         // NOTE: See ClientHookContext.overrideResult for why we break here
@@ -171,8 +173,9 @@ export const runServerHooks = measureWrap(async function runServerHooks(
     for (let hook of globalHooks.concat(hooks.hooks || [])) {
         let time = Date.now();
         await _setSocketContext(caller, () => hook(hookContext));
-        time = Date.now() - time;
-        if (time > 500) {
+        let now = Date.now();
+        time = now - time;
+        if (time > 500 && now - startupTime > 60_000) {
             console.warn(`Slow (${formatTime(time)}) server hook: ${JSON.stringify(hook.name || hook.toString().slice(0, 100))} for ${callType.classGuid}.${callType.functionName}(...)`);
         }
         // NOTE: See HookContext.overrideResult for why we don't break here

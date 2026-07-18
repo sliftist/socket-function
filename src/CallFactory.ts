@@ -21,6 +21,13 @@ import { Zip } from "./Zip";
 import { decodeProtocol, proposeProtocols } from "./protocolNegotiation";
 setImmediate(() => import("./lz4/LZ4"));
 
+// Cached in a plain variable because even though require/import caches modules, the lookup is still measurably slow on a hot path — and once cached the caller doesn't even need to await.
+let lz4Cached: typeof import("./lz4/LZ4").LZ4 | undefined;
+function getLZ4(): MaybePromise<typeof import("./lz4/LZ4").LZ4> {
+    if (lz4Cached) return lz4Cached;
+    return import("./lz4/LZ4").then(module => lz4Cached = module.LZ4);
+}
+
 setFlag(require, "pako", "allowclient", true);
 
 // NOTE: If it is too low, and too many servers disconnect, we can easily spend 100% of our time
@@ -867,7 +874,7 @@ const decompressObj = measureWrap(async function wireCallDecompress(obj: Buffer,
 });
 
 const compressObjLZ4 = measureWrap(async function wireCallCompressLZ4(obj: unknown, stats: CompressionStats): Promise<Buffer[]> {
-    const { LZ4 } = await import("./lz4/LZ4");
+    const LZ4 = await getLZ4();
     let headerParts: number[];
     let dataBuffers: Buffer[];
 
@@ -970,8 +977,10 @@ const compressObjLZ4 = measureWrap(async function wireCallCompressLZ4(obj: unkno
 });
 
 const decompressObjLZ4 = measureWrap(async function wireCallDecompressLZ4(obj: Buffer[], stats: CompressionStats): Promise<unknown> {
-
-    const { LZ4 } = await import("./lz4/LZ4");
+    let LZ4 = getLZ4();
+    if (LZ4 instanceof Promise) {
+        LZ4 = await LZ4;
+    }
     stats.compressedSize += obj.reduce((sum, buf) => sum + buf.length, 0);
 
     let decompressed: Buffer[] = [];

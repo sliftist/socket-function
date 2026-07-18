@@ -1,5 +1,6 @@
 /// <reference types="node" />
 /// <reference types="node" />
+/// <reference types="node" />
 import https from "https";
 import { Watchable } from "./misc";
 export type SocketServerConfig = (https.ServerOptions & {

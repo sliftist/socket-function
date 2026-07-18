@@ -9,6 +9,7 @@ declare module "socket-function/SetProcessVariables" {
 declare module "socket-function/SocketFunction" {
     /// <reference path="require/RequireController.d.ts" />
     /// <reference types="node" />
+    /// <reference types="node" />
     import { SocketExposedInterface, SocketFunctionHook, SocketFunctionClientHook, SocketExposedShape, SocketRegistered, CallerContext, FullCallType, SocketRegisterType } from "socket-function/SocketFunctionTypes";
     import { SocketServerConfig } from "socket-function/src/webSocketServer";
     import { Args, MaybePromise } from "socket-function/src/types";
@@ -316,6 +317,7 @@ declare module "socket-function/require/CSSShim" {
 declare module "socket-function/require/RequireController" {
     /// <reference path="../../typenode/index.d.ts" />
     /// <reference types="node" />
+    /// <reference types="node" />
     declare global {
         namespace NodeJS {
             interface Module {
@@ -446,6 +448,7 @@ declare module "socket-function/require/compileFlags" {
 
 declare module "socket-function/require/extMapper" {
     /// <reference types="node" />
+    /// <reference types="node" />
     export declare function getExtContentType(ext: string): string;
     export declare function getContentTypeFromBuffer(buffer: Buffer): string | undefined;
 
@@ -470,6 +473,7 @@ declare module "socket-function/require/require" {
 }
 
 declare module "socket-function/src/CallFactory" {
+    /// <reference types="node" />
     /// <reference types="node" />
     /// <reference types="node" />
     import { CallType } from "socket-function/SocketFunctionTypes";
@@ -529,6 +533,7 @@ declare module "socket-function/src/CallFactory" {
 
 declare module "socket-function/src/JSONLACKS/JSONLACKS" {
     /// <reference types="node" />
+    /// <reference types="node" />
     export interface JSONLACKS_ParseConfig {
         extended?: boolean;
         discardMissingReferences?: boolean;
@@ -563,6 +568,7 @@ declare module "socket-function/src/JSONLACKS/JSONLACKS.generated.js" {
 }
 
 declare module "socket-function/src/Zip" {
+    /// <reference types="node" />
     /// <reference types="node" />
     import { MaybePromise } from "socket-function/src/types";
     export declare class Zip {
@@ -651,6 +657,7 @@ declare module "socket-function/src/batching" {
 
 declare module "socket-function/src/bits" {
     /// <reference types="node" />
+    /// <reference types="node" />
     /** Subtracts the smallest possible value from a number (a double). This makes it possible to convert an exclusive range end
      *      to an inclusive range end, which is sometimes required (as in, < x is the same as <= minusEpsilon(x)).
      */
@@ -676,6 +683,7 @@ declare module "socket-function/src/bits" {
 }
 
 declare module "socket-function/src/buffers" {
+    /// <reference types="node" />
     /// <reference types="node" />
     export type ArrayBufferViewTypes = Uint8Array | Int8Array | Uint16Array | Int16Array | Uint32Array | Int32Array | BigUint64Array | BigInt64Array | Float64Array | Float32Array | Uint8ClampedArray;
     export type BufferType = ArrayBuffer | SharedArrayBuffer | ArrayBufferViewTypes;
@@ -755,6 +763,7 @@ declare module "socket-function/src/caching" {
 declare module "socket-function/src/callHTTPHandler" {
     /// <reference types="node" />
     /// <reference types="node" />
+    /// <reference types="node" />
     import http from "http";
     import { CallType } from "socket-function/SocketFunctionTypes";
     export declare function setDefaultHTTPCall(call: CallType): void;
@@ -807,6 +816,7 @@ declare module "socket-function/src/callManager" {
 }
 
 declare module "socket-function/src/certStore" {
+    /// <reference types="node" />
     /// <reference types="node" />
     /** Must be populated before the server starts */
     export declare function trustCertificate(cert: string | Buffer): void;
@@ -973,6 +983,7 @@ declare module "socket-function/src/getUniqueTime" {
 
 declare module "socket-function/src/https" {
     /// <reference types="node" />
+    /// <reference types="node" />
     export declare function httpsRequest(url: string, payload?: Buffer | Buffer[], method?: string, sendSessionCookies?: boolean, config?: {
         headers?: {
             [key: string]: string | undefined;
@@ -983,6 +994,7 @@ declare module "socket-function/src/https" {
 }
 
 declare module "socket-function/src/lz4/LZ4" {
+    /// <reference types="node" />
     /// <reference types="node" />
     export declare class LZ4 {
         static compress(data: Buffer): Buffer;
@@ -1050,6 +1062,7 @@ declare module "socket-function/src/lz4/lz4_wasm_nodejs_bg.wasm" {
 }
 
 declare module "socket-function/src/misc" {
+    /// <reference types="node" />
     /// <reference types="node" />
     import { MaybePromise } from "socket-function/src/types";
     export declare const timeInSecond = 1000;
@@ -1150,8 +1163,6 @@ declare module "socket-function/src/misc" {
     export declare function watchSlowPromise<T>(title: string, promise: Promise<T>, config?: {
         interval?: number;
     }): Promise<T>;
-    export declare function setTraceTimes(on: boolean): void;
-    export declare function traceTime(name: string): void;
     export declare function isIpDomain(nodeIdOrHost: string): boolean;
 
 }
@@ -1483,6 +1494,7 @@ declare module "socket-function/src/storagePath" {
 
 declare module "socket-function/src/tlsParsing" {
     /// <reference types="node" />
+    /// <reference types="node" />
     export declare function parseTLSHello(buffer: Buffer): {
         extensions: {
             type: number;
@@ -1511,6 +1523,7 @@ declare module "socket-function/src/upreal" {
 }
 
 declare module "socket-function/src/webSocketServer" {
+    /// <reference types="node" />
     /// <reference types="node" />
     /// <reference types="node" />
     import https from "https";

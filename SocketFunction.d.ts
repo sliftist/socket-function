@@ -1,5 +1,6 @@
 /// <reference path="require/RequireController.d.ts" />
 /// <reference types="node" />
+/// <reference types="node" />
 import { SocketExposedInterface, SocketFunctionHook, SocketFunctionClientHook, SocketExposedShape, SocketRegistered, CallerContext, FullCallType, SocketRegisterType } from "./SocketFunctionTypes";
 import { SocketServerConfig } from "./src/webSocketServer";
 import { Args, MaybePromise } from "./src/types";

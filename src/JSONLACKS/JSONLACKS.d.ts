@@ -1,4 +1,5 @@
 /// <reference types="node" />
+/// <reference types="node" />
 export interface JSONLACKS_ParseConfig {
     extended?: boolean;
     discardMissingReferences?: boolean;
