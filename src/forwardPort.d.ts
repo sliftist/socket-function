@@ -26,11 +26,12 @@ export interface PortMapping {
 export declare function listPortMappings(): Promise<PortMapping[]>;
 /** Outcome of forwardPort. `owned` is true once we hold the router mapping for the port. When
  *      false, `reason` says why: "declined" = noPortStealing and another host holds the port (the
- *      caller should try a different port); "error" = UPnP unreachable / create failed (best-effort,
- *      nothing forwarded but the caller can carry on). */
+ *      caller should try a different port); "notBehindNat" = we have a public/directly-reachable
+ *      address so there's nothing to forward; "error" = UPnP unreachable / create failed (best-effort,
+ *      nothing forwarded but the caller can carry on). Only "declined" warrants trying another port. */
 export type ForwardPortResult = {
     owned: boolean;
-    reason?: "declined" | "error";
+    reason?: "declined" | "notBehindNat" | "error";
 };
 export declare function forwardPort(config: {
     externalPort: number;

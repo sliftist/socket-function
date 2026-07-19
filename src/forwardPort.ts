@@ -18,6 +18,13 @@ export async function resolveGateway(): Promise<{
     let internalIP = await getOutboundIP();
     if (!internalIP) throw new Error("Could not determine our local network address");
 
+    // A public/directly-reachable outbound address means there's no NAT and therefore no UPnP
+    //  gateway to reach — SSDP would just multicast into the void and time out after 2s. Fail fast
+    //  and clearly instead, so callers (and forwardPort) never spend that time on a public host.
+    if (!isPrivateIPv4(internalIP)) {
+        throw new Error(`Not behind a NAT (outbound address ${internalIP} is public) — no UPnP gateway to reach, skipping SSDP discovery.`);
+    }
+
     // The gateway that answers SSDP discovery is the router we forward through; take its IP
     //  and control port straight from the discovered device URL rather than parsing routes.
     let gateway = await discoverGateway(internalIP);
@@ -89,11 +96,12 @@ const SUPERSEDE_CHECK_INTERVAL = timeInMinute * 30;
 
 /** Outcome of forwardPort. `owned` is true once we hold the router mapping for the port. When
  *      false, `reason` says why: "declined" = noPortStealing and another host holds the port (the
- *      caller should try a different port); "error" = UPnP unreachable / create failed (best-effort,
- *      nothing forwarded but the caller can carry on). */
+ *      caller should try a different port); "notBehindNat" = we have a public/directly-reachable
+ *      address so there's nothing to forward; "error" = UPnP unreachable / create failed (best-effort,
+ *      nothing forwarded but the caller can carry on). Only "declined" warrants trying another port. */
 export type ForwardPortResult = {
     owned: boolean;
-    reason?: "declined" | "error";
+    reason?: "declined" | "notBehindNat" | "error";
 };
 
 export async function forwardPort(config: {
@@ -112,6 +120,12 @@ export async function forwardPort(config: {
     const { externalPort, internalPort } = config;
     let duration = config.duration ?? PERMANENT_LEASE;
     let permanent = duration === PERMANENT_LEASE;
+
+    // Forwarding only makes sense behind a NAT. On a directly-reachable public host there's no
+    //  gateway, so skip UPnP entirely (no SSDP) rather than discovering-and-timing-out.
+    if (!await isBehindNAT()) {
+        return { owned: false, reason: "notBehindNat" };
+    }
 
     // Take ownership of the router's mapping for this external port: delete whatever's there (a
     //  stale mapping of ours, or another host's) so our AddPortMapping isn't rejected as a conflict
