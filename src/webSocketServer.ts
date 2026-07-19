@@ -11,14 +11,13 @@ import { parseSNIExtension, parseTLSHello, SNIType } from "./tlsParsing";
 import debugbreak from "debugbreak";
 import { getNodeId } from "./nodeCache";
 import crypto from "crypto";
-import { Watchable, getRootDomain, timeInHour, timeInMinute } from "./misc";
-import { delay, runInfinitePoll } from "./batching";
-import { magenta, red } from "./formatting/logColors";
+import { Watchable, getRootDomain } from "./misc";
+import { delay } from "./batching";
 import { yellow } from "./formatting/logColors";
 import { green } from "./formatting/logColors";
 import { formatTime } from "./formatting/format";
 import { getExternalIP, testTCPIsListening } from "./networking";
-import { forwardPort, listPortMappings, getLocalInternalIP, isBehindNAT, PortMapping } from "./forwardPort";
+import { forwardPort, isBehindNAT } from "./forwardPort";
 
 // When a requested port is taken and useAvailablePortIfPortInUse is set, we scan
 //  upwards from this base instead of binding a random OS-assigned port, so restarts
@@ -349,7 +348,7 @@ export async function startSocketServer(
     }
 
     // Frees the currently-bound listening socket so we can rebind on a different port
-    //  (used when a locally-free port turns out to be unusable for forwarding).
+    //  (used when a locally-bound port turns out to be forwarded to another host).
     async function releasePort(): Promise<void> {
         await new Promise<void>((resolve, reject) => {
             if (!realServer.listening) {
@@ -360,38 +359,9 @@ export async function startSocketServer(
         });
     }
 
-    // Forwarding maps the external port to an equal internal port, so a candidate is only
-    //  usable if we can also own its external mapping on the router. Only worthwhile when a
-    //  NAT sits between us and the internet; a directly-reachable public host needs no forward.
+    // Only worthwhile when a NAT sits between us and the internet; a directly-reachable public host
+    //  needs no forward.
     const doForward = !!(config.autoForwardPort && config.public) && await isBehindNAT();
-
-    // Ensures the router's external mapping for `externalPort` belongs to us. Returns true
-    //  if it's ours to keep (existing-and-ours → refresh the lease; free → create and
-    //  confirm we won it), false if another machine owns it and we should try a new port.
-    async function claimPortForward(externalPort: number): Promise<boolean> {
-        const ourIP = await getLocalInternalIP();
-        const matches = (m: PortMapping) => m.externalPort === externalPort && m.protocol.toUpperCase() === "TCP";
-
-        const existing = (await listPortMappings()).find(matches);
-        if (existing) {
-            if (ourIP && existing.internalClient === ourIP) {
-                await forwardPort({ externalPort, internalPort: externalPort });
-                return true;
-            }
-            console.log(magenta(`External port ${externalPort} is already forwarded to ${existing.internalClient}, trying another port`));
-            return false;
-        }
-
-        // Free right now — create the mapping, then re-read it to make sure another host
-        //  didn't grab the same external port in the race between our list and our create.
-        await forwardPort({ externalPort, internalPort: externalPort });
-        const ours = (await listPortMappings()).find(matches);
-        if (!ours || (ourIP && ours.internalClient !== ourIP)) {
-            console.log(magenta(`Failed to claim external port ${externalPort} (now ${ours ? `forwarded to ${ours.internalClient}` : "still unmapped"}), trying another port`));
-            return false;
-        }
-        return true;
-    }
 
     // Candidate ports: an explicitly requested port first (a falsy port, the default 0,
     //  means "no preference"), then a consistent upward scan so restarts are predictable.
@@ -411,19 +381,14 @@ export async function startSocketServer(
             }
             continue;
         }
-        // Locally bound. If we also forward, the external mapping must be ours too, or we
-        //  release this port and keep scanning.
+        // Locally bound. If we also forward, we need to own the router mapping for this port too.
         if (doForward) {
-            let claimed: boolean;
-            try {
-                claimed = await claimPortForward(candidate);
-            } catch (e) {
-                // UPnP unavailable (no gateway / discovery failed): fall back to best-effort
-                //  forwarding rather than refusing to start.
-                console.error(red(`Could not verify forwarding for port ${candidate}, continuing best-effort: ${(e as Error).stack}`));
-                claimed = true;
-            }
-            if (!claimed) {
+            // Take over the explicitly-requested port (the user asked for it), but during the
+            //  fallback scan don't steal a port another host is already forwarding — skip it and
+            //  keep scanning. forwardPort is best-effort: on a UPnP error it returns owned:false
+            //  reason:"error", and we keep the port anyway rather than refusing to start.
+            let result = await forwardPort({ externalPort: candidate, internalPort: candidate, noPortStealing: candidate !== config.port });
+            if (!result.owned && result.reason === "declined") {
                 await releasePort();
                 continue;
             }
@@ -437,15 +402,6 @@ export async function startSocketServer(
     }
 
     port = (realServer.address() as net.AddressInfo).port;
-
-    if (doForward) {
-        // The mapping is claimed above; keep refreshing the lease so it doesn't expire.
-        async function refreshForward() {
-            await forwardPort({ externalPort: port, internalPort: port });
-            console.log(magenta(`Refreshed port forward ${port} to our machine`));
-        }
-        runInfinitePoll(timeInMinute * 30, refreshForward);
-    }
 
     let nodeId = getNodeId(getCommonName(config.cert), port);
     console.log(green(`Started Listening on ${nodeId} (${host}) after ${formatTime(process.uptime() * 1000)}`), {
