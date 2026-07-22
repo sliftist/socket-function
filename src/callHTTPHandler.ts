@@ -13,6 +13,9 @@ import { createSingleton } from "./createSingleton";
 //  the HTTP handler of any other copy. See createSingleton.
 const defaultHTTPCall = createSingleton("callHTTPHandler.defaultHTTPCall", 1, () => ({ call: undefined as CallType | undefined }));
 
+// Statuses where the spec forbids a message body, so we must not write resultBuffer
+const BODYLESS_STATUS_CODES = new Set([204, 205, 304]);
+
 export function setDefaultHTTPCall(call: CallType) {
     defaultHTTPCall.get().call = call;
 }
@@ -63,16 +66,29 @@ export async function httpCallHandler(request: http.IncomingMessage, response: h
     try {
         // Always set x-frame-options, to prevent iframe embedding click hijacking
         response.setHeader("X-Frame-Options", "SAMEORIGIN");
+        // Only frame-ancestors, as a full CSP would break our eval-based module loading
+        response.setHeader("Content-Security-Policy", "frame-ancestors 'self'");
+        response.setHeader("X-Content-Type-Options", "nosniff");
+        // Without this, the full URL (including classGuid/functionName/args in the query) leaks in the Referer to any third-party resource
+        response.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
         // Don't keep alive, to prevent issues with zombie sockets.
         response.setHeader("Connection", "close");
 
         // CORS bs (due to having to explictly allow subdomains)
+        let corsAllowed = false;
         {
             response.setHeader("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload");
             response.setHeader("Cross-Origin-Opener-Policy", SocketFunction.COOP);
             response.setHeader("Cross-Origin-Embedder-Policy", SocketFunction.COEP);
 
-            let origin = request.headers.origin || request.headers.referer;
+            let origin = request.headers.origin;
+            if (!origin && request.headers.referer) {
+                // Referer is a full URL, but Access-Control-Allow-Origin must be a bare origin
+                try {
+                    origin = new URL(request.headers.referer).origin;
+                } catch {
+                }
+            }
             let allowed = false;
             if (!origin) {
                 // I guess it's a script, so just allow it (as it could easily set any header it wanted anyways)
@@ -98,15 +114,28 @@ export async function httpCallHandler(request: http.IncomingMessage, response: h
                 response.setHeader("Cross-Origin-Resource-Policy", "same-site");
             }
 
-            response.setHeader("vary", "Access-Control-Request-Headers");
+            response.setHeader("Vary", "Origin, Access-Control-Request-Headers");
             response.setHeader("Access-Control-Allow-Origin", allowed ? origin : "");
 
-            if (allowed) {
+            // Browsers reject Allow-Credentials combined with a "*" origin, so don't emit that pair
+            if (allowed && origin !== "*") {
                 response.setHeader("Access-Control-Allow-Credentials", "true");
                 response.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
                 response.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, Content-Length, X-Requested-With, x-uncompressed-content-length, Cookie");
             }
             response.setHeader("Access-Control-Expose-Headers", "x-uncompressed-content-length");
+            corsAllowed = allowed;
+        }
+
+        // Preflights must never run the underlying call (they also arrive without credentials, so the call would be wrong anyways)
+        if (request.method === "OPTIONS") {
+            response.writeHead(204);
+            return;
+        }
+        // The browser discards the response for disallowed origins anyways, so running the call would only produce side effects the caller can't even see
+        if (!corsAllowed) {
+            response.writeHead(403);
+            return;
         }
 
 
@@ -227,13 +256,23 @@ export async function httpCallHandler(request: http.IncomingMessage, response: h
 
         if (headers) {
             for (let headerName in headers) {
+                // "status" is the status line, not a header, so don't emit it on the wire
+                if (headerName.toLowerCase() === "status") continue;
                 response.setHeader(headerName, headers[headerName]);
             }
-            let status = headers["status"];
+            let status = headers["status"] ?? headers["Status"];
             if (status) {
-                response.writeHead(+status);
-                return;
+                // Only set statusCode (NOT writeHead), as writeHead locks the header block, which would
+                //  drop the Content-Type / Content-Length / compression handling below
+                response.statusCode = +status;
+                if (BODYLESS_STATUS_CODES.has(+status) || +status < 200) {
+                    return;
+                }
             }
+        }
+        // With nosniff set, an untyped response is unusable to the browser, so results without explicit headers need their actual type (JSON) declared
+        if (!response.getHeader("Content-Type")) {
+            response.setHeader("Content-Type", "application/json");
         }
         let uncompressedLength = resultBuffer.length;
         if (SocketFunction.HTTP_COMPRESS && request.headers["accept-encoding"]?.includes("gzip") && !headers?.["Content-Encoding"]) {
