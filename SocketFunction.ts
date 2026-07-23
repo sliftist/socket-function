@@ -9,7 +9,7 @@ import { Args, MaybePromise } from "./src/types";
 import { setDefaultHTTPCall } from "./src/callHTTPHandler";
 import debugbreak from "debugbreak";
 import { lazy } from "./src/caching";
-import { createSingleton } from "./src/createSingleton";
+import { createSingleton, defineSingletonConfig } from "./src/createSingleton";
 import { delay } from "./src/batching";
 import { blue, magenta } from "./src/formatting/logColors";
 import { JSONLACKS } from "./src/JSONLACKS/JSONLACKS";
@@ -56,6 +56,12 @@ type ExtractShape<ClassType, Shape> = {
 };
 
 export class SocketFunction {
+
+
+    // #region Shared config statics. EVERYTHING in this region (and nothing outside it) is redefined
+    //  below the class by defineSingletonConfig, which replaces each property (via defineProperty)
+    //  with accessors onto a singleton shared by every copy of this package - the inline values here
+    //  are just the defaults.
     public static logMessages = false;
     public static trackMessageSizes = {
         upload: [] as ((size: number, nodeId: string) => void)[],
@@ -79,8 +85,6 @@ export class SocketFunction {
     public static TOTAL_CALLS = 0;
 
     public static ENABLE_CLIENT_MODE = false;
-    // Places where we decide if we want to act as a client. Most places we check for is node, but some places it's not, depending on if we're in Node.js or not, it's depending on if we're a client or not.
-    public static isClient() { return !isNode() || SocketFunction.ENABLE_CLIENT_MODE; }
 
     // In retrospect... dynamically changing the wire serializer is a BAD idea. If any calls happen
     //  before it is changed, things just break. Also, it needs to be changed on both sides,
@@ -91,7 +95,7 @@ export class SocketFunction {
         deserialize: measureWrap((buffers: Buffer[]): MaybePromise<unknown> => cborxInstance.decode(buffers[0]), "WIRE_SERIALIZER|deserialize"),
     };
 
-    /** We will try the alternate node IDs first, however, if they fail, we will go through all of them and then eventually try the original node ID. 
+    /** We will try the alternate node IDs first, however, if they fail, we will go through all of them and then eventually try the original node ID.
      *      VERY useful, allowing us to change global ips to local ones, which short-circuits the router, massively increasing bandwidth and decreasing latency.
      */
     public static GET_ALTERNATE_NODE_IDS = (nodeId: string): MaybePromise<string[] | undefined> => undefined;
@@ -100,6 +104,13 @@ export class SocketFunction {
 
     // Process-wide compression kill switch. When set before connections are established, LZ4 is left out of the protocol negotiation entirely (both for connections we initiate and ones we accept), so NEITHER side compresses — the wire format stays the plain backwards-compatible one. Overrides per-function `compress` flags.
     public static DISABLE_COMPRESSION = false;
+    // #endregion Shared config statics.
+
+
+
+
+    // Places where we decide if we want to act as a client. Most places we check for is node, but some places it's not, depending on if we're in Node.js or not, it's depending on if we're a client or not.
+    public static isClient() { return !isNode() || SocketFunction.ENABLE_CLIENT_MODE; }
 
     // Shared across copies of this package, so onMount callbacks registered through one copy still
     //  fire when another copy mounts. See createSingleton.
@@ -512,6 +523,23 @@ export class SocketFunction {
         registerGlobalClientHook(hook as SocketFunctionClientHook);
     }
 }
+
+defineSingletonConfig(SocketFunction, "SocketFunction.config", 1, [
+    "logMessages",
+    "trackMessageSizes",
+    "MAX_MESSAGE_SIZE",
+    "HTTP_ETAG_CACHE",
+    "silent",
+    "HTTP_COMPRESS",
+    "COEP",
+    "COOP",
+    "TOTAL_CALLS",
+    "ENABLE_CLIENT_MODE",
+    "WIRE_SERIALIZER",
+    "GET_ALTERNATE_NODE_IDS",
+    "WIRE_WARN_TIME",
+    "DISABLE_COMPRESSION",
+]);
 
 declare global {
     var BOOTED_EDGE_NODE: { host: string } | undefined;

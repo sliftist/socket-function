@@ -27,7 +27,6 @@ export declare class SocketFunction {
     static COOP: string;
     static TOTAL_CALLS: number;
     static ENABLE_CLIENT_MODE: boolean;
-    static isClient(): boolean;
     static readonly WIRE_SERIALIZER: {
         serialize: (obj: unknown) => MaybePromise<Buffer[]>;
         deserialize: (buffers: Buffer[]) => MaybePromise<unknown>;
@@ -38,6 +37,7 @@ export declare class SocketFunction {
     static GET_ALTERNATE_NODE_IDS: (nodeId: string) => MaybePromise<string[] | undefined>;
     static WIRE_WARN_TIME: number;
     static DISABLE_COMPRESSION: boolean;
+    static isClient(): boolean;
     private static onMountCallbacks;
     private static exposedClassesSingleton;
     static get exposedClasses(): Set<string>;

@@ -36,7 +36,6 @@ declare module "socket-function/SocketFunction" {
         static COOP: string;
         static TOTAL_CALLS: number;
         static ENABLE_CLIENT_MODE: boolean;
-        static isClient(): boolean;
         static readonly WIRE_SERIALIZER: {
             serialize: (obj: unknown) => MaybePromise<Buffer[]>;
             deserialize: (buffers: Buffer[]) => MaybePromise<unknown>;
@@ -47,6 +46,7 @@ declare module "socket-function/SocketFunction" {
         static GET_ALTERNATE_NODE_IDS: (nodeId: string) => MaybePromise<string[] | undefined>;
         static WIRE_WARN_TIME: number;
         static DISABLE_COMPRESSION: boolean;
+        static isClient(): boolean;
         private static onMountCallbacks;
         private static exposedClassesSingleton;
         static get exposedClasses(): Set<string>;
@@ -849,6 +849,16 @@ declare module "socket-function/src/createSingleton" {
      *      get()/set() at each access so every copy sees the latest.
      */
     export declare function createSingleton<T>(name: string, version: string | number, getDefault: () => T): Singleton<T>;
+    /** Redefines the given (already initialized) properties of target as accessors onto a singleton, so
+     *      `Target.SOME_SETTING = x` configures every copy of the package instead of only the copy the
+     *      caller happened to import (which is otherwise decided by module resolution, and so is
+     *      essentially arbitrary from the caller's perspective). The properties' current values become
+     *      the defaults, so config statics stay defined inline in the class as usual - just call this
+     *      below the class with the list of statics to share.
+     *  - Same versioning rules as createSingleton, except that adding a property is not a shape change:
+     *      a copy that knows about a property older copies don't backfills it below.
+     */
+    export declare function defineSingletonConfig<T extends object>(target: T, name: string, version: string | number, keys: (keyof T & string)[]): void;
 
 }
 

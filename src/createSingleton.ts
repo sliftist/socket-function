@@ -74,3 +74,36 @@ export function createSingleton<T>(
         },
     };
 }
+
+/** Redefines the given (already initialized) properties of target as accessors onto a singleton, so
+ *      `Target.SOME_SETTING = x` configures every copy of the package instead of only the copy the
+ *      caller happened to import (which is otherwise decided by module resolution, and so is
+ *      essentially arbitrary from the caller's perspective). The properties' current values become
+ *      the defaults, so config statics stay defined inline in the class as usual - just call this
+ *      below the class with the list of statics to share.
+ *  - Same versioning rules as createSingleton, except that adding a property is not a shape change:
+ *      a copy that knows about a property older copies don't backfills it below.
+ */
+export function defineSingletonConfig<T extends object>(
+    target: T,
+    name: string,
+    version: string | number,
+    keys: (keyof T & string)[],
+): void {
+    const store = createSingleton<{ [key: string]: unknown }>(name, version, () => Object.create(null)).get();
+    for (const key of keys) {
+        if (!(key in store)) {
+            store[key] = target[key];
+        }
+        Object.defineProperty(target, key, {
+            get() {
+                return store[key];
+            },
+            set(value: unknown) {
+                store[key] = value;
+            },
+            enumerable: true,
+            configurable: true,
+        });
+    }
+}

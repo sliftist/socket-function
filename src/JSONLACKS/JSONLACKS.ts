@@ -9,6 +9,7 @@ import parser from "./JSONLACKS.generated.js";
 import { recursiveFreeze } from "../misc";
 import { canHaveChildren } from "../types";
 import { delay } from "../batching";
+import { defineSingletonConfig } from "../createSingleton";
 
 const SERIALIZE_OBJECT_BATCH_COUNT = 1000;
 const PARSE_BYTE_CHUNK_SIZE = 1024 * 1024 * 10;
@@ -44,9 +45,14 @@ interface HydrateState {
 export class JSONLACKS {
     public static readonly LACKS_KEY = "__JSONLACKS__98cfb4a05fa34d828661cae15b8779ce__";
 
+    // #region Shared config statics. EVERYTHING in this region (and nothing outside it) is redefined
+    //  below the class by defineSingletonConfig, which replaces each property (via defineProperty)
+    //  with accessors onto a singleton shared by every copy of this package - the inline values here
+    //  are just the defaults.
     /** If set to true parses non-quoted field names, comments, trailing commas, etc */
     public static EXTENDED_PARSER = false;
     public static IGNORE_MISSING_REFERENCES = false;
+    // #endregion Shared config statics.
 
     public static stringify(obj: unknown, config?: JSONLACKS_StringifyConfig): string {
         let serialized = JSONLACKS.escapeSpecialObjects(obj, config);
@@ -298,6 +304,11 @@ export class JSONLACKS {
         }
     }
 }
+
+defineSingletonConfig(JSONLACKS, "JSONLACKS.config", 1, [
+    "EXTENDED_PARSER",
+    "IGNORE_MISSING_REFERENCES",
+]);
 
 async function benchmark() {
     const loops = 1000 * 100;

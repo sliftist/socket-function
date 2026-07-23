@@ -17,3 +17,13 @@ export interface Singleton<T> {
  *      get()/set() at each access so every copy sees the latest.
  */
 export declare function createSingleton<T>(name: string, version: string | number, getDefault: () => T): Singleton<T>;
+/** Redefines the given (already initialized) properties of target as accessors onto a singleton, so
+ *      `Target.SOME_SETTING = x` configures every copy of the package instead of only the copy the
+ *      caller happened to import (which is otherwise decided by module resolution, and so is
+ *      essentially arbitrary from the caller's perspective). The properties' current values become
+ *      the defaults, so config statics stay defined inline in the class as usual - just call this
+ *      below the class with the list of statics to share.
+ *  - Same versioning rules as createSingleton, except that adding a property is not a shape change:
+ *      a copy that knows about a property older copies don't backfills it below.
+ */
+export declare function defineSingletonConfig<T extends object>(target: T, name: string, version: string | number, keys: (keyof T & string)[]): void;
