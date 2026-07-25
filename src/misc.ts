@@ -15,7 +15,11 @@ export type Watchable<T> = (callback: (value: T) => void) => MaybePromise<void>;
 export function convertErrorStackToError(error: string): Error {
     let errorObj = new Error();
     errorObj.stack = String(error);
-    errorObj.message = String(error).split("\n")[0].slice("Error: ".length);
+    let message = String(error).split("\n")[0];
+    if (message.startsWith("Error: ")) {
+        message = message.slice("Error: ".length);
+    }
+    errorObj.message = message;
     return errorObj;
 }
 

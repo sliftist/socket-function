@@ -316,7 +316,7 @@ export async function createCallFactory(
         registerOnce();
         callFactory.receivedInitializeState = undefined;
 
-        function onClose(error: string) {
+        function onClose(message: string) {
             // We try various connections, and if they fail, we will just try other node IDs until we finally do connect, and then we stick with that nodeId, and when it disconnects we need to handle disconnections normally.
             if (skipCloseHandling && !hasEverConnected) {
                 return;
@@ -335,7 +335,7 @@ export async function createCallFactory(
                 call.callback({
                     isReturn: true,
                     result: undefined,
-                    error: error,
+                    error: `Call failed for ${call.call.classGuid}.${call.call.functionName}: ${message}`,
                     seqNum: call.call.seqNum,
                 });
             }
@@ -353,12 +353,12 @@ export async function createCallFactory(
             // NOTE: No more logging, as we throw, so the caller should be logging the
             //  error (or swallowing it, if that is what it wants to do).
             //console.log(`Websocket error for ${niceConnectionName}`, e.message);
-            onClose(new Error(`Connection error for ${niceConnectionName}: ${e.message}`).stack!);
+            onClose(`Connection error for ${niceConnectionName}: ${e.message}`);
         });
 
         newWebSocket.addEventListener("close", async () => {
             //console.log(`Websocket closed ${niceConnectionName}`);
-            onClose(new Error(`Connection closed to ${niceConnectionName}`).stack!);
+            onClose(`Connection closed to ${niceConnectionName}`);
         });
 
         newWebSocket.addEventListener("message", onMessage);
@@ -381,7 +381,7 @@ export async function createCallFactory(
             callFactory.isConnected = true;
             hasEverConnected = true;
         } else {
-            onClose(new Error(`Websocket received in closed state`).stack!);
+            onClose(`Websocket received in closed state`);
         }
 
         if (callFactory.lastClosed && callFactory.isConnected) {
