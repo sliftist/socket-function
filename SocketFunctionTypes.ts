@@ -92,6 +92,10 @@ export type ClientHookContext = {
 };
 export interface SocketFunctionClientHook {
     (config: ClientHookContext): MaybePromise<void>;
+    /** Set on hooks which are called so frequently (or are so trivial) that the measurement overhead
+     *      and profiling noise outweighs the value of measuring them.
+     */
+    noMeasure?: boolean;
 }
 
 export interface SocketRegisterType<ExposedType = any> {

@@ -147,9 +147,13 @@ export const runClientHooks = measureWrap(async function runClientHooks(
     }
     for (let hook of clientHooks) {
         let time = Date.now();
-        await measureBlock(async () => {
+        if (hook.noMeasure) {
             await hook(context);
-        }, `clientHook|${hook.name || hook.toString().slice(0, 100)}`);
+        } else {
+            await measureBlock(async () => {
+                await hook(context);
+            }, `clientHook|${hook.name || hook.toString().slice(0, 100)}`);
+        }
         let now = Date.now();
         time = now - time;
         if (time > 500 && now - startupTime > 60_000) {
