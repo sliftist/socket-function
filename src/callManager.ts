@@ -129,7 +129,8 @@ export function unregisterGlobalClientHook(hook: SocketFunctionClientHook) {
 }
 
 let startupTime = Date.now();
-export const runClientHooks = measureWrap(async function runClientHooks(
+// NOTE: We don't time run client hooks as some of the hooks want to be not measured. And if we time the parent function, then they can't be not measured. 
+export const runClientHooks = (async function runClientHooks(
     callType: FullCallType,
     hooks: Exclude<SocketExposedShape[""], undefined>,
     connectionId: { nodeId: string },
