@@ -887,15 +887,20 @@ const compressObjLZ4 = measureWrap(async function wireCallCompressLZ4(obj: unkno
         const MIN_INDIVIDUAL_SIZE = 10 * 1024 * 1024;
         const MAX_UNSPLIT_SIZE = 100 * 1024 * 1024;
 
+        // The output buffers are purely a chunked-for-compression view: in order, their
+        //  concatenation is always exactly the concatenation of every original buffer. Small buffers
+        //  are grouped (concatenated) so we don't compress tiny inputs individually, and large buffers
+        //  are split so we don't hand LZ4 a single huge input. Crucially, the logical array structure
+        //  is NOT tied to these chunk boundaries - a single original may be split across several output
+        //  buffers, and several originals may share one. The original sizes recorded in the header are
+        //  what decompress uses to carve the reassembled bytes back into the original array.
         let outputBuffers: Buffer[] = [];
-        let outputDescriptors: number[][] = [];
         let currentGroup: Buffer[] = [];
         let currentGroupSize = 0;
 
         function flushCurrentGroup() {
             if (currentGroup.length > 0) {
                 outputBuffers.push(Buffer.concat(currentGroup));
-                outputDescriptors.push(currentGroup.map(b => b.length));
                 currentGroup = [];
                 currentGroupSize = 0;
             }
@@ -910,12 +915,10 @@ const compressObjLZ4 = measureWrap(async function wireCallCompressLZ4(obj: unkno
                     while (offset < buf.length) {
                         let chunkSize = Math.min(TARGET_SIZE, buf.length - offset);
                         outputBuffers.push(buf.slice(offset, offset + chunkSize));
-                        outputDescriptors.push([chunkSize]);
                         offset += chunkSize;
                     }
                 } else {
                     outputBuffers.push(buf);
-                    outputDescriptors.push([buf.length]);
                 }
             } else {
                 currentGroup.push(buf);
@@ -929,10 +932,8 @@ const compressObjLZ4 = measureWrap(async function wireCallCompressLZ4(obj: unkno
 
         flushCurrentGroup();
 
-        headerParts = [2, outputBuffers.length];
-        for (let descriptor of outputDescriptors) {
-            headerParts.push(descriptor.length, ...descriptor);
-        }
+        let originalSizes = bufferArray.map(buf => buf.length);
+        headerParts = [2, originalSizes.length, ...originalSizes];
         dataBuffers = outputBuffers;
     } else {
         let buffers = await SocketFunction.WIRE_SERIALIZER.serialize(obj);
@@ -1022,24 +1023,32 @@ const decompressObjLZ4 = measureWrap(async function wireCallDecompressLZ4(obj: B
 
     if (type === 2) {
         let headerData = new Float64Array(headerBuffer.buffer, headerBuffer.byteOffset, headerBuffer.byteLength / 8);
-        let outputBufferCount = headerData[1];
+        let originalCount = headerData[1];
 
+        // The data buffers are a chunked view whose concatenation equals the concatenation of every
+        //  original buffer, so walk them and carve out each original by its recorded size, splicing
+        //  across data-buffer boundaries when an original was split into multiple chunks (and taking
+        //  several originals from one data buffer when they were grouped). This is what makes a single
+        //  large buffer that was split for compression come back as ONE entry, not N.
         let buffers: Buffer[] = [];
-        let headerIndex = 2;
-
-        for (let i = 0; i < outputBufferCount; i++) {
-            let inputBufferCount = headerData[headerIndex++];
-            let sizes: number[] = [];
-            for (let j = 0; j < inputBufferCount; j++) {
-                sizes.push(headerData[headerIndex++]);
+        let dataIndex = 0;
+        let dataOffset = 0;
+        for (let i = 0; i < originalCount; i++) {
+            let remaining = headerData[2 + i];
+            let parts: Buffer[] = [];
+            while (remaining > 0) {
+                let current = dataBuffers[dataIndex];
+                let available = current.length - dataOffset;
+                let take = Math.min(available, remaining);
+                parts.push(current.slice(dataOffset, dataOffset + take));
+                dataOffset += take;
+                remaining -= take;
+                if (dataOffset >= current.length) {
+                    dataIndex++;
+                    dataOffset = 0;
+                }
             }
-
-            let outputBuffer = dataBuffers[i];
-            let offset = 0;
-            for (let size of sizes) {
-                buffers.push(outputBuffer.slice(offset, offset + size));
-                offset += size;
-            }
+            buffers.push(parts.length === 1 ? parts[0] : Buffer.concat(parts));
         }
 
         return buffers;
