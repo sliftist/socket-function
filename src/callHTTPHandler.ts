@@ -146,9 +146,14 @@ export async function httpCallHandler(request: http.IncomingMessage, response: h
 
         let protocol = "https";
         let url = protocol + "://" + request.headers.host + request.url;
+        let loggingURL = url;
+        try {
+            loggingURL = new URL(urlBase).origin;
+        } catch { }
+
 
         if (SocketFunction.logMessages) {
-            console.log(`HTTP request (${request.method}) ${url}`);
+            console.log(`HTTP request (${request.method}) ${loggingURL}`);
         }
         let urlObj = new URL(url);
 
@@ -216,7 +221,9 @@ export async function httpCallHandler(request: http.IncomingMessage, response: h
             response.setHeader("ETag", hash);
             if (request.headers["if-none-match"] === hash) {
                 response.writeHead(304);
-                console.log(`CACHED Immutable HTTP response (${request.method}) ${url}`);
+                if (SocketFunction.logMessages) {
+                    console.log(`CACHED Immutable HTTP response (${request.method}) ${loggingURL}`);
+                }
                 return;
             }
         }
@@ -249,7 +256,9 @@ export async function httpCallHandler(request: http.IncomingMessage, response: h
             response.setHeader("ETag", hash);
             if (request.headers["if-none-match"] === hash) {
                 response.writeHead(304);
-                console.log(`CACHED HTTP response  ${formatNumberSuffixed(resultBuffer.length)}B  (${request.method}) ${url}`);
+                if (SocketFunction.logMessages) {
+                    console.log(`CACHED HTTP response  ${formatNumberSuffixed(resultBuffer.length)}B  (${request.method}) ${loggingURL}`);
+                }
                 return;
             }
         }
@@ -297,7 +306,7 @@ export async function httpCallHandler(request: http.IncomingMessage, response: h
         }
         response.write(resultBuffer);
         if (SocketFunction.logMessages) {
-            console.log(`HTTP response  ${formatNumberSuffixed(resultBuffer.length)}B  (${request.method}) ${url}`);
+            console.log(`HTTP response  ${formatNumberSuffixed(resultBuffer.length)}B  (${request.method}) ${loggingURL}`);
         }
 
     } catch (e: any) {
