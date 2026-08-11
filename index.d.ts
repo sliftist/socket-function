@@ -1510,6 +1510,7 @@ declare module "socket-function/src/runPromise" {
         quiet?: boolean;
         nothrow?: boolean;
         detach?: boolean;
+        includeStderrInOutput?: boolean;
     }): Promise<string>;
 
 }

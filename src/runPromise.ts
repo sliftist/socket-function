@@ -9,6 +9,7 @@ export async function runPromise(command: string, config?: {
     // Never throw, just return the full output
     nothrow?: boolean;
     detach?: boolean;
+    includeStderrInOutput?: boolean;
 }) {
     return new Promise<string>((resolve, reject) => {
         if (!config?.quiet) {
@@ -38,7 +39,9 @@ export async function runPromise(command: string, config?: {
         childProc.stderr?.on("data", (data) => {
             const chunk = data.toString();
             stderr += chunk;
-            fullOutput += chunk;
+            if (config?.includeStderrInOutput) {
+                fullOutput += chunk;
+            }
 
             // Stream to console unless quiet mode
             if (!config?.quiet) {

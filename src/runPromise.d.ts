@@ -4,4 +4,5 @@ export declare function runPromise(command: string, config?: {
     quiet?: boolean;
     nothrow?: boolean;
     detach?: boolean;
+    includeStderrInOutput?: boolean;
 }): Promise<string>;
