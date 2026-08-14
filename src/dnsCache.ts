@@ -158,19 +158,21 @@ export async function resolveHost(hostname: string, family = 0): Promise<DNSReco
 //  the socket use our cache instead of getaddrinfo. Always resolves via our cache; happy eyeballs
 //  (autoSelectFamily) then races the returned addresses.
 export const dnsCacheLookup: net.LookupFunction = function dnsCacheLookup(hostname, options, callback) {
-    let rawFamily = typeof options === "number" ? options : options.family ?? 0;
-    let family = rawFamily === "IPv4" ? 4 : rawFamily === "IPv6" ? 6 : rawFamily;
+    // Node's own callers pass the family as a number, but the option is documented as accepting "IPv4"/"IPv6"
+    //  too, so handle both even though the typings only admit the number.
+    let rawFamily: number | string = typeof options === "number" ? options : options.family ?? 0;
+    let family = rawFamily === "IPv4" ? 4 : rawFamily === "IPv6" ? 6 : Number(rawFamily) || 0;
     let all = typeof options === "object" && options.all;
     resolveHost(hostname, family).then(
         records => {
             if (all) {
-                callback(null, records.map(r => ({ address: r.address, family: r.family })));
+                callback(null, records.map(r => ({ address: r.address, family: r.family })), family);
             } else {
                 let record = records[0];
                 callback(null, record.address, record.family);
             }
         },
-        (err: NodeJS.ErrnoException) => callback(err, "", undefined)
+        (err: NodeJS.ErrnoException) => callback(err, "", family)
     );
 };
 
