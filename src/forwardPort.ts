@@ -89,10 +89,11 @@ export async function listPortMappings(): Promise<PortMapping[]> {
 //  live IGD; see test.ts.)
 const PERMANENT_LEASE = 0;
 
-// A permanent mapping never expires, so we don't renew. We only watch, on this interval, for
-//  another application having superseded our forward (or a router reboot having wiped it), and log
-//  loudly if so. We do NOT re-take it — last writer wins, so fighting back would just be a war.
-const SUPERSEDE_CHECK_INTERVAL = timeInMinute * 30;
+// A permanent mapping never expires, so we don't renew. We only watch, on this interval, for our
+//  forward having disappeared (routers do drop them, e.g. on reboot) or another application having
+//  taken it. A mapping that is simply gone is free, so we re-take it; one that someone else holds we
+//  leave alone and only log — fighting over it would just be a takeover war neither side wins.
+const MAPPING_CHECK_INTERVAL = timeInMinute * 30;
 
 /** Outcome of forwardPort. `owned` is true once we hold the router mapping for the port. When
  *      false, `reason` says why: "declined" = noPortStealing and another host holds the port (the
@@ -137,7 +138,9 @@ export async function forwardPort(config: {
         return (await listPortMappings()).find(m => m.externalPort === externalPort && m.protocol.toUpperCase() === "TCP");
     }
 
-    async function takeOwnership(): Promise<ForwardPortResult> {
+    // allowSteal is false for the periodic re-take, so a mapping that changed hands between our check
+    //  and this call is still left alone.
+    async function takeOwnership(options: { allowSteal: boolean }): Promise<ForwardPortResult> {
         try {
             const { internalIP, gatewayIP, controlPort, controlURLs } = await resolveGateway();
 
@@ -145,8 +148,8 @@ export async function forwardPort(config: {
             //  whether a mapping exists at all (so we only delete when there's something to delete).
             let existing = await readMapping();
 
-            if (existing && existing.internalClient !== internalIP && config.noPortStealing) {
-                console.log(`Port ${externalPort} is already forwarded to ${existing.internalClient} (not us); not stealing it (noPortStealing).`);
+            if (existing && existing.internalClient !== internalIP && !options.allowSteal) {
+                console.log(`Port ${externalPort} is already forwarded to ${existing.internalClient} (not us); not stealing it.`);
                 return { owned: false, reason: "declined" };
             }
 
@@ -195,32 +198,39 @@ export async function forwardPort(config: {
         return { owned: false, reason: "error" };
     }
 
-    // Re-read the mapping and warn if we no longer own it. Compares against our CURRENT LAN IP, so
-    //  this also catches the case where our own IP changed out from under the old mapping.
-    async function warnIfSuperseded() {
+    // Re-read the mapping and act on having lost it. Compares against our CURRENT LAN IP, so a mapping
+    //  left over from an IP change of ours reads as someone else's — which is the safe way around, as
+    //  we can't tell it apart from a genuine takeover and would rather not steal.
+    async function checkMapping() {
         try {
             let currentIP = await getLocalInternalIP();
-            let ours = (await listPortMappings()).find(m => m.externalPort === externalPort && m.protocol.toUpperCase() === "TCP");
-            if (!ours) {
-                console.error(`Port forward ${externalPort} is gone — the mapping was removed (router reboot, or another host deleted it).`);
-            } else if (currentIP && ours.internalClient !== currentIP) {
-                console.error(`Port forward ${externalPort} was superseded — it now forwards to ${ours.internalClient} instead of us (${currentIP}). Another application has taken the port.`);
+            let mapping = await readMapping();
+            if (!mapping) {
+                console.error(`Port forward ${externalPort} is gone — the mapping was removed (router reboot, or another host deleted it). Nothing holds the port, so re-taking it.`);
+                let retaken = await takeOwnership({ allowSteal: false });
+                if (!retaken.owned) {
+                    console.error(`Failed to re-take port forward ${externalPort} (${retaken.reason}).`);
+                }
+                return;
+            }
+            if (currentIP && mapping.internalClient !== currentIP) {
+                console.error(`Port forward ${externalPort} was taken — it now forwards to ${mapping.internalClient} instead of us (${currentIP}). Leaving it alone rather than fighting for it.`);
             }
         } catch (e) {
-            console.error(`Failed to check port forward ${externalPort} for supersession`, (e as Error).stack ?? e);
+            console.error(`Failed to check port forward ${externalPort}`, (e as Error).stack ?? e);
         }
     }
 
-    let result = await takeOwnership();
+    let result = await takeOwnership({ allowSteal: !config.noPortStealing });
 
     // Only monitor permanent mappings we actually own. A finite lease is expected to expire, so its
-    //  disappearance isn't a supersession worth warning about; a declined/failed claim owns nothing.
+    //  disappearance isn't a loss worth reporting or reclaiming; a declined/failed claim owns nothing.
     if (result.owned && permanent) {
         // unref so a script that only wants a one-off forward (and then exits) isn't held open by
         //  the monitor timer; a running server stays alive on its own and the checks keep firing.
         let timer = setInterval(() => {
-            void warnIfSuperseded();
-        }, SUPERSEDE_CHECK_INTERVAL);
+            void checkMapping();
+        }, MAPPING_CHECK_INTERVAL);
         timer.unref?.();
     }
 
