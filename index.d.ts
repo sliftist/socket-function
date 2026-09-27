@@ -781,7 +781,7 @@ declare module "socket-function/src/callHTTPHandler" {
     };
     export declare function getCurrentHTTPRequest(): http.IncomingMessage | undefined;
     export declare function httpCallHandler(request: http.IncomingMessage, response: http.ServerResponse): Promise<void>;
-    declare const resultHeaders: unique symbol;
+    declare const resultHeaders: "resultHeaders";
     type HTTPResultType = Buffer & {
         [resultHeaders]?: {
             [header: string]: string;

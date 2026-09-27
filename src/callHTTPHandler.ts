@@ -311,7 +311,7 @@ export async function httpCallHandler(request: http.IncomingMessage, response: h
 }
 
 
-const resultHeaders = Symbol("resultHeaders");
+const resultHeaders = createSingleton("callHTTPHandler.resultHeaders", 1, () => Symbol("resultHeaders")).get() as any as "resultHeaders";
 type HTTPResultType = Buffer & { [resultHeaders]?: { [header: string]: string } };
 
 export function setHTTPResultHeaders(
