@@ -11,6 +11,7 @@ import { formatNumber } from "../src/formatting/format";
 import { requireMain } from "./require";
 import path from "path";
 import { getContentTypeFromBuffer, getExtContentType } from "./extMapper";
+import { measureBlock } from "../src/profiling/measure";
 
 const COMPRESS_CACHE_SIZE = 1024 * 1024 * 128;
 
@@ -226,16 +227,18 @@ class RequireControllerBase {
         let httpRequest = getCurrentHTTPRequest();
 
         let seqNums: { [seqNum: number]: 1 } = {};
-        if (alreadyHave?.requireSeqNumProcessId === requireSeqNumProcessId) {
-            for (let { s, e } of alreadyHave.seqNumRanges) {
-                if (e === undefined) {
-                    e = s + 1;
-                }
-                for (let i = s; i < e; i++) {
-                    seqNums[i] = 1;
+        measureBlock(() => {
+            if (alreadyHave?.requireSeqNumProcessId === requireSeqNumProcessId) {
+                for (let { s, e } of alreadyHave.seqNumRanges) {
+                    if (e === undefined) {
+                        e = s + 1;
+                    }
+                    for (let i = s; i < e; i++) {
+                        seqNums[i] = 1;
+                    }
                 }
             }
-        }
+        }, "RequireController().getModules|expandSeqNums");
 
         let modules: {
             [resolvedPath: string]: SerializedModule;
@@ -310,7 +313,7 @@ class RequireControllerBase {
         }
 
         let searchPaths: string[] = [];
-        {
+        measureBlock(() => {
             searchPaths.push(this.rootResolvePath);
             let pathParts = this.rootResolvePath.replaceAll("\\", "/").split("/");
             for (let i = 0; i < pathParts.length; i++) {
@@ -319,73 +322,80 @@ class RequireControllerBase {
                 if (!pathParts[i]) continue;
                 searchPaths.push(pathParts.slice(0, i + 1).join("/") + "/node_modules");
             }
-        }
+        }, "RequireController().getModules|buildSearchPaths");
 
 
         let requestsResolvedPaths: string[] = [];
-        for (let pathRequest of pathRequests) {
-            let resolvedPath = "";
-            try {
-                resolvedPath = require.resolve(pathRequest, { paths: searchPaths });
-            } catch { }
-            requestsResolvedPaths.push(resolvedPath);
+        measureBlock(() => {
+            for (let pathRequest of pathRequests) {
+                let resolvedPath = measureBlock(() => {
+                    try {
+                        return require.resolve(pathRequest, { paths: searchPaths });
+                    } catch {
+                        return "";
+                    }
+                }, "RequireController().getModules|requireResolve");
+                requestsResolvedPaths.push(resolvedPath);
 
-            function createNotFoundModule(error: string): NodeJS.Module {
-                console.warn(error);
-                return {
-                    exports: {},
-                    children: [],
-                    filename: resolvedPath,
-                    id: resolvedPath,
-                    isPreloading: false,
-                    require: null as any,
-                    loaded: true,
-                    load: null as any,
-                    parent: undefined,
-                    path: "",
-                    paths: [],
-                    requires: {},
-                    asyncRequires: {},
-                    allowclient: true,
-                    moduleContents: `console.warn(${JSON.stringify(error)})`,
-                };
-            }
+                function createNotFoundModule(error: string): NodeJS.Module {
+                    console.warn(error);
+                    return {
+                        exports: {},
+                        children: [],
+                        filename: resolvedPath,
+                        id: resolvedPath,
+                        isPreloading: false,
+                        require: null as any,
+                        loaded: true,
+                        load: null as any,
+                        parent: undefined,
+                        path: "",
+                        paths: [],
+                        requires: {},
+                        asyncRequires: {},
+                        allowclient: true,
+                        moduleContents: `console.warn(${JSON.stringify(error)})`,
+                    };
+                }
 
-            // TODO: We could use import() here... but that would only make the root call asynchronous,
-            //  which wouldn't prevent synchronous blocking by that much anyway...
-            //require(rootPath);
-            let clientModule = require.cache[resolvedPath];
-            if (!clientModule) {
-                // NOTE: Root requires will be asynchronous, so throwing should be just as good as
-                //  warning, except throwing can be caught and retried on another server.
-                throw new Error(`Module ${pathRequest} (resolved to ${JSON.stringify(resolvedPath)}) was not included serverside. Resolved from root dir ${JSON.stringify(this.rootResolvePath)} (set by call to setRequireBootRequire), resolve search paths: ${JSON.stringify(searchPaths)})}`);
-            }
-            if (!clientModule.allowclient) {
-                clientModule = createNotFoundModule(`Module ${pathRequest} (resolved to ${resolvedPath}) is not allowed clientside (set module.allowclient in it, or call setFlag when it is imported).`);
-            }
+                // TODO: We could use import() here... but that would only make the root call asynchronous,
+                //  which wouldn't prevent synchronous blocking by that much anyway...
+                //require(rootPath);
+                let clientModule = require.cache[resolvedPath];
+                if (!clientModule) {
+                    // NOTE: Root requires will be asynchronous, so throwing should be just as good as
+                    //  warning, except throwing can be caught and retried on another server.
+                    throw new Error(`Module ${pathRequest} (resolved to ${JSON.stringify(resolvedPath)}) was not included serverside. Resolved from root dir ${JSON.stringify(this.rootResolvePath)} (set by call to setRequireBootRequire), resolve search paths: ${JSON.stringify(searchPaths)})}`);
+                }
+                if (!clientModule.allowclient) {
+                    clientModule = createNotFoundModule(`Module ${pathRequest} (resolved to ${resolvedPath}) is not allowed clientside (set module.allowclient in it, or call setFlag when it is imported).`);
+                }
 
-            addModule(clientModule, true);
-        }
+                let rootModule = clientModule;
+                measureBlock(() => addModule(rootModule, true), "RequireController().getModules|addModuleTree");
+            }
+        }, "RequireController().getModules|requestLoop");
 
         let result: GetModulesResult = { requestsResolvedPaths, modules, requireSeqNumProcessId };
         for (let remap of mapGetModules) {
-            result = await remap.remap(result, [pathRequests, alreadyHave, config]);
+            result = await measureBlock(async () => remap.remap(result, [pathRequests, alreadyHave, config]), "RequireController().getModules|remap");
         }
 
         // NOTE: Handling compression ourself allows us to efficiently cache (otherwise caching would require
         //      hashing the output, which takes almost as long as compression!)
         if (httpRequest && SocketFunction.HTTP_COMPRESS && httpRequest.headers["accept-encoding"]?.includes("gzip")) {
-            let simplifiedResult = {
+            let simplifiedResult = measureBlock(() => ({
                 ...result,
                 modules: Object.entries(result.modules).map(x => [x[0], {
                     filename: x[1].filename,
                     version: x[1].version,
                     sourceLength: x[1].source?.length,
                 }]),
-            };
-            let key = sha256Hash(JSON.stringify(simplifiedResult));
-            let uncompressedBuffer = Buffer.from(JSON.stringify(result));
-            let buffer = await compressCached(key, () => uncompressedBuffer);
+            }), "RequireController().getModules|buildSimplifiedResult");
+            let simplifiedJSON = measureBlock(() => JSON.stringify(simplifiedResult), "RequireController().getModules|stringifySimplifiedResult");
+            let key = measureBlock(() => sha256Hash(simplifiedJSON), "RequireController().getModules|hashKey");
+            let uncompressedBuffer = measureBlock(() => Buffer.from(JSON.stringify(result)), "RequireController().getModules|stringifyResult");
+            let buffer = measureBlock(() => compressCached(key, () => uncompressedBuffer), "RequireController().getModules|compress");
             setHTTPResultHeaders(buffer, {
                 "Content-Type": "application/json",
                 "Content-Encoding": "gzip",
@@ -401,18 +411,11 @@ class RequireControllerBase {
 
 let compressCacheSize = 0;
 let compressCache = new Map<string, Buffer>();
-async function compressCached(bufferKey: string, buffer: () => Buffer): Promise<Buffer> {
+function compressCached(bufferKey: string, buffer: () => Buffer): Buffer {
     let cached = compressCache.get(bufferKey);
     if (!cached) {
-        cached = await new Promise<Buffer>((resolve, reject) => {
-            zlib.gzip(buffer(), {}, (err, result) => {
-                if (err) {
-                    reject(err);
-                } else {
-                    resolve(result);
-                }
-            });
-        });
+        // NOTE: The asynchronous zlib functions can be faster in some cases, BUT they run on the libuv threadpool, and thread contention there makes them extraordinarily slow (we have seen single calls take minutes). So we always use the synchronous version.
+        cached = measureBlock(() => zlib.gzipSync(buffer(), {}), "RequireController()|compressCached_gzip");
         compressCacheSize += cached.length;
         // TODO: Make the cache LRU eviction, instead of just resetting it
         if (compressCacheSize > COMPRESS_CACHE_SIZE) {

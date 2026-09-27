@@ -546,7 +546,7 @@ declare global {
 }
 
 function getBootedEdgeNode() {
-    return BOOTED_EDGE_NODE as { host: string } | undefined;
+    return globalThis.BOOTED_EDGE_NODE as { host: string } | undefined;
 }
 
 

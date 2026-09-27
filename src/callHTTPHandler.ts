@@ -290,15 +290,8 @@ export async function httpCallHandler(request: http.IncomingMessage, response: h
             //  just be treated like a buffer of JSON data).
             //  - The caller should use getCurrentHTTPRequest first though, to check if gzip is allowed
             response.setHeader("Content-Encoding", "gzip");
-            resultBuffer = await new Promise<Buffer>((resolve, reject) => {
-                zlib.gzip(resultBuffer, {}, (err, result) => {
-                    if (err) {
-                        reject(err);
-                    } else {
-                        resolve(result);
-                    }
-                });
-            });
+            // NOTE: The asynchronous zlib functions can be faster in some cases, BUT they run on the libuv threadpool, and thread contention there makes them extraordinarily slow (we have seen single calls take minutes). So we always use the synchronous version.
+            resultBuffer = zlib.gzipSync(resultBuffer, {});
         }
         response.setHeader("Content-Length", resultBuffer.length.toString());
         if (!response.getHeader("X-Uncompressed-Content-Length")) {

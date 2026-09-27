@@ -29,6 +29,51 @@ const RERESOLVE_THROTTLE = 5 * 1000;
 //  takes as long as the throttle window, so the throttle alone never engages. A failure that just survived
 //  RESOLVE_MAX_TRIES won't differ if we immediately try again, so we serve it from cache instead.
 const NEGATIVE_CACHE_TTL = 5 * 1000;
+const RESOLVER_TIMEOUT = 2 * 1000;
+const RESOLVER_TRIES = 2;
+
+const DEFINITIVE_RESOLVE_CODES = new Set([
+    "ENOTFOUND",
+    "NOTFOUND",
+    "ENODATA",
+    "NODATA",
+    "EBADNAME",
+    "ENONAME",
+]);
+
+let resolver: dns.promises.Resolver | undefined;
+let resolverCreatedAt = 0;
+
+function getResolverServers(target: dns.promises.Resolver): string {
+    try {
+        return target.getServers().join(", ") || "(none)";
+    } catch {
+        return "(unknown)";
+    }
+}
+
+function getResolver(): dns.promises.Resolver {
+    if (!resolver) {
+        resolver = new dns.promises.Resolver({ timeout: RESOLVER_TIMEOUT, tries: RESOLVER_TRIES });
+        resolverCreatedAt = Date.now();
+        console.log(`[dnsCache] Created DNS resolver at ${new Date(resolverCreatedAt).toISOString()}, servers ${getResolverServers(resolver)}`);
+    }
+    return resolver;
+}
+
+function resetResolver(reason: string) {
+    if (!resolver) return;
+    console.log(`[dnsCache] Discarding DNS resolver created at ${new Date(resolverCreatedAt).toISOString()} (servers ${getResolverServers(resolver)}), because ${reason}`);
+    resolver = undefined;
+}
+
+function getErrorCode(error: unknown): string {
+    return (error as NodeJS.ErrnoException | undefined)?.code || "(no code)";
+}
+
+function isDefinitiveResolveError(error: unknown): boolean {
+    return DEFINITIVE_RESOLVE_CODES.has(getErrorCode(error));
+}
 
 interface DNSRecord {
     address: string;
@@ -48,6 +93,7 @@ interface DNSEntry {
     //  rather than re-running the resolve loop. Kept as the real Error so we rethrow it with its code intact.
     lastError?: Error;
     failedAt?: number;
+    failingSince?: number;
 }
 
 const entries = new Map<string, DNSEntry>();
@@ -75,24 +121,28 @@ async function resolveOnce(hostname: string): Promise<DNSRecord[]> {
     }
 
     let records: DNSRecord[] = [];
+    let errors: unknown[] = [];
+    let currentResolver = getResolver();
     await Promise.all([
-        dns.promises.resolve4(hostname).then(
+        currentResolver.resolve4(hostname).then(
             addresses => { for (let address of addresses) records.push({ address, family: 4 }); },
-            // A host having no A (or no AAAA) record is normal, not a failure of the whole resolution.
-            () => { }
+            e => { errors.push(e); }
         ),
-        dns.promises.resolve6(hostname).then(
+        currentResolver.resolve6(hostname).then(
             addresses => { for (let address of addresses) records.push({ address, family: 6 }); },
-            () => { }
+            e => { errors.push(e); }
         ),
     ]);
     if (records.length > 0) {
         return records;
     }
 
-    // dns.resolve* ignores /etc/hosts and the `localhost` entry, so fall back to getaddrinfo. We only
-    //  reach the sticky-failure-caching path when our own resolution found nothing, which is exactly the
-    //  case where /etc/hosts is the likely source of truth.
+    let transientError = errors.find(e => !isDefinitiveResolveError(e));
+    if (transientError) {
+        resetResolver(`resolving ${hostname} failed with ${getErrorCode(transientError)}`);
+        throw transientError;
+    }
+
     let fallback = await dns.promises.lookup(hostname, { all: true });
     return fallback.map(r => ({ address: r.address, family: r.family }));
 }
@@ -127,11 +177,19 @@ function startResolve(entry: DNSEntry): Promise<DNSRecord[]> {
             entry.resolvedAt = Date.now();
             entry.lastError = undefined;
             entry.failedAt = undefined;
+            if (entry.failingSince !== undefined) {
+                console.log(`[dnsCache] Resolved ${entry.hostname} to ${records.map(r => r.address).join(", ")}, after failing since ${new Date(entry.failingSince).toISOString()} (${Math.round((Date.now() - entry.failingSince) / 1000)}s)`);
+                entry.failingSince = undefined;
+            }
             return records;
         } catch (e) {
             entry.records = undefined;
             entry.lastError = e instanceof Error ? e : new Error(String(e));
             entry.failedAt = Date.now();
+            if (entry.failingSince === undefined) {
+                entry.failingSince = entry.failedAt;
+                console.warn(`[dnsCache] Failed to resolve ${entry.hostname} at ${new Date(entry.failedAt).toISOString()}:`, entry.lastError.stack ?? entry.lastError);
+            }
             throw entry.lastError;
         } finally {
             entry.resolving = undefined;

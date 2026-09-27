@@ -18,12 +18,8 @@ export class Zip {
             return this.gzipSync(buffer, level);
         }
         if (isNode()) {
-            return new Promise((resolve, reject) => {
-                zlib.gzip(buffer, { level }, (err: any, result: Buffer) => {
-                    if (err) reject(err);
-                    else resolve(result);
-                });
-            });
+            // NOTE: The asynchronous zlib functions can be faster in some cases, BUT they run on the libuv threadpool, and thread contention there makes them extraordinarily slow (we have seen single calls take minutes). So we always use the synchronous version.
+            return Buffer.from(zlib.gzipSync(buffer, { level }));
         } else {
             // @ts-ignore
             return await doStream(new CompressionStream("gzip"), buffer);
