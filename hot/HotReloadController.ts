@@ -88,33 +88,57 @@ const hotReloadModule = cache((module: NodeJS.Module) => {
     }
 
     let lastHashes = new Map<string, string>();
-    function getHash(path: string) {
+    async function getHash(path: string): Promise<string> {
         try {
-            let contents = fs.readFileSync(path, "utf8");
+            let contents = await fs.promises.readFile(path, "utf8");
             return crypto.createHash("sha256").update(contents).digest("hex");
         } catch {
             return "";
         }
     }
 
-    watchFile(module.filename);
-    for (let path of module.watchAdditionalFiles || []) {
-        watchFile(path);
+    for (let path of [module.filename, ...(module.watchAdditionalFiles || [])]) {
+        watchFile(path).catch(e => {
+            console.error(red(`Error watching ${path} for hot reloading`), e.stack);
+        });
     }
 
-    function watchFile(path: string) {
-        lastHashes.set(path, getHash(path));
-        fs.watchFile(path, { persistent: false, interval }, (curr, prev) => {
-            let newHash = getHash(path);
-            if (newHash === lastHashes.get(path)) return;
-            lastHashes.set(path, newHash);
-            if (path === module.filename) {
-                console.log(`Hot reloading ${module.filename} due to change`);
-            } else {
-                console.log(`Hot reloading ${module.filename} due to change in ${path}`);
-            }
-            doHotReload(curr.mtimeMs);
+    async function watchFile(path: string) {
+        lastHashes.set(path, await getHash(path));
+        let checking = false;
+        let dirty = false;
+        let lastChangeTime = 0;
+        fs.watchFile(path, { persistent: false, interval }, curr => {
+            lastChangeTime = curr.mtimeMs;
+            checkForChange().catch(e => {
+                console.error(red(`Error hot reloading ${module.filename} after change in ${path}`), e.stack);
+            });
         });
+        async function checkForChange() {
+            if (checking) {
+                dirty = true;
+                return;
+            }
+            checking = true;
+            try {
+                while (true) {
+                    dirty = false;
+                    let newHash = await getHash(path);
+                    if (newHash !== lastHashes.get(path)) {
+                        lastHashes.set(path, newHash);
+                        if (path === module.filename) {
+                            console.log(`Hot reloading ${module.filename} due to change`);
+                        } else {
+                            console.log(`Hot reloading ${module.filename} due to change in ${path}`);
+                        }
+                        doHotReload(lastChangeTime);
+                    }
+                    if (!dirty) break;
+                }
+            } finally {
+                checking = false;
+            }
+        }
     }
 
 
