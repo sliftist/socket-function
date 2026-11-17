@@ -31,10 +31,17 @@ export function getClientNodeId(address: string): string {
 export function isClientNodeId(nodeId: string): boolean {
     return nodeId.startsWith("client:");
 }
-export function isNodeId(value: string): boolean {
-    if (isClientNodeId(value)) return true;
-    let location = getNodeIdLocation(value);
-    return !!location && !!location.address && Number.isFinite(location.port);
+// sliftutils (decodeNodeId in misc/https/certs.ts) is the one who knows how to do this, but we need to do it in a few places, and sliftutils depends on us, so we can't import it.
+const KEY_HASH_LABEL = /^b[a-z2-7]{20}$/;
+export function hackDecodeNodeId(nodeId: string): { threadId: string; machineId: string } | undefined {
+    let location = getNodeIdLocation(nodeId);
+    if (!location) return undefined;
+    let parts = location.address.split(".");
+    if (parts.length < 4) return undefined;
+    let threadId = parts.at(-4) || "";
+    let machineId = parts.at(-3) || "";
+    if (!KEY_HASH_LABEL.test(threadId) || !KEY_HASH_LABEL.test(machineId)) return undefined;
+    return { threadId, machineId };
 }
 /** Will always be available, even if getNodeIdLocation is not (as we don't always have the port,
  *      but we should always have an address).

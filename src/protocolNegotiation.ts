@@ -6,7 +6,7 @@
 // rejection semantics we want (indistinguishable from "node not reachable").
 
 import { isIpDomain } from "./misc";
-import { isNodeId } from "./nodeCache";
+import { hackDecodeNodeId } from "./nodeCache";
 
 const PROTOCOL_VERSION = "v1";
 
@@ -35,17 +35,6 @@ function encodeFlagBit(b: boolean): string { return b ? "1" : "0"; }
 // browser clients which don't know our internal nodeId because they're
 // connecting through a Let's Encrypt cert on a public domain.
 const WILDCARD_TARGET = "";
-
-// The target match is on the host portion only, not the exact listening port. A
-// server can restart (or rebind) on a new port while keeping the same host identity,
-// and a client still holding the old nodeId (host:oldPort) should be accepted rather
-// than rejected as a stale thread. Strip only the trailing :port (last colon segment),
-// so hosts that themselves contain colons survive.
-function stripPort(nodeId: string): string {
-    let idx = nodeId.lastIndexOf(":");
-    if (idx < 0) return nodeId;
-    return nodeId.slice(0, idx);
-}
 
 function encodeOne(target: string, flags: ConnectionFlags): string {
     let plain = `${PROTOCOL_VERSION}|${target}|clz4=${encodeFlagBit(flags.clientLZ4)}|slz4=${encodeFlagBit(flags.serverLZ4)}`;
@@ -120,10 +109,12 @@ export function chooseProtocol(
         // Server capability check: if the proposal asks the server to receive
         // LZ4 (slz4=1) but the server doesn't support it, skip.
         if (decoded.flags.serverLZ4 && !serverCapabilities.lz4) continue;
-        // If one of the ends isn't even the socket function call factory, then we should just match. It's probably a browser client that has connected to us using a real certificate, and so it's secure anyway.
-        if (!isNodeId(decoded.target) || !isNodeId(serverNodeId)) return hex;
+        let targetParts = hackDecodeNodeId(decoded.target);
+        let serverParts = hackDecodeNodeId(serverNodeId);
+        // If the target doesn't have a thread and machine ID, they're connecting from a browser, so they don't know who they're connecting to. If the server node ID doesn't have them, we're not using the thread and machine ID system. Either way, we don't need to match exactly.
+        if (!targetParts || !serverParts) return hex;
         // NOTE: We allow the port to be different. This doesn't degrade security as we're still using TLS, so proxies don't reduce our security, However, it does make it a lot easier for a server to listen on multiple ports and redirect them all to the single-mounted port (As socket function doesn't support mounting on multiple ports because it makes it complicated for code that wants to say where we mounted to if we could be mounted to multiple ports at once).
-        if (decoded.target !== WILDCARD_TARGET && stripPort(decoded.target) !== stripPort(serverNodeId)) continue;
+        if (targetParts.threadId !== serverParts.threadId || targetParts.machineId !== serverParts.machineId) continue;
         return hex;
     }
     return undefined;

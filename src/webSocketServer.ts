@@ -9,7 +9,7 @@ import { getTrustedCertificates, watchTrustedCertificates } from "./certStore";
 import { createCallFactory } from "./CallFactory";
 import { parseSNIExtension, parseTLSHello, SNIType } from "./tlsParsing";
 import debugbreak from "debugbreak";
-import { getNodeId } from "./nodeCache";
+import { getNodeId, hackDecodeNodeId } from "./nodeCache";
 import crypto from "crypto";
 import { Watchable, getRootDomain } from "./misc";
 import { delay } from "./batching";
@@ -85,8 +85,8 @@ export async function startSocketServer(
             if (!chosen) {
                 const proposedDecoded = proposed.map(p => decodeProtocol(p));
                 let target = proposedDecoded[0]?.target;
-                let getMachineId = (x: string) => x.split(".").slice(-3).join(".");
-                if (target && getMachineId(target) === getMachineId(ourNodeId)) {
+                let targetMachineId = target && hackDecodeNodeId(target)?.machineId;
+                if (targetMachineId && targetMachineId === hackDecodeNodeId(ourNodeId)?.machineId) {
                     console.log(`Rejecting handshake from old thread, ${target} !== ${ourNodeId}`);
                 } else {
                     console.log(`Rejecting handshake on ${ourNodeId}: none of the ${proposed.length} proposed protocols target us`, { ourNodeId, proposedDecoded });
