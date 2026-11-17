@@ -31,6 +31,11 @@ export function getClientNodeId(address: string): string {
 export function isClientNodeId(nodeId: string): boolean {
     return nodeId.startsWith("client:");
 }
+export function isNodeId(value: string): boolean {
+    if (isClientNodeId(value)) return true;
+    let location = getNodeIdLocation(value);
+    return !!location && !!location.address && Number.isFinite(location.port);
+}
 /** Will always be available, even if getNodeIdLocation is not (as we don't always have the port,
  *      but we should always have an address).
  *  - Rarely used, as for logging you can just log the nodeId. ALSO, it isn't sufficient to reconnect, as the port is also needed!

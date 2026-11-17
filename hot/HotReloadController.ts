@@ -205,7 +205,14 @@ class HotReloadControllerBase {
             console.groupEnd();
             let modules: NodeJS.Module[] = [];
             for (let file of files) {
-                file = "https://" + (BOOTED_EDGE_NODE?.host || location.host) + "/" + file;
+                let candidates: string[] = [];
+                if (BOOTED_EDGE_NODE?.host) {
+                    candidates.push("https://" + BOOTED_EDGE_NODE.host + "/" + file);
+                }
+                if (location.host) {
+                    candidates.push("https://" + location.host + "/" + file);
+                }
+                file = candidates.find(candidate => require.cache[candidate]) || file;
                 let module = require.cache[file];
                 if (!module) {
                     console.log(`Module not found: ${file}, not reloading page`);

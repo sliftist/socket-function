@@ -1273,6 +1273,7 @@ declare module "socket-function/src/nodeCache" {
     /** A nodeId not available for reconnecting. */
     export declare function getClientNodeId(address: string): string;
     export declare function isClientNodeId(nodeId: string): boolean;
+    export declare function isNodeId(value: string): boolean;
     /** Will always be available, even if getNodeIdLocation is not (as we don't always have the port,
      *      but we should always have an address).
      *  - Rarely used, as for logging you can just log the nodeId. ALSO, it isn't sufficient to reconnect, as the port is also needed!

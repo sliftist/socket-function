@@ -510,7 +510,9 @@ export class SocketFunction {
         if (edgeNode) {
             return edgeNode.host;
         }
-        return SocketFunction.connect({ address: location.hostname, port: +location.port || 443 });
+        let localHost = `127-0-0-1.${location.hostname.split(".").slice(-2).join(".")}:${location.port || 443}`;
+        console.warn(`No globalThis.BOOTED_EDGE_NODE set, falling back to ${localHost}. You should set the booted edge node very early on, usually with a script injected using RequireController.injectHTMLBeforeStartup which selects the ideal target server.`);
+        return localHost;
     }
     public static getBrowserNodeId() {
         return this.browserNodeId();

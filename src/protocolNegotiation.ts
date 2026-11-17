@@ -6,6 +6,7 @@
 // rejection semantics we want (indistinguishable from "node not reachable").
 
 import { isIpDomain } from "./misc";
+import { isNodeId } from "./nodeCache";
 
 const PROTOCOL_VERSION = "v1";
 
@@ -116,11 +117,13 @@ export function chooseProtocol(
     for (let hex of proposed) {
         let decoded = decodeProtocol(hex);
         if (!decoded) continue;
-        // NOTE: We allow the pork to be different. This doesn't degrade security as we're still using TLS, so proxies don't reduce our security, However, it does make it a lot easier for a server to listen on multiple ports and redirect them all to the single-mounted port (As socket function doesn't support mounting on multiple ports because it makes it complicated for code that wants to say where we mounted to if we could be mounted to multiple ports at once).
-        if (decoded.target !== WILDCARD_TARGET && stripPort(decoded.target) !== stripPort(serverNodeId)) continue;
         // Server capability check: if the proposal asks the server to receive
         // LZ4 (slz4=1) but the server doesn't support it, skip.
         if (decoded.flags.serverLZ4 && !serverCapabilities.lz4) continue;
+        // If one of the ends isn't even the socket function call factory, then we should just match. It's probably a browser client that has connected to us using a real certificate, and so it's secure anyway.
+        if (!isNodeId(decoded.target) || !isNodeId(serverNodeId)) return hex;
+        // NOTE: We allow the port to be different. This doesn't degrade security as we're still using TLS, so proxies don't reduce our security, However, it does make it a lot easier for a server to listen on multiple ports and redirect them all to the single-mounted port (As socket function doesn't support mounting on multiple ports because it makes it complicated for code that wants to say where we mounted to if we could be mounted to multiple ports at once).
+        if (decoded.target !== WILDCARD_TARGET && stripPort(decoded.target) !== stripPort(serverNodeId)) continue;
         return hex;
     }
     return undefined;
