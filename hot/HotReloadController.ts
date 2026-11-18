@@ -6,6 +6,7 @@ import { SocketFunction } from "../SocketFunction";
 import { cache, lazy } from "../src/caching";
 import { createSingleton } from "../src/createSingleton";
 import * as fs from "fs";
+import path from "path";
 import crypto from "crypto";
 import debugbreak from "debugbreak";
 import { isNode } from "../src/misc";
@@ -29,11 +30,49 @@ export function watchFilesAndTriggerHotReloading(noAutomaticBrowserWatch = false
         }
     }
     setInterval(() => {
+        let dirCountBefore = directoryListeners.size;
         for (let module of Object.values(require.cache)) {
             if (!module) continue;
             hotReloadModule(module);
         }
+        if (directoryListeners.size !== dirCountBefore) {
+            console.log(`[pid ${process.pid}] Hot reload now watching ${directoryListeners.size} directories (was ${dirCountBefore})`);
+        }
     }, 5000);
+}
+
+const directoryListeners = new Map<string, Map<string, (() => void)[]>>();
+function watchPathViaDirectory(filePath: string, onChange: () => void) {
+    let dir = path.dirname(filePath);
+    let name = path.basename(filePath);
+    let listeners = directoryListeners.get(dir);
+    if (!listeners) {
+        let newListeners = new Map<string, (() => void)[]>();
+        listeners = newListeners;
+        directoryListeners.set(dir, newListeners);
+        let watcher = fs.watch(dir, { persistent: false }, (event, filename) => {
+            if (!filename) {
+                for (let callbacks of newListeners.values()) {
+                    for (let callback of callbacks) {
+                        callback();
+                    }
+                }
+                return;
+            }
+            for (let callback of newListeners.get(filename.toString()) || []) {
+                callback();
+            }
+        });
+        watcher.on("error", e => {
+            console.error(red(`[pid ${process.pid}] Hot reload directory watcher failed for ${dir}`), e.stack);
+        });
+    }
+    let callbacks = listeners.get(name);
+    if (!callbacks) {
+        callbacks = [];
+        listeners.set(name, callbacks);
+    }
+    callbacks.push(onChange);
 }
 
 declare global {
@@ -80,38 +119,34 @@ export function onHotReload(callback: (modules: NodeJS.Module[]) => void) {
 
 const hotReloadModule = cache((module: NodeJS.Module) => {
     if (!module.updateContents) return;
-    let interval = 1000;
-    let fast = false;
-    if (module.hotreload) {
-        interval = 100;
-        fast = true;
-    }
+    if (/[\\/]node_modules[\\/]/.test(module.filename)) return;
+    let fast = !!module.hotreload;
 
     let lastHashes = new Map<string, string>();
-    async function getHash(path: string): Promise<string> {
+    async function getHash(filePath: string): Promise<string> {
         try {
-            let contents = await fs.promises.readFile(path, "utf8");
+            let contents = await fs.promises.readFile(filePath, "utf8");
             return crypto.createHash("sha256").update(contents).digest("hex");
         } catch {
             return "";
         }
     }
 
-    for (let path of [module.filename, ...(module.watchAdditionalFiles || [])]) {
-        watchFile(path).catch(e => {
-            console.error(red(`Error watching ${path} for hot reloading`), e.stack);
-        });
+    for (let filePath of [module.filename, ...(module.watchAdditionalFiles || [])]) {
+        watchFile(filePath);
     }
 
-    async function watchFile(path: string) {
-        lastHashes.set(path, await getHash(path));
+    function watchFile(filePath: string) {
+        let initialHash = getHash(filePath).then(hash => {
+            lastHashes.set(filePath, hash);
+        });
         let checking = false;
         let dirty = false;
         let lastChangeTime = 0;
-        fs.watchFile(path, { persistent: false, interval }, curr => {
-            lastChangeTime = curr.mtimeMs;
+        watchPathViaDirectory(filePath, () => {
+            lastChangeTime = Date.now();
             checkForChange().catch(e => {
-                console.error(red(`Error hot reloading ${module.filename} after change in ${path}`), e.stack);
+                console.error(red(`Error hot reloading ${module.filename} after change in ${filePath}`), e.stack);
             });
         });
         async function checkForChange() {
@@ -121,15 +156,16 @@ const hotReloadModule = cache((module: NodeJS.Module) => {
             }
             checking = true;
             try {
+                await initialHash;
                 while (true) {
                     dirty = false;
-                    let newHash = await getHash(path);
-                    if (newHash !== lastHashes.get(path)) {
-                        lastHashes.set(path, newHash);
-                        if (path === module.filename) {
+                    let newHash = await getHash(filePath);
+                    if (newHash !== lastHashes.get(filePath)) {
+                        lastHashes.set(filePath, newHash);
+                        if (filePath === module.filename) {
                             console.log(`Hot reloading ${module.filename} due to change`);
                         } else {
-                            console.log(`Hot reloading ${module.filename} due to change in ${path}`);
+                            console.log(`Hot reloading ${module.filename} due to change in ${filePath}`);
                         }
                         doHotReload(lastChangeTime);
                     }
