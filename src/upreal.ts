@@ -24,10 +24,10 @@ const YARN_REGISTRY_HOST = "registry.yarnpkg.com";
 
 async function main() {
     let args = process.argv.slice(2);
-    let packageName = args.find(arg => !arg.startsWith("-"));
+    let packageNames = Array.from(new Set(args.filter(arg => !arg.startsWith("-"))));
     let dryRun = args.some(arg => DRY_RUN_FLAGS.includes(arg.toLowerCase()));
-    if (!packageName) {
-        console.error("Usage: yarn upreal <package-name> [--dry-run]");
+    if (packageNames.length === 0) {
+        console.error("Usage: yarn upreal <package-name> [more-package-names...] [--dry-run]");
         process.exit(1);
         return;
     }
@@ -36,20 +36,25 @@ async function main() {
     let packageJsonPath = path.join(projectRoot, "package.json");
     let lockPath = path.join(projectRoot, "yarn.lock");
 
-    let manifest = await getLatestManifest(packageName);
-    console.log(`Latest version of ${packageName}: ${manifest.version}`);
+    let manifests = await Promise.all(packageNames.map(getLatestManifest));
+    let targets = packageNames.map((packageName, index) => {
+        let manifest = manifests[index];
+        console.log(`Latest version of ${packageName}: ${manifest.version}`);
+        return { packageName, manifest, newRange: updatePackageJson(packageJsonPath, packageName, manifest.version) };
+    });
 
-    let newRange = updatePackageJson(packageJsonPath, packageName, manifest.version);
-
+    let pending = targets;
     for (let pass = 1; pass <= MAX_MERGE_PASSES; pass++) {
         if (fs.existsSync(lockPath)) {
-            let result = mergeLockEntries(lockPath, packageName, manifest, newRange);
-            console.log(`Lockfile pass ${pass}: ${result.specs.length} spec${result.specs.length === 1 ? "" : "s"} for ${packageName} now share one entry at ${manifest.version}: ${result.specs.join(", ")}`);
-            for (let moved of result.movedFrom) {
-                console.log(`  ${moved.spec} was resolving to ${moved.version}`);
-            }
-            for (let left of result.leftAlone) {
-                console.log(`  left ${left} alone (not a registry range, so it can't point at a version)`);
+            for (let { packageName, manifest, newRange } of pending) {
+                let result = mergeLockEntries(lockPath, packageName, manifest, newRange);
+                console.log(`Lockfile pass ${pass}: ${result.specs.length} spec${result.specs.length === 1 ? "" : "s"} for ${packageName} now share one entry at ${manifest.version}: ${result.specs.join(", ")}`);
+                for (let moved of result.movedFrom) {
+                    console.log(`  ${moved.spec} was resolving to ${moved.version}`);
+                }
+                for (let left of result.leftAlone) {
+                    console.log(`  left ${left} alone (not a registry range, so it can't point at a version)`);
+                }
             }
         }
 
@@ -61,16 +66,26 @@ async function main() {
         console.log(`Running yarn install...`);
         await runYarnInstall(projectRoot);
 
-        let versions = getLockedVersions(lockPath, packageName);
-        if (versions.length <= 1) {
-            console.log(`Done. ${packageName} resolves to a single version: ${versions[0] ?? manifest.version}`);
+        let stillSplit: typeof pending = [];
+        for (let target of pending) {
+            let versions = getLockedVersions(lockPath, target.packageName);
+            if (versions.length <= 1) {
+                console.log(`Done. ${target.packageName} resolves to a single version: ${versions[0] ?? target.manifest.version}`);
+                continue;
+            }
+            console.log(`${target.packageName} still resolves to ${versions.length} versions (${versions.join(", ")}); merging again.`);
+            stillSplit.push(target);
+        }
+        pending = stillSplit;
+        if (pending.length === 0) {
             return;
         }
-        console.log(`${packageName} still resolves to ${versions.length} versions (${versions.join(", ")}); merging again.`);
     }
 
-    let versions = getLockedVersions(lockPath, packageName);
-    console.error(`Failed to collapse ${packageName} onto one version after ${MAX_MERGE_PASSES} passes; still at ${versions.join(", ")}`);
+    for (let { packageName } of pending) {
+        let versions = getLockedVersions(lockPath, packageName);
+        console.error(`Failed to collapse ${packageName} onto one version after ${MAX_MERGE_PASSES} passes; still at ${versions.join(", ")}`);
+    }
     process.exit(1);
 }
 
