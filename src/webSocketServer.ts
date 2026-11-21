@@ -17,13 +17,11 @@ import { yellow } from "./formatting/logColors";
 import { green } from "./formatting/logColors";
 import { formatTime } from "./formatting/format";
 import { getExternalIP, testTCPIsListening } from "./networking";
-import { forwardPort, isBehindNAT } from "./forwardPort";
+import { forwardPort, getLocalInternalIP, isBehindNAT } from "./forwardPort";
 
-// When a requested port is taken and useAvailablePortIfPortInUse is set, we scan
-//  upwards from this base instead of binding a random OS-assigned port, so restarts
-//  land on predictable, consistent ports.
-const PORT_SCAN_START = 13000;
-const PORT_SCAN_COUNT = 10000;
+// Each machine scans its own block of ports, chosen by the last number of its local IP, so machines never fight over a port and a machine keeps reusing the same ports across restarts. Reuse is essential: if someone can't connect to a service at an IP and port, they can't know whether it will come back, unless something comes back on that same IP and port with a different identity, in which case they know for sure the old service can never come back.
+const PORT_SCAN_START = 10000;
+const PORT_BLOCK_SIZE = 100;
 
 export type SocketServerConfig = (
     https.ServerOptions & {
@@ -363,11 +361,20 @@ export async function startSocketServer(
     //  needs no forward.
     const doForward = !!(config.autoForwardPort && config.public) && await isBehindNAT();
 
+    let internalIP = await getLocalInternalIP();
+    let ipParts = internalIP?.split(".") || [];
+    let lastOctet = Number(ipParts[ipParts.length - 1]);
+    if (ipParts.length !== 4 || !Number.isInteger(lastOctet)) {
+        throw new Error(`Expected an IPv4 local address to pick this machine's port block, was ${internalIP}`);
+    }
+    let blockStart = PORT_SCAN_START + lastOctet * PORT_BLOCK_SIZE;
+    let blockEnd = blockStart + PORT_BLOCK_SIZE;
+
     // Candidate ports: an explicitly requested port first (a falsy port, the default 0,
     //  means "no preference"), then a consistent upward scan so restarts are predictable.
     function* candidatePorts(): Generator<number> {
         if (port) yield port;
-        for (let candidate = PORT_SCAN_START; candidate < PORT_SCAN_START + PORT_SCAN_COUNT; candidate++) {
+        for (let candidate = blockStart; candidate < blockEnd; candidate++) {
             if (candidate === port) continue;
             yield candidate;
         }
@@ -398,7 +405,7 @@ export async function startSocketServer(
         break;
     }
     if (!bound) {
-        throw new Error(`Could not find an available port in range ${PORT_SCAN_START}-${PORT_SCAN_START + PORT_SCAN_COUNT - 1} (requested ${config.port})`);
+        throw new Error(`Could not find an available port in this machine's block ${blockStart}-${blockEnd - 1} (local IP ${internalIP}, requested ${config.port})`);
     }
 
     port = (realServer.address() as net.AddressInfo).port;
